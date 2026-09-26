@@ -301,10 +301,14 @@ it('shows three neutral selection actions without requesting a model until an ac
 
 it('category keyboard focus only previews a valid anchor and never saves, scrolls or generates',async()=>{
  w.inquiries.push({...w.inquiries[0],id:'missing',anchor:{...w.inquiries[0].anchor,blockId:'missing',quote:'不存在'}});
- await mount();await click('#intent-tab-explain');
+ await mount();
+ // Finish the document's initial scroll restoration before measuring keyboard focus.
+ await act(async()=>new Promise<void>(resolve=>window.requestAnimationFrame(()=>resolve())));
+ await click('#intent-tab-explain');
  const saved=JSON.stringify(testWorkspace());
  vi.mocked(HTMLElement.prototype.scrollIntoView).mockClear();
  await act(async()=>host.querySelector<HTMLButtonElement>('.category-items [data-inquiry-id="explain"]')!.focus());
+ await act(async()=>new Promise<void>(resolve=>window.requestAnimationFrame(()=>resolve())));
  expect(host.querySelectorAll('mark.is-emphasized')).toHaveLength(1);
  expect(host.querySelector('.answer-markdown')).toBeNull();
  expect(JSON.stringify(testWorkspace())).toBe(saved);

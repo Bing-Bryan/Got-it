@@ -1,11 +1,11 @@
 // @vitest-environment node
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { mkdtemp, writeFile, rm, chmod } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AnswerDecoder, runCodexTurn, type CodexTurnOptions } from './codex-stream';
 let cwd:string,binary:string;
-beforeAll(async()=>{cwd=await mkdtemp(join(tmpdir(),'focus-protocol-test-'));binary=join(cwd,'fake.cjs');await writeFile(binary,`#!/usr/bin/env node
+beforeAll(async()=>{cwd=await mkdtemp(join(tmpdir(),'focus-protocol-test-'));binary=process.execPath;await writeFile(join(cwd,'app-server'),`
 const rl=require('node:readline').createInterface({input:process.stdin});
 const send=v=>process.stdout.write(JSON.stringify(v)+'\\n');
 rl.on('line',line=>{const m=JSON.parse(line);
@@ -33,7 +33,7 @@ rl.on('line',line=>{const m=JSON.parse(line);
   },2);
  }
 });
-`);await chmod(binary,0o755);});
+`);});
 afterAll(async()=>{await rm(cwd,{recursive:true,force:true});});
 const options=(prompt='normal'):CodexTurnOptions=>({binary,cwd,config:{model:'gpt-6-luna',reasoningEffort:'low'},prompt,schema:{type:'object'},searchable:false,timeoutMs:3000,onDelta(){},onTrace(){}});
 it('decodes arbitrary boundaries and extracts only root answer, never nested metadata',()=>{

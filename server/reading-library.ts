@@ -46,6 +46,13 @@ export class ReadingLibrary {
       await rename(temp, path);
     } finally { await rm(temp, { force: true }).catch(() => {}); }
   }
+  private async syncDirectory(dir: string) {
+    // Windows cannot fsync directory handles (EPERM). atomic() still flushes
+    // each file before rename; POSIX additionally flushes directory metadata.
+    if (process.platform === "win32") return;
+    const directory = await open(dir, "r");
+    try { await directory.sync(); } finally { await directory.close(); }
+  }
   private async commit(entry: LibraryEntry) {
     entry.contentDigest = hash(readingContent(entry.workspace));
     const dir = this.entryDir(entry.id); await mkdir(dir, { recursive: true, mode: 0o700 });
@@ -54,7 +61,7 @@ export class ReadingLibrary {
     const name = `${entry.version}-${randomUUID()}.json`;
     await this.atomic(join(dir, name), JSON.stringify(entry));
     await this.atomic(join(dir, "CURRENT"), name);
-    const directory = await open(dir, "r"); try { await directory.sync(); } finally { await directory.close(); }
+    await this.syncDirectory(dir);
     // Keep the current and previous committed payload for interrupted-write recovery.
     for (const file of await readdir(dir)) if (file !== name && file !== previous && file !== "CURRENT" && (/\.json$/.test(file) || file.endsWith(".tmp"))) await rm(join(dir, file), { force: true }).catch(() => {});
     return entry;
@@ -161,7 +168,7 @@ export class ReadingLibrary {
   private async saveRecovery(record: RecoveryRecord) {
     const dir = join(this.dir, "recoveries"); await mkdir(dir, { recursive: true, mode: 0o700 });
     await this.atomic(this.recoveryPath(record.id), JSON.stringify(record));
-    const file = await open(dir, "r"); try { await file.sync(); } finally { await file.close(); }
+    await this.syncDirectory(dir);
   }
   async getRecovery(id: string): Promise<RecoveryRecord> {
     const path = this.recoveryPath(id);
