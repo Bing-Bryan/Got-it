@@ -1,0 +1,47 @@
+{
+  "name": "got-it",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n web,api -c blue,magenta \"npm:dev:web\" \"npm:dev:api\"",
+    "dev:web": "vite --host 127.0.0.1",
+    "dev:api": "tsx watch server/index.ts",
+    "build": "tsc --noEmit && vite build",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "tsx server/index.ts --open",
+    "test:release": "node scripts/release-smoke.mjs",
+    "release:prepare": "node scripts/prepare-public.mjs"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.15",
+    "express": "^5.2.1",
+    "ipaddr.js": "^2.3.0",
+    "lucide-react": "^1.47.0",
+    "marked": "^18.0.13",
+    "openai": "^7.20.0",
+    "parse5": "^8.0.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "jsdom": "^29.1.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.14.1 <25",
+    "npm": ">=11 <12"
+  }
+}

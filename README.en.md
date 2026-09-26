@@ -26,7 +26,7 @@ Got it is an AI reading tool built around Markdown articles.
 | A company, product, or subject you don't recognize | Learn what it is, what it does, and how it relates to the article. |
 | A claim or figure with unclear support | Find relevant sources, see how the evidence relates to the claim, and identify remaining gaps. |
 | An explanation that still feels difficult | Ask for a shorter explanation or a simple example. |
-| An explanation worth keeping | Save it as a knowledge card linked to the passage and export it as Markdown. |
+| An explanation worth keeping | Keep it as a knowledge card linked to the passage, saved with your reading progress. |
 
 Web-based verification requires an AI connection that supports search. When evidence is insufficient, Got it makes that uncertainty visible rather than treating an AI answer as an established fact.
 
@@ -37,7 +37,23 @@ Web-based verification requires an AI connection that supports search. When evid
 3. **Make sense of it beside the text.** Read the answer, request a simpler explanation or example, or inspect the sources.
 4. **Keep reading.** Mark the question as understood and return to the article. Save anything worth revisiting as a knowledge card.
 
-Notes remain linked to their original passages and are saved locally in your current browser, so you can reopen them later. The current version exports knowledge cards separately and does not modify the original Markdown file.
+Notes remain linked to their original passages and are saved in a local on-disk reading library. Browser storage retains preferences and an emergency recovery cache. The original Markdown file is not modified. Legacy `.focus` and complete JSON backups can still be imported; the current UI does not offer an export/download button.
+
+## Run locally
+
+Early preview (v0.1.0). Requires Node.js **24.14.1 / Node 24**, npm **11.x**, and a locally installed, signed-in Codex. macOS Apple Silicon has been tested; Windows/Linux remain experimental pending native UI validation.
+
+```bash
+npm ci
+npm run build
+npm start
+```
+
+Keep the terminal open and visit <http://127.0.0.1:8787/>. Do not expose the local API to the public internet. AI requests require network access and your own Codex account; local storage does not mean offline AI.
+
+The [Chinese README](README.md) includes four real screenshots, setup details and known limitations. See the [release checklist](docs/release-checklist.md), [validation results](docs/release-results.md), and [security notes](SECURITY.md). Screenshot report figures are unverified input, not endorsed research conclusions.
+
+Source code is available under the [MIT License](LICENSE).
 
 ---
 

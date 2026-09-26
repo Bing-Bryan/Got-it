@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/
+*.log
+
+# Local design experiments and public distribution staging
+output/
+release/

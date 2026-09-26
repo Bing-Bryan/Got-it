@@ -1,0 +1,9 @@
+{"type": "thread.started", "thread_id": "redacted"}
+{"type": "turn.started"}
+{"type": "item.completed", "item": {"id": "item_0", "type": "agent_message", "text": "[public answer omitted]"}}
+{"type": "item.started", "item": {"id": "exec-445ac30d-28d6-413a-92b8-1a6cd0f493b8", "type": "web_search", "query": "", "action": {"type": "other"}}}
+{"type": "item.completed", "item": {"id": "exec-445ac30d-28d6-413a-92b8-1a6cd0f493b8", "type": "web_search", "query": "site.cern.ch World Wide Web public domain 30 April 1993", "action": {"type": "search", "query": "site.cern.ch World Wide Web public domain 30 April 1993"}}}
+{"type": "item.started", "item": {"id": "exec-a4f377ed-7b1f-49ec-96d5-0f0fff84ed7e", "type": "web_search", "query": "", "action": {"type": "other"}}}
+{"type": "item.completed", "item": {"id": "exec-a4f377ed-7b1f-49ec-96d5-0f0fff84ed7e", "type": "web_search", "query": "https://web30.web.cern.ch/web-history.html", "action": {"type": "other"}}}
+{"type": "item.completed", "item": {"id": "item_3", "type": "agent_message", "text": "[public answer omitted]"}}
+{"type": "turn.completed"}
