@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
 import type { useReadingLibrary } from './useReadingLibrary';
 import { inquiryContent, sameOriginal } from './lib/reading-recovery';
 import { renderMarkdown } from './lib/markdown';
 import { STATUS_META, INTENT_META, type Inquiry, type Workspace } from './types';
 
+const PdfReader=lazy(()=>import("./PdfReader"));
 type Library = ReturnType<typeof useReadingLibrary>;
 function Markdown({text}:{text:string}) {
   const html=useMemo(()=>renderMarkdown(text).html,[text]);
   return <div className="answer-markdown" dangerouslySetInnerHTML={{__html:html}} />;
 }
-const labels:Record<string,string>={id:'编号',title:'标题',url:'链接',domain:'网站',snippet:'摘要',excerpt:'来源片段',excerptKind:'片段类型',retrievalStatus:'引用核对',relation:'与主张的关系',checkedAt:'核对时间',locatable:'可定位原文',websiteRole:'网站角色',publisher:'发布者',publishedAt:'发布时间',origin:'来源类型',reliability:'可靠性',reliabilityReasons:'可靠性依据',scope:'适用范围',differences:'差异',applicability:'适用程度',verdict:'结论',summary:'总结',reason:'理由',readingAdvice:'阅读建议',claims:'具体主张',text:'主张',sourceIds:'关联来源',round:'轮次',parentMessageId:'前轮回答',completion:'完成状态',changeNote:'变化说明'};
+const labels:Record<string,string>={explanationMode:'解释模式',id:'编号',title:'标题',url:'链接',domain:'网站',snippet:'摘要',excerpt:'来源片段',excerptKind:'片段类型',retrievalStatus:'引用核对',relation:'与主张的关系',checkedAt:'核对时间',locatable:'可定位原文',websiteRole:'网站角色',publisher:'发布者',publishedAt:'发布时间',origin:'来源类型',reliability:'可靠性',reliabilityReasons:'可靠性依据',scope:'适用范围',differences:'差异',applicability:'适用程度',verdict:'结论',summary:'总结',reason:'理由',readingAdvice:'阅读建议',claims:'具体主张',text:'主张',sourceIds:'关联来源',round:'轮次',parentMessageId:'前轮回答',completion:'完成状态',changeNote:'变化说明'};
 const values:Record<string,string>={supported:'支持',partial:'部分支持',conflicting:'存在冲突',insufficient:'证据不足',incomplete:'未完成',quote:'原文引用',summary:'摘要',unverified:'未核对',matched:'匹配',mismatch:'不匹配',unavailable:'无法读取',unsupported:'暂不支持','not-read':'未读取',supports:'支持',conflicts:'冲突',related:'相关',unknown:'未知',official:'官方',reference:'参考',original:'原始',secondary:'二手',strong:'较强',moderate:'中等',uncertain:'不确定',direct:'直接',background:'背景',irrelevant:'不适用',initial:'首次',expanded:'扩展',provisional:'暂定',complete:'完成',interrupted:'中断'};
 function DetailFields({value}:{value:unknown}) {
   if(Array.isArray(value))return <ul>{value.map((v,i)=><li key={i}><DetailFields value={v}/></li>)}</ul>;
@@ -38,10 +39,10 @@ function InquiryPreview({inquiry,other}:{inquiry:Inquiry;other?:Inquiry}) {
     {inquiry.lastError ? <p>{inquiry.lastError}</p> : null}
   </details>;
 }
-function Snapshot({workspace,other}:{workspace:Workspace;other?:Workspace}) {
+function Snapshot({workspace,other,entryId}:{workspace:Workspace;other?:Workspace;entryId:string}) {
   const others = new Map(other?.inquiries.map(i=>[i.id,i]));
   return <>
-    <details className="recovery-original"><summary>查看原文 · {workspace.document.filename}</summary><Markdown text={workspace.document.markdown} /></details>
+    <details className="recovery-original"><summary>查看原文 · {workspace.document.filename}</summary>{workspace.document.kind === "pdf" ? <Suspense fallback={<p>正在加载原页…</p>}><PdfReader document={workspace.document} entryId={entryId} inquiries={workspace.inquiries} readOnly/></Suspense> : <Markdown text={workspace.document.markdown} />}</details>
     <p>{workspace.inquiries.length} 张知识贴</p>
     {workspace.inquiries.map(i=><InquiryPreview key={i.id} inquiry={i} other={others.get(i.id)} />)}
     {!workspace.inquiries.length ? <p>这份记录没有知识贴。</p> : null}
@@ -66,12 +67,12 @@ export function ReadingRecoveryView({library}:{library:Library}) {
     <div className="recovery-columns">
       <section><h3>上次未保存的阅读记录</h3><p>记录时间：未知（不以时间判断新旧）</p>
         {pending ? <><p>{separate ? '继续后将另存为未关联原文件的阅读条目，原条目保持。' : '继续后用于当前材料；另一份保留可回看。'}</p><button type="button" disabled={library.busy || (!!record.intent && record.intent.choice !== 'draft')} onClick={()=>void library.resolveRecovery('draft')}>继续这份阅读记录</button></> : null}
-        <Snapshot workspace={record.draft.workspace} other={record.disk?.workspace} />
+        <Snapshot entryId={record.entryId} workspace={record.draft.workspace} other={record.disk?.workspace} />
       </section>
       <section><h3>已保存的阅读记录</h3>
-        {record.disk ? <>{pending ? <><p>继续后保留上次未保存的那份，可随时回看。</p><button type="button" disabled={library.busy || (!!record.intent && record.intent.choice !== 'disk')} onClick={()=>void library.resolveRecovery('disk')}>继续已保存的记录</button></> : null}<Snapshot workspace={record.disk.workspace} other={record.draft.workspace} /></> : <p>这份记录暂时无法读取，未用空白内容代替。</p>}
+        {record.disk ? <>{pending ? <><p>继续后保留上次未保存的那份，可随时回看。</p><button type="button" disabled={library.busy || (!!record.intent && record.intent.choice !== 'disk')} onClick={()=>void library.resolveRecovery('disk')}>继续已保存的记录</button></> : null}<Snapshot entryId={record.entryId} workspace={record.disk.workspace} other={record.draft.workspace} /></> : <p>这份记录暂时无法读取，未用空白内容代替。</p>}
       </section>
     </div>
-    {record.previous.length ? <details><summary>核对期间保留的其他记录（{record.previous.length}）</summary>{record.previous.map((s,i)=><section key={i}><h3>核对时的记录 {i+1} · 只读</h3><Snapshot workspace={s.workspace} /></section>)}</details> : null}
+    {record.previous.length ? <details><summary>核对期间保留的其他记录（{record.previous.length}）</summary>{record.previous.map((s,i)=><section key={i}><h3>核对时的记录 {i+1} · 只读</h3><Snapshot entryId={record.entryId} workspace={s.workspace} /></section>)}</details> : null}
   </dialog>;
 }

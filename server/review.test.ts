@@ -146,3 +146,8 @@ describe('abort and expanded budget boundaries',()=>{
  });
 
 });
+
+it.each(['年份不同','地区不同'])('does not upgrade mismatched %s background into direct support',difference=>{
+ const scoped={...source,scope:difference==='年份不同'?'2023年统计':'甲地区样本',differences:[difference],applicability:'background' as const,excerptKind:'quote' as const,retrievalStatus:'matched' as const};
+ const result=reconcile(response([scoped]),true);expect(result.verification?.verdict).not.toBe('supported');expect(result.sources[0].differences).toContain(difference);
+});

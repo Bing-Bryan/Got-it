@@ -1,3 +1,4 @@
+import { copyPdfDocument, copyPdfLocation, insidePage } from "./pdf-data";
 import { copyActiveTab } from "./inquiry-tabs";
 import { copyModelPreferences } from "./model-routing";
 import { copyOperation, copyVerification, copyTimings } from "./verification";
@@ -40,7 +41,7 @@ function providerId(value: unknown): value is ProviderId {
 }
 
 function isAnchor(value: unknown): value is Anchor {
-  if (!isRecord(value)) return false;
+  if (!isRecord(value) || (value.pdf !== undefined && !copyPdfLocation(value.pdf))) return false;
   return (
     stringField(value.documentId) &&
     stringField(value.blockId) &&
@@ -60,7 +61,7 @@ function isDocument(value: unknown): value is DocumentSnapshot {
   return (
     stringField(value.id) &&
     stringField(value.filename) &&
-    stringField(value.markdown) &&
+    (value.kind === "pdf" ? !!copyPdfDocument(value.pdf) && value.contentHash === (value.pdf as {resourceId:string}).resourceId : (value.kind === undefined || value.kind === "markdown") && stringField(value.markdown)) &&
     stringField(value.importedAt) &&
     stringField(value.contentHash) &&
     typeof value.isDemo === "boolean"
@@ -134,7 +135,7 @@ function isInquiry(value: unknown): value is Inquiry {
 function isWorkspace(value: unknown): value is Workspace {
   if (!isRecord(value)) return false;
   return (
-    value.schemaVersion === SCHEMA_VERSION &&
+    (value.schemaVersion === 1 || value.schemaVersion === SCHEMA_VERSION) &&
     isDocument(value.document) &&
     Array.isArray(value.inquiries) &&
     value.inquiries.every(isInquiry) &&
@@ -151,6 +152,7 @@ function optionalString(value: string | undefined): string | undefined {
 
 function copyAnchor(anchor: Anchor): Anchor {
   return {
+    ...(anchor.pdf ? { pdf: copyPdfLocation(anchor.pdf)! } : {}),
     ...(anchor.textVersion === 2 ? { textVersion: 2 as const } : {}),
     documentId: anchor.documentId,
     blockId: anchor.blockId,
@@ -224,12 +226,9 @@ export function sanitizeWorkspace(workspace: Workspace): Workspace {
     schemaVersion: SCHEMA_VERSION,
     ...(workspace.modelDefaultsVersion === 2 || workspace.modelDefaultsVersion === 3 ? { modelDefaultsVersion: workspace.modelDefaultsVersion } : {}),
     document: {
-      id: workspace.document.id,
-      filename: workspace.document.filename,
-      markdown: workspace.document.markdown,
-      importedAt: workspace.document.importedAt,
-      contentHash: workspace.document.contentHash,
-      isDemo: workspace.document.isDemo,
+      id: workspace.document.id, filename: workspace.document.filename,
+      importedAt: workspace.document.importedAt, contentHash: workspace.document.contentHash, isDemo: workspace.document.isDemo,
+      ...(workspace.document.kind === 'pdf' ? {kind:'pdf' as const,pdf:copyPdfDocument(workspace.document.pdf)!} : {markdown:workspace.document.markdown}),
     },
     inquiries: workspace.inquiries.map(copyInquiry),
     activeInquiryId: workspace.activeInquiryId,
@@ -254,6 +253,11 @@ function getDefaultStorage(): StorageLike | null {
 /** Validate and restore a safe snapshot without replaying interrupted requests. */
 export function restoreWorkspace(value: unknown): Workspace | null {
   if (!isWorkspace(value)) return null;
+  if (value.inquiries.some(i => {
+    if (value.document.kind !== 'pdf') return !!i.anchor.pdf;
+    const a = i.anchor.pdf, page = a && value.document.pdf.pages[a.page-1];
+    return !a || a.fileHash !== value.document.contentHash || !page || !a.rects.every(r=>insidePage(r,page));
+  })) return null;
   const workspace = sanitizeWorkspace(value);
   workspace.inquiries = workspace.inquiries.map(inquiry => {
     const interrupted = inquiry.status === "answering" || inquiry.messages.some(m => m.completion === "provisional" || m.verification?.completion === "provisional");

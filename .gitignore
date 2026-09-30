@@ -10,3 +10,7 @@ coverage/
 # Local design experiments and public distribution staging
 output/
 release/
+
+# Generated local PDF / OCR runtime assets
+public/pdf-assets/
+public/.pdf-assets-*/

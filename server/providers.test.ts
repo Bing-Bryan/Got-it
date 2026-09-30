@@ -135,7 +135,7 @@ describe("ProviderService", () => {
     await service.answer(inquiry("codex", "verify"));
 
     const execArgs = calls.find((args) => args.includes("exec"));
-    expect(execArgs?.slice(0, 4)).toEqual(["-c", 'model_reasoning_effort="medium"', "--search", "exec"]);
+    expect(execArgs?.slice(0, 6)).toEqual(["-c", 'model_reasoning_effort="medium"', "-c", 'web_search="live"', "--search", "exec"]);
     expect(execArgs?.at(-1)).toContain("允许使用 Codex 提供的联网搜索");
   });
 

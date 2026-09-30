@@ -91,7 +91,7 @@ describe("workspace storage", () => {
     const raw = storage.getItem(WORKSPACE_STORAGE_KEY)!;
     expect(raw).not.toContain("should-never-be-persisted");
     expect(raw).not.toContain("also-secret");
-    expect(loadWorkspace(storage)).toEqual(workspace());
+    expect(loadWorkspace(storage)).toEqual({...workspace(),schemaVersion:2});
   });
 
   it("returns null for corrupted or incompatible data without throwing", () => {

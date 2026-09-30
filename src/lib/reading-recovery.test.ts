@@ -31,3 +31,9 @@ describe('recovery comparison and emergency drafts',()=>{
   expect(localStorage.getItem('got-it.library.draft.v2.broken')).toBe('not json');
  });
 });
+
+it('reopens internal PDF emergency records without treating resource references as a portable file',()=>{
+ const entry=e(),hash='a'.repeat(64);entry.workspace.document={id:'pdf',filename:'safe.pdf',isDemo:false,importedAt:'2026',contentHash:hash,kind:'pdf',pdf:{resourceId:hash,pages:[{view:[0,0,400,300],rotation:0}]}};entry.workspace.inquiries=[];
+ const store=new DraftStore(localStorage,'pdf-tab');const record=store.write(entry,entry.workspace,{ratio:.4,pdfPage:1,pdfZoom:2,pdfLeft:70});
+ const reopened=new DraftStore(localStorage).read();expect(reopened.invalid).toBe(false);expect(reopened.drafts[0].draft.workspace.document).toEqual(entry.workspace.document);expect(reopened.drafts[0].draft.position.pdfLeft).toBe(70);store.remove(record);expect(store.read().drafts).toHaveLength(0);
+});

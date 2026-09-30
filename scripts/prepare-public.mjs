@@ -2,7 +2,7 @@
 import { cp, mkdir, readFile, readdir, lstat, writeFile } from 'node:fs/promises';
 import { resolve, join, relative } from 'node:path';
 import { createHash } from 'node:crypto';
-const roots = ['src', 'server', 'scripts', '.github', 'docs/images',
+const roots = ['src', 'server', 'scripts', '.github', 'docs/images', 'docs/updates',
   'docs/release-checklist.md', 'docs/release-results.md', 'SECURITY.md', 'LICENSE',
   'README.md', 'README.en.md', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts',
   'index.html', '.env.example', '.gitignore', '.nvmrc'];

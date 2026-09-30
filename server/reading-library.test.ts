@@ -36,11 +36,11 @@ describe("disk reading library",()=>{
     expect(a.workspace.inquiries[0].messages[0].completion).toBe("interrupted");
     expect(JSON.stringify(a.workspace)).not.toContain("SECRET"); expect(JSON.stringify(a.workspace)).not.toContain("PRIVATE");
     const duplicate=await add(s.library,"again"); expect(duplicate.id).toBe(a.id);
-    const other=join(s.dir,"other"); await mkdir(other); const otherFile=join(other,"中文 报告.md"); await writeFile(otherFile,a.workspace.document.markdown); s.choosePath(otherFile);
+    const other=join(s.dir,"other"); await mkdir(other); const otherFile=join(other,"中文 报告.md"); await writeFile(otherFile,a.workspace.document.markdown!); s.choosePath(otherFile);
     const b=await add(s.library,"b"); expect(b.id).not.toBe(a.id); await s.library.activate(a.id);
     const restored=new ReadingLibrary(s.library.dir); const list=await restored.list(); expect(list.entries).toHaveLength(2); expect(list.activeId).toBe(a.id);
     expect((await restored.get(a.id)).position.ratio).toBe(.5);
-    expect(await readFile(s.source,"utf8")).toBe(a.workspace.document.markdown);
+    expect(await readFile(s.source,"utf8")).toBe(a.workspace.document.markdown!);
   });
   it("rejects stale writes and wrong document graphs without losing committed data",async()=>{
     const {library:l}=await setup(); const e=await add(l); await saveFixture(l,e);
@@ -101,7 +101,7 @@ describe("disk reading library",()=>{
     const f=(await s.library.choose())!; const w=await readDocumentFile({name:f.filename,size:1,text:async()=>f.content}); await s.library.add(w,"one",f.selectionId);
     await expect(s.library.add(w,"two",f.selectionId)).rejects.toThrow(/过期/);
     await writeFile(s.source,""); await expect(s.library.choose()).rejects.toThrow(/空/);
-    await writeFile(s.source,"a".repeat(20*1024*1024+1)); await expect(s.library.choose()).rejects.toThrow(/20MiB/);
+    await writeFile(s.source,"a".repeat(20*1024*1024+1)); await expect(s.library.choose()).rejects.toThrow(/20\s?MiB/);
     expect(pickerError({stderr:"cancel (-128)"})).toBeNull(); expect(pickerError({stderr:"private-path permission denied"})?.message).not.toContain("private-path"); expect(pickerError({killed:true})?.status).toBe(408);
   });
   it("distinguishes permission failures from missing files (controlled fixture)",async()=>{

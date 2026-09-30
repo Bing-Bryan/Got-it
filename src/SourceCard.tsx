@@ -4,7 +4,7 @@ import { Copy, ExternalLink } from "lucide-react";
 import type { Source } from "./types";
 import { EXCERPT_LABELS, RELATION_LABELS, RETRIEVAL_LABELS, safeSourceUrl, sourceLocation } from "./lib/evidence";
 
-export function SourceCard({ source, sourceFirst = false }: { source: Source; sourceFirst?: boolean }) {
+export function SourceCard({ source, sourceFirst = false, explanation = false }: { source: Source; sourceFirst?: boolean; explanation?: boolean }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const url = safeSourceUrl(source.url);
   const location = sourceLocation(source);
@@ -44,7 +44,8 @@ export function SourceCard({ source, sourceFirst = false }: { source: Source; so
       {quote && excerpt ? <button type="button" onClick={() => void copy()}><Copy size={12} />复制引用</button> : null}
     </div>
     {quote && !sourceFirst ? <small className="source-location-help">引用文字已核对只确认文字存在，不代表原句成立。定位取决于网页与浏览器；未跳转时可复制引用查找。</small> : null}
-    {sourceFirst ? <details className="verification-record"><summary>历史评估记录</summary>
+    {explanation ? <small className="source-details">{RETRIEVAL_LABELS[source.retrievalStatus ?? "not-read"]}</small> : null}
+    {sourceFirst && !explanation ? <details className="verification-record"><summary>历史评估记录</summary>
     <div className="source-assessment">
       <strong>可靠性评估：{source.reliability ? RELIABILITY_LABELS[source.reliability] : "尚未评估"}</strong>
       <p>{source.reliabilityReasons?.join("；") || "尚无可审查的可靠性理由。"}</p>

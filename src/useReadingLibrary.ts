@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Workspace } from "./types";
 import { migrateHighlightAnchors } from "./lib/anchor-migration";
 import { readDocumentFile } from "./lib/reading-document";
-import { libraryRequest as api } from "./lib/library-client";
+import { libraryRequest as api, libraryBinary } from "./lib/library-client";
 import type { LibraryEntry, LibraryList, ReadingPosition, SelectedFile, SourceCheck } from "./lib/library-types";
 
 import { DraftStore, readingKey, withPreferences, type StoredDraft, type RecoveryRecord, type RecoverySummary, type RecoveryResult } from "./lib/reading-recovery";
@@ -16,12 +16,18 @@ export function capturePosition(): ReadingPosition {
   if (!el) return { ratio: 0 };
   const top = el.getBoundingClientRect().top;
   const block = [...el.querySelectorAll<HTMLElement>("[data-block-id]")].find(n => n.getBoundingClientRect().bottom > top);
-  return { ratio: el.scrollTop / Math.max(1, el.scrollHeight - el.clientHeight), ...(block ? { blockId: block.dataset.blockId, offset: block.getBoundingClientRect().top - top } : {}) };
+  const pdf = el.querySelector<HTMLElement>(".pdf-reader");
+  return { ...(pdf?{pdfPage:Number(block?.closest<HTMLElement>("[data-pdf-page]")?.dataset.pdfPage??1),pdfZoom:0,pdfLeft:0}:{}), ratio: el.scrollTop / Math.max(1, el.scrollHeight - el.clientHeight), ...(block ? { blockId: block.dataset.blockId, offset: block.getBoundingClientRect().top - top } : {}) };
 }
 export function restorePosition(p: ReadingPosition) {
   const el = document.querySelector<HTMLElement>(".reader-scroll"); if (!el) return;
   const block = [...el.querySelectorAll<HTMLElement>("[data-block-id]")].find(n => n.dataset.blockId === p.blockId);
-  el.scrollTop = block ? el.scrollTop + block.getBoundingClientRect().top - el.getBoundingClientRect().top - (p.offset || 0) : p.ratio * Math.max(0, el.scrollHeight - el.clientHeight);
+  const legacyPdf = !block && p.pdfPage ? el.querySelector<HTMLElement>(`[data-pdf-page="${p.pdfPage}"]`) : null;
+  const top = legacyPdf ? el.scrollTop + legacyPdf.getBoundingClientRect().top - el.getBoundingClientRect().top + p.ratio * Math.max(0,legacyPdf.clientHeight-el.clientHeight) : block ? el.scrollTop + block.getBoundingClientRect().top - el.getBoundingClientRect().top - (p.offset || 0) : p.ratio * Math.max(0, el.scrollHeight - el.clientHeight);
+  const left = el.querySelector(".pdf-reader") ? 0 : p.pdfLeft ?? el.scrollLeft;
+  // Restore both axes together; two smooth property writes cancel the first axis.
+  if (typeof el.scrollTo === "function") el.scrollTo({left,top,behavior:"instant"});
+  else { el.scrollLeft=left;el.scrollTop=top; }
 }
 interface Options { workspace: Workspace; install: (w: Workspace) => void; interrupt: () => Workspace }
 export function useReadingLibrary(options: Options) {
@@ -162,13 +168,13 @@ export function useReadingLibrary(options: Options) {
   async function importFile(file: File) {
     if (busyRef.current || !ready) return;
     const sequence = ++importSequence.current;
-    try { const w = await readDocumentFile(file); if (sequence !== importSequence.current) return; await transition(() => addWorkspace(w)); }
+    try { if(file.name.toLowerCase().endsWith('.pdf')){if(file.size>50*1024*1024)throw new Error('PDF 须不超过 50 MiB。');await transition(async()=>{const selected:SelectedFile=await (await libraryBinary('/pdf?filename='+encodeURIComponent(file.name),new Blob([file],{type:'application/pdf'}))).json();await addWorkspace(selected.workspace!,selected.selectionId);});return;} const w = await readDocumentFile(file); if (sequence !== importSequence.current) return; await transition(() => addWorkspace(w)); }
     catch (e) { if (sequence === importSequence.current) setError(message(e)); }
   }
   async function choose(relink = false) {
     await transition(async () => {
       const selected = await api<SelectedFile | null>("/choose", {}); if (!selected) return;
-      if (!relink) { await addWorkspace(await readDocumentFile({ name: selected.filename, size: new TextEncoder().encode(selected.content).length, text: async () => selected.content }), selected.selectionId); return; }
+      if (!relink) { await addWorkspace(selected.workspace ?? await readDocumentFile({ name: selected.filename, size: new TextEncoder().encode(selected.content).length, text: async () => selected.content }), selected.selectionId); return; }
       await preserve(); const e = entryRef.current; if (!e) return;
       const result = await api<{ entry: LibraryEntry; check: SourceCheck }>(`/entries/${e.id}/relink`, { selectionId: selected.selectionId, expectedVersion: e.version });
       remember(result.entry); setCheck(result.check); await refresh();
@@ -279,7 +285,7 @@ export function useReadingLibrary(options: Options) {
     if (!timer.current) timer.current = setTimeout(() => { timer.current = null; void flush().catch(() => {}); }, 500);
   }
   useEffect(()=> { if (!notice) return; const id=setTimeout(()=>setNotice(""),4500); return ()=>clearTimeout(id); },[notice]);
-  return { entry, list, ready, busy, error, status, check, recovery, recoveries, blocked, draftWarning, notice, historyId,
+  return { initialPosition: desiredPosition.current, entry, list, ready, busy, error, status, check, recovery, recoveries, blocked, draftWarning, notice, historyId,
     readOnly: !!historyId || !!recovery || blocked || busy,
     open, choose, importFile, checkSource: () => transition(checkSource), acceptUpdate, viewRevision, resolveRecovery, showRecovery, closeRecovery,
     retry: () => ready && !blockedDraft.current ? transition(() => flush()) : initialize(),

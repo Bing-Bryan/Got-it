@@ -15,7 +15,8 @@ export function parseModelPage(value: unknown): { models: CodexModel[]; nextCurs
     if (v.hidden === true || typeof v.displayName !== "string" || !Array.isArray(v.supportedReasoningEfforts)) continue;
     const efforts = v.supportedReasoningEfforts.filter((e: any) => copyModelConfig({model:v.model,reasoningEffort:e?.reasoningEffort})).map((e: any) => ({reasoningEffort:e.reasoningEffort,description:typeof e.description === "string" ? e.description.slice(0,500) : ""}));
     if (!efforts.length || !efforts.some((e: any)=>e.reasoningEffort === v.defaultReasoningEffort)) continue;
-    models.push({model:v.model,displayName:v.displayName.slice(0,200),description:typeof v.description === "string" ? v.description.slice(0,1000) : "",defaultReasoningEffort:v.defaultReasoningEffort,supportedReasoningEfforts:efforts,isDefault:v.isDefault === true});
+    const inputModalities = v.inputModalities === undefined ? undefined : Array.isArray(v.inputModalities) ? [...new Set(v.inputModalities.filter((m: unknown) => m === 'text' || m === 'image'))] as Array<'text' | 'image'> : [];
+    models.push({model:v.model,displayName:v.displayName.slice(0,200),description:typeof v.description === "string" ? v.description.slice(0,1000) : "",defaultReasoningEffort:v.defaultReasoningEffort,supportedReasoningEfforts:efforts,isDefault:v.isDefault === true,...(inputModalities === undefined ? {} : {inputModalities})});
   }
   return { models, nextCursor: page.nextCursor as string | null ?? null };
 }

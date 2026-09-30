@@ -17,9 +17,8 @@ export function localOriginGuard(request: Request, response: Response, next: Nex
   next();
 }
 
-export function libraryRouter(library: ReadingLibrary) {
+export function libraryRouter(library: ReadingLibrary, token = randomBytes(32).toString("hex")) {
   const router = express.Router();
-  const token = randomBytes(32).toString("hex");
   router.use((_req, res, next) => { res.setHeader("Cache-Control", "no-store"); next(); });
   router.post("/session", (req, res) => {
     // JSON is required even for bootstrap: cross-site simple forms cannot obtain a session.
@@ -28,7 +27,7 @@ export function libraryRouter(library: ReadingLibrary) {
   });
   router.use((req, res, next) => {
     if (req.headers["x-got-it-session"] !== token) { res.status(401).json({ error: "阅读会话已过期，请重试。" }); return; }
-    if (req.method !== "GET" && !req.is("application/json")) { res.sendStatus(415); return; }
+    if (req.method !== "GET" && !req.is("application/json") && !(req.path === "/pdf" && req.is("application/pdf")) && !(/^\/entries\/[^/]+\/crops$/.test(req.path) && req.is("image/png"))) { res.sendStatus(415); return; }
     next();
   });
   router.use(express.json({ limit: "24mb" }));
@@ -36,6 +35,13 @@ export function libraryRouter(library: ReadingLibrary) {
     try { res.json(await fn(req)); } catch (error) { const e = libraryFailure(error); res.status(e.status).json({ error: e.message, code: e.code }); }
   };
   const id = (req: Request) => String(req.params.id);
+  router.post("/pdf", express.raw({type:"application/pdf",limit:"50mb"}), action(req=>library.uploadPdf(String(req.query.filename||"document.pdf"),req.body)));
+  router.post("/entries/:id/ocr", action(req=>library.resources.ocr(id(req),req.body)));
+  router.post("/entries/:id/crops", express.raw({type:"image/png",limit:"8mb"}), action(req=>library.resources.crop(id(req),String(req.query.fileHash),Number(req.query.page),JSON.parse(String(req.query.rect)),req.body)));
+  router.get("/entries/:id/resources/:resource", async(req,res)=>{
+    try { const {meta,bytes}=await library.resources.read(id(req),String(req.params.resource));res.type(meta.kind==="pdf"?"application/pdf":meta.kind==="crop"?"image/png":"application/json").send(bytes); }
+    catch(error){const e=libraryFailure(error);res.status(e.status).json({error:e.message,code:e.code});}
+  });
   router.get("/", action(() => library.list()));
   router.get("/recoveries", action(() => library.listRecoveries()));
   router.get("/recoveries/:id", action(req => library.getRecovery(id(req))));

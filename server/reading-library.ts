@@ -1,3 +1,6 @@
+import { PdfResources } from "./pdf-resources";
+import { MAX_PDF_BYTES } from "../src/lib/pdf-data";
+import { createInitialWorkspace } from "../src/sample";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, realpath, rename, rm } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -14,12 +17,12 @@ const now = () => new Date().toISOString();
 const fail = (message: string, status = 400, code = "library_error"): never => { throw new LibraryError(message, status, code); };
 const safeWorkspace = (value: unknown): Workspace => {
   // Portable codec validates the complete graph and projects every persisted field.
-  try { return parseReadingDocument(JSON.stringify(value), true); }
+  try { return parseReadingDocument(JSON.stringify(value), true, true); }
   catch { return fail("阅读记录格式或关联无效，未覆盖已保存内容。"); }
 };
 function position(value: unknown): ReadingPosition {
   const v = value as Partial<ReadingPosition> | null;
-  return { ratio: Number.isFinite(v?.ratio) ? Math.max(0, Math.min(1, v!.ratio!)) : 0,
+  return { ...(Number.isInteger(v?.pdfPage) && v!.pdfPage!>=1 && v!.pdfPage!<=200 ? {pdfPage:v!.pdfPage} : {}), ...(Number.isFinite(v?.pdfZoom) && v!.pdfZoom!>=0 && v!.pdfZoom!<=4 ? {pdfZoom:v!.pdfZoom} : {}), ...(Number.isFinite(v?.pdfLeft) ? {pdfLeft:Math.max(0,Math.min(100000,v!.pdfLeft!))} : {}), ratio: Number.isFinite(v?.ratio) ? Math.max(0, Math.min(1, v!.ratio!)) : 0,
     ...(typeof v?.blockId === "string" && v.blockId.length < 200 ? { blockId: v.blockId } : {}),
     ...(Number.isFinite(v?.offset) ? { offset: Math.max(-100000, Math.min(100000, v!.offset!)) } : {}) };
 }
@@ -28,12 +31,13 @@ export function defaultLibraryDir() {
 }
 import { readingContent, viewKey, sameOriginal, withPreferences, type ReadingDraft, type RecoveryRecord, type RecoveryResult, type RecoverySnapshot, type RecoverySummary } from "../src/lib/reading-recovery";
 
-interface Candidate { source: LibrarySource; filename: string; content: string; expires: number; entryId?: string }
+interface Candidate { workspace?: Workspace; source: LibrarySource | null; filename: string; content: string; expires: number; entryId?: string }
 export class ReadingLibrary {
   private queue: Promise<unknown> = Promise.resolve();
   private selections = new Map<string, Candidate>();
   private choosing = false;
-  constructor(public readonly dir = defaultLibraryDir(), private picker: FilePicker = pickLocalFile, private clock = Date.now) {}
+  readonly resources: PdfResources;
+  constructor(public readonly dir = defaultLibraryDir(), private picker: FilePicker = pickLocalFile, private clock = Date.now) { this.resources = new PdfResources(join(dir, "resources")); }
   private serialize<T>(work: () => Promise<T>): Promise<T> {
     const next = this.queue.then(work); this.queue = next.catch(() => {}); return next;
   }
@@ -97,20 +101,31 @@ export class ReadingLibrary {
     const realPath = await realpath(path);
     if (expectedReal && realPath !== expectedReal) fail("原路径已指向其他文件，请重新定位。", 409, "source_reselect");
     const file = await open(realPath, constants.O_RDONLY | constants.O_NOFOLLOW);
-    let content: string;
+    let bytes: Buffer;
+    const pdf=extname(path).toLowerCase()===".pdf", limit=pdf?MAX_PDF_BYTES:MAX_READING_FILE_BYTES;
     try {
-      const s = await file.stat();
-      if (!s.isFile() || s.size > MAX_READING_FILE_BYTES) fail("请选择不超过20MiB的普通阅读文件。");
-      if (![".md", ".focus", ".json"].includes(extname(path).toLowerCase())) fail("请选择 Markdown 或阅读文档。");
-      const buffer = Buffer.alloc(MAX_READING_FILE_BYTES + 1);
-      let length = 0;
-      while (length < buffer.length) { const { bytesRead } = await file.read(buffer, length, buffer.length - length, null); if (!bytesRead) break; length += bytesRead; }
-      if (length > MAX_READING_FILE_BYTES) fail("文件超过20MiB。");
-      content = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, length));
-    } finally { await file.close(); }
-    if (!content.trim()) fail("文件内容为空。");
-    return { source: { path, realPath, hash: hash(content) }, filename: basename(path), content, expires: this.clock() + 300_000 };
+      const stat=await file.stat();
+      if(!stat.isFile()||stat.size>limit)fail(pdf?"PDF 须不超过 50 MiB。":"阅读文件须不超过 20 MiB。");
+      if(![".pdf",".md",".focus",".json"].includes(extname(path).toLowerCase()))fail("请选择 PDF、Markdown 或阅读文档。");
+      const buffer=Buffer.alloc(limit+1);let length=0;
+      while(length<buffer.length){const {bytesRead}=await file.read(buffer,length,buffer.length-length,null);if(!bytesRead)break;length+=bytesRead;}
+      if(length>limit)fail("文件超过格式容量限制。");bytes=buffer.subarray(0,length);
+    } finally {await file.close();}
+    const source={path,realPath,hash:createHash("sha256").update(bytes).digest("hex")};
+    if(pdf)return {source,filename:basename(path),content:"",workspace:await this.pdfWorkspace(basename(path),bytes),expires:this.clock()+300_000};
+    const content=new TextDecoder("utf-8",{fatal:true}).decode(bytes);if(!content.trim())fail("文件内容为空。");
+    return {source:{...source,hash:hash(content)},filename:basename(path),content,expires:this.clock()+300_000};
   }
+  private async pdfWorkspace(filename:string,bytes:Buffer):Promise<Workspace>{
+    const pdf=await this.resources.pdf(bytes),importedAt=now();
+    return {...createInitialWorkspace(),document:{kind:"pdf",id:randomUUID(),filename,importedAt,contentHash:pdf.resourceId,isDemo:false,pdf},updatedAt:importedAt,hasUnexportedChanges:false};
+  }
+  async uploadPdf(filename:string,bytes:Buffer):Promise<SelectedFile>{
+    const name=basename(filename).replace(/[\x00-\x1f]/g,"").slice(0,240);if(!name.toLowerCase().endsWith(".pdf"))fail("请选择 PDF 文件。");
+    const workspace=await this.pdfWorkspace(name,bytes),c:Candidate={source:null,filename:name,content:"",workspace,expires:this.clock()+300_000};
+    return {selectionId:this.ticket(c),filename:name,content:"",workspace};
+  }
+
   private ticket(candidate: Candidate) {
     for (const [id, c] of this.selections) if (c.expires < this.clock()) this.selections.delete(id);
     if (this.selections.size >= 20) fail("待确认文件过多，请稍后重试。");
@@ -128,8 +143,8 @@ export class ReadingLibrary {
       const path = await this.picker(); if (!path) return null;
       const c = await this.readSource(path);
       // Validate before issuing the one-time ticket; browser runs DOM anchor migration later.
-      await readDocumentFile({ name: c.filename, size: Buffer.byteLength(c.content), text: async () => c.content });
-      return { selectionId: this.ticket(c), filename: c.filename, content: c.content };
+      if (!c.workspace) await readDocumentFile({ name: c.filename, size: Buffer.byteLength(c.content), text: async () => c.content });
+      return { selectionId: this.ticket(c), filename: c.filename, content: c.content, ...(c.workspace?{workspace:c.workspace}:{}) };
     } finally { this.choosing = false; }
   }
   async add(value: unknown, creationKey: string, selectionId?: string) {
@@ -140,15 +155,22 @@ export class ReadingLibrary {
       const list = await this.list();
       for (const summary of list.entries) { const existing = await this.get(summary.id); if (existing.creationKey === creationKey) return existing; }
       let source: LibrarySource | null = null;
+      let pdfApproved=false;
       if (selectionId) {
         const candidate = this.consume(selectionId);
-        if (candidate.filename.toLowerCase().endsWith(".md")) {
+        if(candidate.workspace){
+          if(workspace.document.kind!=="pdf"||workspace.document.id!==candidate.workspace.document.id||workspace.document.contentHash!==candidate.workspace.document.contentHash||workspace.document.filename!==candidate.workspace.document.filename||workspace.inquiries.length)fail("PDF 导入票据不匹配。");
+          pdfApproved=true;source=candidate.source;
+          if(source)for(const summary of list.entries){const e=await this.get(summary.id);if(e.source?.realPath===source.realPath)return e;}
+        }else if (candidate.filename.toLowerCase().endsWith(".md")) {
           if (candidate.content !== workspace.document.markdown) fail("选择的原文与阅读快照不一致。");
           source = candidate.source;
-          for (const summary of list.entries) { const e = await this.get(summary.id); if (e.source?.realPath === source.realPath) return e; }
+          for (const summary of list.entries) { const e = await this.get(summary.id); if (e.source?.realPath === source?.realPath) return e; }
         }
       }
+      if(workspace.document.kind==="pdf"&&!pdfApproved)fail("PDF 需要先上传原始文件。");
       const entry: LibraryEntry = { id: randomUUID(), version: 1, revisionId: randomUUID(), source, workspace, position: { ratio: 0 }, history: [], updatedAt: now(), lastOpenedAt: now(), creationKey };
+      if(workspace.document.kind==="pdf"){await this.resources.grant(entry.id,workspace.document.pdf.resourceId);await this.resources.validate(entry.id,workspace);}
       return this.commit(entry);
     });
   }
@@ -156,7 +178,8 @@ export class ReadingLibrary {
     const workspace = safeWorkspace(value);
     return this.serialize(async () => {
       const e = await this.get(id); this.version(e, expectedVersion);
-      if (e.revisionId !== revisionId || e.workspace.document.id !== workspace.document.id || e.workspace.document.markdown !== workspace.document.markdown) fail("原文版本已变化，请重新打开。", 409);
+      if (e.revisionId !== revisionId || e.workspace.document.id !== workspace.document.id || e.workspace.document.kind !== workspace.document.kind || e.workspace.document.contentHash !== workspace.document.contentHash || e.workspace.document.markdown !== workspace.document.markdown) fail("原文版本已变化，请重新打开。", 409);
+      await this.resources.validate(id,workspace);
       e.workspace = workspace; e.position = position(view); e.version++; e.updatedAt = now(); return this.commit(e);
     });
   }
@@ -210,6 +233,7 @@ export class ReadingLibrary {
       || (v.id !== undefined && !uid(v.id)) || (v.baseDigest !== undefined && !/^[a-f0-9]{64}$/.test(v.baseDigest))) return fail("恢复记录格式无效。");
     const draft: ReadingDraft = { ...(v.id ? {id:v.id} : {}), entryId:id, version:v.version!, revisionId:v.revisionId!,
       ...(v.baseDigest ? {baseDigest:v.baseDigest} : {}), workspace:safeWorkspace(v.workspace), position:position(v.position) };
+    await this.resources.validate(id,draft.workspace);
     // Include content: reusing a client ID for a different snapshot must not lose either one.
     const recoveryId = hash(JSON.stringify([id,draft.id,draft.revisionId,readingContent(draft.workspace),viewKey(draft.workspace,draft.position)]));
     return this.serialize(async () => {
@@ -262,6 +286,7 @@ export class ReadingLibrary {
         r.intent = {choice,expectedVersion:actualVersion,target};
         await this.saveRecovery(r);
       }
+      await this.resources.clone(r.entryId,r.intent.target.id,r.intent.target.workspace);
       const entry = await this.commit(r.intent.target);
       r.state="resolved";r.choice=r.intent.choice;r.resultEntryId=entry.id;delete r.intent;
       await this.saveRecovery(r); return {record:r,entry};
@@ -272,7 +297,7 @@ export class ReadingLibrary {
     if (!e.source) return { status: "unlinked", message: "未关联原文件 · 当前为保存的阅读副本" };
     try {
       const c = await this.readSource(e.source.path, e.source.realPath);
-      if (c.source.hash === e.source.hash) return { status: "available", message: "原文件可用" };
+      if (c.source!.hash === e.source.hash) return { status: "available", message: "原文件可用" };
       return { status: "changed", message: "原文件内容已变化，当前显示保存版本。", candidateId: this.ticket({ ...c, entryId: id }) };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -286,9 +311,10 @@ export class ReadingLibrary {
     return this.serialize(async () => {
       const e = await this.get(id); this.version(e, expectedVersion);
       const c = this.consume(selectionId);
-      if (!c.filename.toLowerCase().endsWith(".md")) fail("请选择原始 Markdown 文件，不要选择备份文件。");
+      if(!c.source||(e.workspace.document.kind==="pdf"?!c.workspace:!c.filename.toLowerCase().endsWith(".md")))return fail("请选择同格式的原始文件，不要选择备份文件。");
       await this.noDuplicateSource(id, c.source);
-      if (hash(e.workspace.document.markdown) !== c.source.hash) return { entry: e, check: { status: "changed", message: "所选文件与保存版本不同，请确认是否更新。", candidateId: this.ticket({ ...c, entryId: id }) } };
+      if ((e.workspace.document.kind==="pdf"?e.workspace.document.contentHash:hash(e.workspace.document.markdown)) !== c.source.hash) return { entry: e, check: { status: "changed", message: "所选文件与保存版本不同，请确认是否更新。", candidateId: this.ticket({ ...c, entryId: id }) } };
+      if(c.workspace?.document.kind==="pdf")await this.resources.grant(id,c.workspace.document.pdf.resourceId);
       e.source = c.source; e.version++; await this.commit(e); return { entry: e, check: { status: "available", message: "已重新关联原文件" } };
     });
   }
@@ -298,10 +324,13 @@ export class ReadingLibrary {
   async updateSource(id: string, candidateId: string, expectedVersion: number) {
     return this.serialize(async () => {
       const e = await this.get(id); this.version(e, expectedVersion);
-      const c = this.consume(candidateId, id), fresh = await this.readSource(c.source.path, c.source.realPath);
-      if (fresh.source.hash !== c.source.hash) fail("原文件再次变化，请重新检查并确认。", 409);
+      const c=this.consume(candidateId,id);if(!c.source)return fail("原始路径不可用，请重新选择。");
+      const fresh=await this.readSource(c.source.path,c.source.realPath);
+      if (fresh.source!.hash !== c.source.hash) fail("原文件再次变化，请重新检查并确认。", 409);
       await this.noDuplicateSource(id, c.source);
-      const workspace = await readDocumentFile({ name: c.filename, size: Buffer.byteLength(c.content), text: async () => c.content });
+      const workspace = fresh.workspace ?? await readDocumentFile({ name: c.filename, size: Buffer.byteLength(c.content), text: async () => c.content });
+      if(workspace.document.kind==="pdf")await this.resources.grant(id,workspace.document.pdf.resourceId);
+      await this.resources.validate(id,workspace);
       e.history.push({ id: e.revisionId, savedAt: now(), workspace: e.workspace, position: e.position });
       e.revisionId = randomUUID(); e.workspace = workspace; e.position = { ratio: 0 }; e.source = c.source; e.version++; e.updatedAt = now();
       return this.commit(e);

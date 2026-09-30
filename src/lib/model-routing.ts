@@ -9,6 +9,11 @@ export interface CodexModel {
   defaultReasoningEffort: string;
   supportedReasoningEfforts: Array<{ reasoningEffort: string; description: string }>;
   isDefault: boolean;
+  /** Missing in older app-server versions; explicit lists must be respected. */
+  inputModalities?: Array<'text' | 'image'>;
+}
+export function modelAcceptsImage(model: CodexModel): boolean {
+  return model.inputModalities === undefined || model.inputModalities.includes('image');
 }
 export function supportsConfig(models: CodexModel[], config: ModelConfig): boolean {
   return models.some(m => m.model === config.model && m.supportedReasoningEfforts.some(e => e.reasoningEffort === config.reasoningEffort));

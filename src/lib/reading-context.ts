@@ -2,6 +2,7 @@ import type { Anchor } from "../types";
 
 /** Bounded article context; a table cell needs its headers and row to be meaningful. */
 export function readingContext(article: HTMLElement | null, anchor: Anchor): string {
+  if(anchor.pdf)return anchor.pdf.context ?? anchor.quote;
   const block = [...(article?.querySelectorAll<HTMLElement>("[data-block-id]") ?? [])].find(e => e.dataset.blockId === anchor.blockId);
   if (!block) return `${anchor.prefix}${anchor.quote}${anchor.suffix}`;
   const heading = anchor.headingPath.join(" / ");

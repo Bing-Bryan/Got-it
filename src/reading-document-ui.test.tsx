@@ -31,7 +31,7 @@ beforeEach(async () => {
   HTMLElement.prototype.scrollIntoView = vi.fn(); HTMLElement.prototype.scrollTo = vi.fn();
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ models: TEST_MODELS, providers: [{ id: "codex", name: "Codex", availability: "connected", supportsWebSearch: true }], defaultProviderId: "codex" }) })));
   w = createInitialWorkspace();
-  const div = document.createElement("div"); div.innerHTML = renderMarkdown(w.document.markdown).html;
+  const div = document.createElement("div"); div.innerHTML = renderMarkdown(w.document.markdown!).html;
   const p = [...div.querySelectorAll("p")].find(p => p.textContent?.includes("CAGR"))!; const start = p.textContent!.indexOf("CAGR");
   w.inquiries = [{ id: "explain", intent: "explain", question: "解释CAGR", anchor: { documentId: w.document.id, blockId: p.dataset.blockId!, headingPath: [], quote: "CAGR", prefix: "", suffix: "", start, end: start + 4, textVersion: 2, matchStatus: "matched" }, status: "ready", messages: [{ id: "old", role: "assistant", content: "已有解释", createdAt: "2026", completion: "complete" }], understanding: "", createdAt: "2026", updatedAt: "2026" }];
   w.activeInquiryId = "explain"; w.activeProviderId = "codex"; w.hasUnexportedChanges = true;
@@ -115,7 +115,7 @@ it.each(["failure", "stop"])("keeps source lookup visibly unfinished after %s, i
   await click('.inquiry-actions .primary-action');
   expect(stored().inquiries[0].status).toBe('understood');
   expect(stored().inquiries[0].messages.at(-1)?.completion).toBe('interrupted');
-  await click('.category-items button');
+  await click('.category-open');
   expect(host.querySelector('.thread-messages > .assistant-message .verification-conclusion')?.textContent).toBe('本次查找已中断');
   expect((host.querySelector('.inquiry-actions .primary-action') as HTMLButtonElement).disabled).toBe(true);
 });

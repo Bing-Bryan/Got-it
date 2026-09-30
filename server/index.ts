@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { CodexLoginService, codexLoginRouter } from "./codex-login";
 import { openReadingPage } from "./open-browser";
 import { ReadingLibrary } from "./reading-library";
@@ -30,7 +31,16 @@ export function createApp(options: AppOptions = {}) {
 
   app.disable("x-powered-by");
   app.use(localOriginGuard);
-  app.use("/api/library", libraryRouter(options.library ?? new ReadingLibrary()));
+  const library=options.library ?? new ReadingLibrary();
+  const sessionToken=randomBytes(32).toString("hex");
+  app.use("/api/library", libraryRouter(library,sessionToken));
+  async function imageInput(req: Request, inquiry: import("../src/types").InquiryRequest) {
+    if(!inquiry.image)return undefined;
+    if(req.headers["x-got-it-session"]!==sessionToken)throw new ProviderError("阅读会话已过期，请重新打开材料后重试。",401,"image_session_expired");
+    const {entryId,fileHash,cropId}=inquiry.image;
+    try { const {meta,bytes}=await library.resources.read(entryId,cropId);if(meta.kind!=="crop"||meta.fileHash!==fileHash)throw new Error();await library.resources.page(entryId,fileHash,meta.page!);return bytes; }
+    catch {throw new ProviderError("裁图资源缺失或无权读取，请重新框选。",400,"image_resource_invalid");}
+  }
   app.use(express.json({ limit: "256kb" }));
   const loginService = options.loginService ?? new CodexLoginService({ binary: options.providerOptions?.codexCliPath });
   app.locals.loginService = loginService;
@@ -57,8 +67,8 @@ export function createApp(options: AppOptions = {}) {
   });
 
   app.post("/api/inquiries/stream", async (request, response, next) => {
-    let inquiry;
-    try { inquiry = parseInquiryRequest(request.body); } catch (error) { next(error); return; }
+    let inquiry, image;
+    try { inquiry = parseInquiryRequest(request.body); image=await imageInput(request,inquiry); } catch (error) { next(error); return; }
     const requestId = inquiry.requestId || crypto.randomUUID();
     let sequence = 0;
     const controller = new AbortController();
@@ -67,7 +77,7 @@ export function createApp(options: AppOptions = {}) {
     response.flushHeaders();
     response.on("close", () => { if (!response.writableEnded) controller.abort(); });
     const send = (event: object) => { if (!controller.signal.aborted) response.write(JSON.stringify({ ...event, requestId, sequence: ++sequence }) + "\n"); };
-    try { await providerService.answer(inquiry, { signal: controller.signal, onEvent: send }); }
+    try { await providerService.answer(inquiry, { signal: controller.signal, onEvent: send, image }); }
     catch (error) { send({ type: "error", error: toProviderErrorBody(error).body.error }); }
     finally { response.end(); }
   });
@@ -75,7 +85,7 @@ export function createApp(options: AppOptions = {}) {
   app.post("/api/inquiries", async (request, response, next) => {
     try {
       const inquiry = parseInquiryRequest(request.body);
-      response.json(await providerService.answer(inquiry));
+      response.json(await providerService.answer(inquiry,{image:await imageInput(request,inquiry)}));
     } catch (error) {
       next(error);
     }

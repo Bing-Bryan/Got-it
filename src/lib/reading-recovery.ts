@@ -32,7 +32,7 @@ export function inquiryContent({ updatedAt: _updated, createdAt: _created, compl
 /** The complete safe reading content, without navigation or bookkeeping timestamps. */
 export function readingContent(workspace: Workspace): string {
   const w = restoreWorkspace(workspace)!;
-  return canonical({ document: { id: w.document.id, filename: w.document.filename, markdown: w.document.markdown },
+  return canonical({ document: { id: w.document.id, filename: w.document.filename, ...(w.document.kind === "pdf" ? {kind:"pdf",pdf:w.document.pdf} : {markdown: w.document.markdown}) },
     inquiries: w.inquiries.map(inquiryContent) });
 }
 export function viewKey(w: Workspace, p: ReadingPosition): string {
@@ -40,7 +40,7 @@ export function viewKey(w: Workspace, p: ReadingPosition): string {
 }
 export function readingKey(w: Workspace, p: ReadingPosition): string { return readingContent(w) + viewKey(w, p); }
 export function sameOriginal(e: LibraryEntry | RecoverySnapshot, d: ReadingDraft): boolean {
-  return e.revisionId === d.revisionId && e.workspace.document.id === d.workspace.document.id && e.workspace.document.markdown === d.workspace.document.markdown;
+  return e.revisionId === d.revisionId && e.workspace.document.id === d.workspace.document.id && e.workspace.document.contentHash === d.workspace.document.contentHash && e.workspace.document.kind === d.workspace.document.kind && e.workspace.document.markdown === d.workspace.document.markdown;
 }
 export function withPreferences(w: Workspace, preferences: Workspace): Workspace {
   return { ...w, activeProviderId: preferences.activeProviderId, modelPreferences: preferences.modelPreferences, modelDefaultsVersion: preferences.modelDefaultsVersion };
@@ -67,7 +67,7 @@ export class DraftStore {
     for (const key of keys) {
       const raw = this.storage.getItem(key); if (!raw) continue;
       try {
-        const d = JSON.parse(raw) as ReadingDraft; const w = parseReadingDocument(JSON.stringify(d.workspace),true);
+        const d = JSON.parse(raw) as ReadingDraft; const w = parseReadingDocument(JSON.stringify(d.workspace),true,true);
         if (!w || typeof d.entryId !== 'string' || !Number.isSafeInteger(d.version) || typeof d.revisionId !== 'string' || !Number.isFinite(d.position?.ratio)) throw new Error();
         drafts.push({key,raw,draft:{...d,workspace:w}});
       } catch { invalid = true; }

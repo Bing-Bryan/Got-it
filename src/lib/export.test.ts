@@ -95,7 +95,7 @@ describe("workspace exports", () => {
     const messages = inquiries[0].messages as Array<Record<string, unknown>>;
     const sources = messages[0].sources as Array<Record<string, unknown>>;
 
-    expect(parsed.schemaVersion).toBe(1);
+    expect(parsed.schemaVersion).toBe(2);
     expect((parsed.document as Record<string, unknown>).filename).toBe("report.md");
     expect((inquiries[0].anchor as Record<string, unknown>).quote).toBe("CAGR ≈ 20%");
     expect(inquiries[0].understanding).toBe("我能用年化的方式比较增长。");

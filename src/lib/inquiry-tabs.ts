@@ -1,6 +1,8 @@
 import type { Anchor, Inquiry, InquiryIntent, Workspace } from "../types";
 import { isVerificationUnfinished } from "./learning";
 export function sameAnchor(a: Anchor, b: Anchor): boolean {
+  if (!!a.pdf !== !!b.pdf) return false;
+  if (a.pdf && b.pdf && (a.pdf.fileHash !== b.pdf.fileHash || a.pdf.page !== b.pdf.page || a.pdf.kind !== b.pdf.kind || JSON.stringify(a.pdf.rects)!==JSON.stringify(b.pdf.rects))) return false;
   return a.matchStatus === "matched" && b.matchStatus === "matched" && a.documentId === b.documentId && a.blockId === b.blockId && a.start === b.start && a.end === b.end && a.quote === b.quote;
 }
 export function anchorGroup(inquiries: Inquiry[], representative: Inquiry): Inquiry[] {

@@ -1,9 +1,12 @@
 import type { ModelConfig, ModelPreferences } from "./lib/model-routing";
-export const SCHEMA_VERSION = 1 as const;
+export const SCHEMA_VERSION = 2 as const;
+import type { PdfDocumentData, PdfLocation } from "./lib/pdf-data";
 
 export const NEW_INQUIRY_INTENTS = ["explain", "verify", "entity"] as const;
 
-export type InquiryIntent = "explain" | "why" | "verify" | "entity";
+export type ActiveInquiryIntent = typeof NEW_INQUIRY_INTENTS[number];
+// `why` is a stored legacy identity, not a separate generation operation.
+export type InquiryIntent = ActiveInquiryIntent | "why";
 
 export type InquiryStatus =
   | "pending"
@@ -36,16 +39,14 @@ export interface ProviderStatus {
   localOnly?: boolean;
 }
 
-export interface DocumentSnapshot {
-  id: string;
-  filename: string;
-  markdown: string;
-  importedAt: string;
-  contentHash: string;
-  isDemo: boolean;
+interface DocumentBase {
+  id: string; filename: string; importedAt: string; contentHash: string; isDemo: boolean;
 }
+export type DocumentSnapshot = (DocumentBase & { kind?: 'markdown'; markdown: string; pdf?: never })
+  | (DocumentBase & { kind: 'pdf'; pdf: PdfDocumentData; markdown?: never });
 
 export interface Anchor {
+  pdf?: PdfLocation;
   textVersion?: 2;
   documentId: string;
   blockId: string;
@@ -102,6 +103,7 @@ export interface Verification {
   changeNote?: string;
 }
 export interface InquiryOperation {
+  explanationMode?: "local" | "web" | "auto";
   modelConfig?: ModelConfig;
   operation?: "explain" | "verify" | "entity";
   scope?: "initial" | "expanded";
@@ -118,6 +120,7 @@ export interface InquiryTimings {
   sourceCheckMs?: number;
 }
 export interface InquiryEvent {
+  deadlineAt?: number;
   requestId: string;
   sequence: number;
   type: "answer-delta" | "progress" | "preliminary" | "source-update" | "complete" | "error";
@@ -164,7 +167,7 @@ export interface Workspace {
   modelDefaultsVersion?: 2 | 3;
   activeTab?: { anchorInquiryId?: string; intent: InquiryIntent };
   modelPreferences?: ModelPreferences;
-  schemaVersion: typeof SCHEMA_VERSION;
+  schemaVersion: 1 | typeof SCHEMA_VERSION;
   document: DocumentSnapshot;
   inquiries: Inquiry[];
   activeInquiryId: string | null;
@@ -196,6 +199,7 @@ export interface SelectionDraft {
 }
 
 export interface InquiryRequest extends InquiryOperation {
+  image?: { entryId: string; fileHash: string; cropId: string };
   requestId?: string;
   providerId: ProviderId;
   intent: InquiryIntent;
@@ -225,10 +229,8 @@ export interface ProvidersResponse {
   defaultProviderId: ProviderId;
 }
 
-export const INTENT_META: Record<
-  InquiryIntent,
-  { label: string; shortLabel: string; prompt: (quote: string) => string }
-> = {
+export const INTENT_META: Record<InquiryIntent, { label: string; shortLabel: string }>
+  & Record<ActiveInquiryIntent, { prompt: (quote: string) => string }> = {
   explain: {
     label: "解释概念",
     shortLabel: "解释",
@@ -237,7 +239,6 @@ export const INTENT_META: Record<
   why: {
     label: "为什么",
     shortLabel: "为什么",
-    prompt: (quote) => `请拆解「${quote}」背后的原因、推理链和可能遗漏的前提。`,
   },
   verify: {
     label: "查找来源",

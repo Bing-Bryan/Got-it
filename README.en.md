@@ -18,7 +18,7 @@ Got it keeps that process beside the article: **select what you don't understand
 
 ## What the MVP does
 
-Got it is an AI reading tool built around Markdown articles.
+Got it is an AI reading tool for Markdown articles and original-layout PDFs.
 
 | When you encounter… | Got it helps you… |
 | --- | --- |
@@ -28,16 +28,30 @@ Got it is an AI reading tool built around Markdown articles.
 | An explanation that still feels difficult | Ask for a shorter explanation or a simple example. |
 | An explanation worth keeping | Keep it as a knowledge card linked to the passage, saved with your reading progress. |
 
+Concept explanations and simplification search when necessary background or current information is missing; sufficient source material is explained directly. Follow-ups retain earlier answers, with actual search and citation-check status shown separately. Model calls still require a network connection. Timeouts and cancellation preserve partial content; retries retain the original mode.
+
 Web-based verification requires an AI connection that supports search. When evidence is insufficient, Got it makes that uncertainty visible rather than treating an AI answer as an established fact.
 
 ## From a question back to the text
 
-1. **Open an article.** Import a Markdown document and start reading.
+1. **Open an article.** Import a Markdown or PDF document and start reading.
 2. **Select what stops you.** Choose a concept explanation, a background introduction, or a fact check.
 3. **Make sense of it beside the text.** Read the answer, request a simpler explanation or example, or inspect the sources.
 4. **Keep reading.** Mark the question as understood and return to the article. Save anything worth revisiting as a knowledge card.
 
-Notes remain linked to their original passages and are saved in a local on-disk reading library. Browser storage retains preferences and an emergency recovery cache. The original Markdown file is not modified. Legacy `.focus` and complete JSON backups can still be imported; the current UI does not offer an export/download button.
+Notes remain linked to their original passages and are saved in a local on-disk reading library. Browser storage retains preferences and an emergency recovery cache. Original files are not modified. PDF copies, OCR data and selected image crops are stored alongside the reading records. Legacy `.focus` and complete JSON backups can still be imported; the current UI does not offer an export/download button.
+
+Use the trash icon beside the category count to enter deletion mode. Each card shows an aligned trash icon; click once to change it to a confirmation check, then click again to delete the card and its answers. Escape or the heading trash icon exits deletion mode. Other cards and the original document remain intact.
+
+## PDF reading
+
+Select native text directly, or use “框选内容” for images and scanned or complex passages. Immediately choose explain, verify or introduce; only then does local OCR start. The original crop and auxiliary text go to the model together. Cancel, Escape or a blank-area click clears the draft. Recognition text can be corrected inside the note; a new answer retains the crop and answer history. The sidebar occupies space when revealed on hover, with one pin toggle to keep it open. A single 36px sticky toolbar holds the current page, region selection, inline instructions and save state; controls are not repeated on every page.
+
+The left navigation can collapse, open temporarily on hover at the left edge, or remain pinned. Pages, highlights, answers and learning states survive reopening; cards return to their original page regions.
+
+PDF pages scroll continuously from top to bottom and automatically fit the reading area as the window or sidebar changes. Limits: 50 MiB, 200 pages, no encrypted files; OCR is limited to 60 seconds per region and needs human correction. Crop uploads are PNG, at most 8 MiB and 4096 pixels per side. Image explanations require an image-capable Codex model and are not fact verification. PDF/OCR assets are prepared locally during installation; AI requests still need network access.
+
+PDF records are not portable `.focus`/JSON exports. Back up the complete application data directory with the service stopped. Legacy Markdown backups remain supported; importing Markdown with local relative image files is still a separate gap. See the [delivery and validation record](docs/updates/2026-09-30.md).
 
 ## Run locally
 

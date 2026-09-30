@@ -34,6 +34,7 @@ export function readingDocumentFilename(workspace: Workspace): string {
 }
 
 export function workspaceToReadingDocument(workspace: Workspace): string {
+  if (workspace.document.kind === "pdf") throw new Error("PDF 阅读记录通过本机保存恢复，暂不支持独立阅读备份。");
   // Restore a copy so a running response is interrupted only in the saved file.
   const snapshot = restoreWorkspace(sanitizeWorkspace(workspace));
   if (!snapshot || !validLinks(snapshot)) throw new Error("当前阅读数据不完整，无法保存阅读文档。");
@@ -42,7 +43,7 @@ export function workspaceToReadingDocument(workspace: Workspace): string {
   return content;
 }
 
-export function parseReadingDocument(content: string, allowLegacy = false): Workspace {
+export function parseReadingDocument(content: string, allowLegacy = false, internal = false): Workspace {
   checkSize(new TextEncoder().encode(content).byteLength);
   let data: unknown;
   try { data = JSON.parse(content.replace(/^\uFEFF/, "")); }
@@ -53,13 +54,14 @@ export function parseReadingDocument(content: string, allowLegacy = false): Work
   if (record.format === READING_DOCUMENT_FORMAT) {
     if (record.version !== 1) throw new Error("此阅读文档版本暂不支持，请使用支持该版本的阅读器。");
     value = record.workspace;
-  } else if (allowLegacy && record.format === undefined && record.schemaVersion === 1) {
+  } else if (allowLegacy && record.format === undefined && (record.schemaVersion === 1 || record.schemaVersion === 2)) {
     value = record;
   } else {
     throw new Error("文件格式或版本不支持。请选择 .focus 阅读文档或此前导出的完整 JSON。");
   }
   const workspace = restoreWorkspace(value);
   if (!workspace || !validLinks(workspace)) throw new Error("阅读文档的数据或关联不完整，当前文档未替换。");
+  if (!internal && workspace.document.kind === "pdf") throw new Error("PDF 记录缺少可携带文件，请从本机阅读列表打开。");
   if (workspace.activeInquiryId && !workspace.inquiries.some(inquiry => inquiry.id === workspace.activeInquiryId)) workspace.activeInquiryId = null;
   return { ...workspace, hasUnexportedChanges: false };
 }

@@ -1,5 +1,5 @@
 import { VERDICT_LABELS, RELIABILITY_LABELS, APPLICABILITY_LABELS } from "./verification";
-import { SEARCH_LABELS, EXCERPT_LABELS, RELATION_LABELS, safeSourceUrl } from "./evidence";
+import { SEARCH_LABELS, RETRIEVAL_LABELS, EXCERPT_LABELS, RELATION_LABELS, safeSourceUrl } from "./evidence";
 import type { Inquiry, ThreadMessage, Workspace } from "../types";
 import { sanitizeWorkspace } from "./storage";
 
@@ -27,6 +27,7 @@ function inlineCode(value: string): string {
 function threadMessageMarkdown(message: ThreadMessage): string {
   const label = message.role === "user" ? "我" : "AI";
   const metadata = [
+    message.explanationMode === "web" ? "联网补充" : message.explanationMode === "local" ? "基于原文解释" : message.explanationMode === "auto" ? "按需查阅资料的解释" : undefined,
     message.providerName,
     message.model,
     message.modelConfig?.reasoningEffort,
@@ -40,6 +41,7 @@ function threadMessageMarkdown(message: ThreadMessage): string {
           .map((source) => {
             const url = safeSourceUrl(source.url);
             return [url ? `来源：[${source.title || source.domain}](${url})` : "来源链接不可用",
+              RETRIEVAL_LABELS[source.retrievalStatus ?? "not-read"],
               RELATION_LABELS[source.relation ?? "unknown"],
               `可靠性评估：${source.reliability ? RELIABILITY_LABELS[source.reliability] : "尚未评估"}；理由：${source.reliabilityReasons?.join("；") || "尚无依据"}`,
               `适用关系：${APPLICABILITY_LABELS[source.applicability ?? "unknown"]}；范围：${source.scope || "未知"}；差异：${source.differences?.join("；") || "未说明"}`,
@@ -94,6 +96,7 @@ function inquiryMarkdown(inquiry: Inquiry, index: number): string {
  * immutable; each card links back to its document/block and carries its thread.
  */
 export function workspaceToMarkdown(workspace: Workspace): string {
+  if (workspace.document.kind === "pdf") throw new Error("PDF 暂不支持可携带导出，请从本机阅读列表回看。");
   const safe = sanitizeWorkspace(workspace);
   const cards = safe.inquiries.map(inquiryMarkdown).join("\n\n");
   return [
@@ -110,6 +113,7 @@ export function workspaceToMarkdown(workspace: Workspace): string {
 
 /** Export a portable JSON snapshot with the same safe field projection as storage. */
 export function workspaceToJson(workspace: Workspace): string {
+  if(workspace.document.kind === "pdf")throw new Error("PDF 暂不支持独立文本备份，请从本机阅读列表重开。");
   return `${JSON.stringify(sanitizeWorkspace(workspace), null, 2)}\n`;
 }
 

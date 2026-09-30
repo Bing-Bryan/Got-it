@@ -5,6 +5,7 @@ import { PassThrough } from 'node:stream';
 import { parseModelPage, readCodexModels } from './codex-models';
 import { ProviderService } from './providers';
 import { TEST_MODELS } from './test-support/model-catalog';
+import { modelAcceptsImage } from '../src/lib/model-routing';
 const spawnMock=vi.hoisted(()=>vi.fn());
 vi.mock('node:child_process',async original=>({...await original<typeof import('node:child_process')>(),spawn:spawnMock}));
 afterEach(()=>vi.restoreAllMocks());
@@ -14,6 +15,13 @@ function fakeServer(reply:(request:any, child:any)=>void){
  child.stdin.on('data',(data:Buffer)=>reply(JSON.parse(data.toString()),child));spawnMock.mockReturnValue(child);return child;
 }
 const send=(child:any,message:object)=>child.stdout.write(JSON.stringify(message)+'\n');
+it('preserves image input support, treats absent legacy metadata as compatible, and rejects explicit non-image capability',()=>{
+ const variants=[undefined,['text','image'],['text'],[],['audio'],null];
+ const models=variants.map(inputModalities=>parseModelPage({data:[{...TEST_MODELS[3],inputModalities}]}).models[0]);
+ expect(models.map(modelAcceptsImage)).toEqual([true,true,false,false,false,false]);
+ expect(models[1].inputModalities).toEqual(['text','image']);
+ expect(models[0]).not.toHaveProperty('inputModalities');
+});
 it('handshakes before paginating, ignores notifications, projects safe fields and kills its process',async()=>{
  const seen:any[]=[];const child=fakeServer((r,c)=>{
   seen.push(r);

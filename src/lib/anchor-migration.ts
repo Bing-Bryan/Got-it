@@ -5,6 +5,7 @@ import type { Workspace } from "../types";
 
 /** Normalize old offsets once, using the original document, never rewriting old answers. */
 export function migrateHighlightAnchors(workspace: Workspace): Workspace {
+  if (workspace.document.kind === "pdf") return workspace;
   if (!workspace.inquiries.some(i => i.anchor.textVersion !== 2)) return workspace;
   const root = document.createElement("div");
   root.innerHTML = DOMPurify.sanitize(marked.parse(workspace.document.markdown, { async:false, gfm:true }) as string);

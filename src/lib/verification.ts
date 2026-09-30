@@ -53,6 +53,7 @@ export function copyOperation(value: unknown): InquiryOperation {
   const v = record(value);
   return {
     ...(copyModelConfig(v.modelConfig) ? { modelConfig: copyModelConfig(v.modelConfig) } : {}),
+    ...(v.explanationMode === "local" || v.explanationMode === "web" || v.explanationMode === "auto" ? { explanationMode: v.explanationMode } : {}),
     ...(v.operation === "explain" || v.operation === "verify" || v.operation === "entity" ? { operation: v.operation } : {}),
     ...(v.scope === "initial" || v.scope === "expanded" ? { scope: v.scope } : {}),
     ...(Number.isSafeInteger(v.round) && Number(v.round) > 0 ? { round: Math.min(Number(v.round), 1000) } : {}),

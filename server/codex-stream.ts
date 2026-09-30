@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { READING_BASE_INSTRUCTIONS } from './prompt-materials';
 import type { ModelConfig } from '../src/lib/model-routing';
 
 /** Extract only the root answer string. Never expose JSON, reasoning or tool output. */
@@ -55,6 +56,8 @@ export class AnswerDecoder {
 
 export interface CodexTurnOptions {
   binary: string; cwd: string; config: ModelConfig; prompt: string; schema: unknown;
+  /** Server-owned validated temporary files, never client paths. */
+  imagePaths?: string[];
   searchable: boolean; timeoutMs: number; signal?: AbortSignal;
   onDelta: (delta: string) => void;
   onTrace: (line: string) => void;
@@ -66,6 +69,7 @@ export const runCodexTurn: CodexTurnRunner = async options => {
   options.signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const child = spawn(options.binary, ['app-server', '--listen', 'stdio://'], { cwd: options.cwd, stdio: ['pipe','pipe','pipe'], windowsHide: true });
+    const deadlineAt = Date.now() + options.timeoutMs;
     let buffer = '', bytes = 0, settled = false, threadId = '', turnId = '', final = '', trace = '';
     const items = new Map<string, { text: string; decoder: AnswerDecoder; phase?: string }>();
     const send = (message: object) => { if (!settled) child.stdin.write(JSON.stringify(message) + '\n'); };
@@ -92,11 +96,11 @@ export const runCodexTurn: CodexTurnRunner = async options => {
         if (m.id === 0) {
           send({method:'initialized',params:{}});
           send({id:1,method:'thread/start',params:{model:options.config.model,cwd:options.cwd,approvalPolicy:'never',sandbox:'read-only',ephemeral:true,
-            baseInstructions:'你是阅读助手，只回答当前阅读问题。不要操作本机文件、执行命令或使用与阅读无关的工具。',
+            baseInstructions:READING_BASE_INSTRUCTIONS,
             config:{web_search: options.searchable ? 'live' : 'disabled', project_doc_max_bytes:0, 'features.shell_tool':false}}});
         } else if (m.id === 1) {
           threadId = m.result?.thread?.id; if (!threadId) throw new Error('Codex线程格式不兼容');
-          send({id:2,method:'turn/start',params:{threadId,model:options.config.model,effort:options.config.reasoningEffort,input:[{type:'text',text:options.prompt,text_elements:[]}],outputSchema:options.schema}});
+          send({id:2,method:'turn/start',params:{threadId,model:options.config.model,effort:options.config.reasoningEffort,input:[{type:'text',text:options.prompt,text_elements:[]}, ...(options.imagePaths ?? []).map(path => ({type:'localImage',path}))],outputSchema:options.schema}});
         } else if (m.id === 2) {
           const id = m.result?.turn?.id; if (!id || (turnId && turnId !== id)) throw new Error('Codex轮次不匹配'); turnId = id;
         }
@@ -128,7 +132,9 @@ export const runCodexTurn: CodexTurnRunner = async options => {
     };
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
-      if (settled) return; count(Buffer.byteLength(chunk)); buffer += chunk;
+      if (settled) return;
+      if (Date.now() >= deadlineAt) { finish(Object.assign(new Error('Codex回答超时'), {code:'ETIMEDOUT'})); return; }
+      count(Buffer.byteLength(chunk)); buffer += chunk;
       let end: number;
       while (!settled && (end=buffer.indexOf('\n')) >= 0) {
         const line=buffer.slice(0,end); buffer=buffer.slice(end+1); if(!line.trim())continue;

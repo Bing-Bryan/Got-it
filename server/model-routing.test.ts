@@ -4,7 +4,31 @@ import { expect, it } from 'vitest';
 import { writeFile } from 'node:fs/promises';
 import { ProviderService, parseInquiryRequest } from './providers';
 import { modelConfig } from '../src/lib/model-routing';
+import { READING_MATERIALS_HEADER } from './prompt-materials';
 const request=parseInquiryRequest({providerId:'codex',intent:'explain',quote:'CAGR',question:'解释',history:[]});
+it.each([false, true])('routes a legacy why request through explanation (streaming=%s) without changing its history', async streaming => {
+ const legacy = parseInquiryRequest({...request, intent:'why', history:[{role:'assistant',content:'保留的旧回答'}]});
+ const original = structuredClone(legacy);
+ const raw = JSON.stringify({answer:'本轮解释',sources:[],evidenceStatus:'not-applicable',verification:null});
+ let prompt = '', searchable = true;
+ const service = new ProviderService({modelCatalog:testModelCatalog,
+  codexTurnImpl:async options => {prompt=options.prompt;searchable=options.searchable;return {raw,trace:''};},
+  execFileImpl:async (_file,args) => {
+   if(args[0]==='login')return {stdout:'Logged in using ChatGPT',stderr:''};
+   prompt=args.at(-1)!;searchable=args.includes('--search');
+   await writeFile(args[args.indexOf('--output-last-message')+1],raw);
+   return {stdout:'',stderr:''};
+  },
+ });
+ const response=await service.answer(legacy,streaming ? {onEvent:()=>{}} : {});
+ expect(prompt).toContain('阅读意图：explain');
+ expect(JSON.parse(prompt.split(READING_MATERIALS_HEADER)[1]).history).toEqual([{role:'assistant',content:'保留的旧回答'}]);
+ expect(prompt).not.toContain('拆解原因、推理链和关键前提');
+ expect(searchable).toBe(false);
+ expect(response.modelConfig).toEqual(modelConfig('explain'));
+ expect(response.verification).toBeUndefined();
+ expect(legacy).toEqual(original);
+});
 it('routes all intents to real CLI parameters; explicit user choice wins and explanation followups never search', async()=>{
  const calls:readonly string[][]=[];
  const service=new ProviderService({modelCatalog: testModelCatalog,execFileImpl:async(_file,args)=>{
@@ -56,5 +80,6 @@ it('gives verification a bounded independent budget and keeps explanation follow
   return {stdout:'',stderr:''};
  }});
  await service.answer({...request,intent:'verify'});await service.answer({...request,intent:'verify',operation:'explain'});
- expect(timeouts).toEqual([240000,120000]);
+ expect(timeouts[0]).toBeGreaterThan(239000);expect(timeouts[0]).toBeLessThanOrEqual(240000);
+ expect(timeouts[1]).toBeGreaterThan(119000);expect(timeouts[1]).toBeLessThanOrEqual(120000);
 });

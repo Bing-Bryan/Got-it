@@ -6,7 +6,7 @@ import { hasRunningAnswers, MAX_READING_FILE_BYTES, parseReadingDocument, readDo
 
 function fixture() {
   const w = createInitialWorkspace();
-  const div = document.createElement("div"); div.innerHTML = renderMarkdown(w.document.markdown).html;
+  const div = document.createElement("div"); div.innerHTML = renderMarkdown(w.document.markdown!).html;
   const p = [...div.querySelectorAll("p")].find(p => p.textContent?.includes("CAGR"))!;
   const start = p.textContent!.indexOf("CAGR");
   w.inquiries = [{ id: "i1", intent: "verify", question: "查证CAGR", anchor: { documentId: w.document.id, blockId: p.dataset.blockId!, headingPath: [], quote: "CAGR", prefix: "", suffix: "", start, end: start + 4, textVersion: 2, matchStatus: "matched" }, status: "distilled", understanding: "增长不是每年相同", createdAt: "2026", updatedAt: "2026", messages: [
@@ -73,7 +73,7 @@ describe("portable reading documents", () => {
   it("imports Markdown unchanged and creates safe reading filenames", async () => {
     const markdown = "# 标题\n==重点==\n";
     const w = await readDocumentFile({ name: "report.md", size: markdown.length, text: async () => markdown });
-    expect(w.document.markdown).toBe(markdown); expect(w.inquiries).toEqual([]); expect(readingDocumentFilename(w)).toBe("report.focus");
+    expect(w.document.markdown!).toBe(markdown); expect(w.inquiries).toEqual([]); expect(readingDocumentFilename(w)).toBe("report.focus");
     w.document.filename = "../bad:name.md"; expect(readingDocumentFilename(w)).toBe("..-bad-name.focus");
     await expect(readDocumentFile({ name: "empty.md", size: 0, text: async () => "" })).rejects.toThrow(/空/);
   });

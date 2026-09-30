@@ -1,3 +1,6 @@
+import { PdfSourcePreview } from "./PdfSourcePreview";
+import { useSidebar } from "./useSidebar";
+import { SourceCard } from "./SourceCard";
 import { CodexLogin } from "./CodexLogin";
 import { useReadingLibrary } from "./useReadingLibrary";
 import { ReadingLibraryNavigation, ReadingLibraryStatus } from "./ReadingLibraryView";
@@ -27,16 +30,20 @@ import {
   LoaderCircle,
   Menu,
   PanelRightOpen,
+  PanelLeftOpen,
+  Pin,
   RefreshCw,
   Search,
   ShieldCheck,
   Sparkles,
   Terminal,
+  Trash2,
   Upload,
   Waypoints,
   X,
 } from "lucide-react";
 import {
+  lazy, Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -52,6 +59,7 @@ import {
   STATUS_META,
   type Inquiry,
   type InquiryIntent,
+  type ActiveInquiryIntent,
   type InquiryRequest,
   type InquiryResponse,
   type ProviderId,
@@ -91,6 +99,8 @@ const INTENT_ICONS: Record<InquiryIntent, typeof Sparkles> = {
 };
 
 
+const PdfReader = lazy(() => import("./PdfReader"));
+
 function newId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
 }
@@ -117,6 +127,8 @@ function App() {
   const [modelsError, setModelsError] = useState("");
   const [providers, setProviders] = useState<ProviderStatus[]>(FALLBACK_PROVIDERS);
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [focusedInquiryId, setFocusedInquiryId] = useState<string | null>(null);
   const [providerOpen, setProviderOpen] = useState(false);
   const [settingsIntent, setSettingsIntent] = useState<InquiryIntent>("explain");
@@ -131,6 +143,8 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [pdfTarget,setPdfTarget] = useState<{id:string;nonce:number}|null>(null);
+  const sidebar = useSidebar();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -142,7 +156,7 @@ function App() {
 
   const installLibraryWorkspace = useCallback((next: Workspace) => {
     workspaceRef.current = next; setWorkspace(next); setDocumentLoadId(v => v + 1);
-    setProgress({}); setSearchQuery(""); setSelectionDraft(null); setFocusedInquiryId(null); setMobileSidebarOpen(false); setMobilePanelOpen(false); setProviderOpen(false);
+    setPdfTarget(null); setProgress({}); setSearchQuery(""); setSelectionDraft(null); setFocusedInquiryId(null); setMobileSidebarOpen(false); setMobilePanelOpen(false); setProviderOpen(false);
     window.getSelection()?.removeAllRanges();
   }, []);
   const interruptForSwitch = useCallback(() => {
@@ -154,8 +168,8 @@ function App() {
   const library = useReadingLibrary({ workspace, install: installLibraryWorkspace, interrupt: interruptForSwitch });
 
   const rendered = useMemo(
-    () => renderMarkdown(workspace.document.markdown),
-    [workspace.document.markdown],
+    () => workspace.document.kind === "pdf" ? {html:"",outline:[]} : renderMarkdown(workspace.document.markdown),
+    [workspace.document.kind,workspace.document.markdown],
   );
 
   const selectedInquiry = useMemo(
@@ -171,6 +185,14 @@ function App() {
   const history = intentHistory(group, tabIntent);
   const activeInquiry = selectedInquiry?.intent === tabIntent ? selectedInquiry : null;
   const categoryItems = intentHistory(workspace.inquiries, tabIntent);
+  useEffect(() => {
+    setDeleteMode(false); setPendingDeleteId(null);
+  }, [documentLoadId, tabIntent, workspace.activeInquiryId]);
+  useEffect(() => {
+    if (!categoryItems.length || library.readOnly || library.busy || !library.ready) {
+      setDeleteMode(false); setPendingDeleteId(null);
+    }
+  }, [categoryItems.length, library.readOnly, library.busy, library.ready]);
   const groupBusy = group.some(i => i.status === "answering");
   useEffect(() => { if (!providerOpen) setSettingsIntent(tabIntent === "why" ? "explain" : tabIntent); }, [tabIntent, providerOpen]);
   const currentModel = resolveModelConfig(settingsIntent, workspace.modelPreferences, codexModels);
@@ -292,6 +314,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (workspace.document.kind === "pdf") return;
     if (library.entry) {
       const frame = window.requestAnimationFrame(() => library.rendered());
       return () => window.cancelAnimationFrame(frame);
@@ -327,7 +350,7 @@ function App() {
         ),
       }));
     },
-    [updateWorkspace, library.readOnly, library.busy, library.ready],
+    [updateWorkspace, library.readOnly, library.busy, library.ready, library.entry?.id],
   );
 
   const askProvider = useCallback(
@@ -335,9 +358,11 @@ function App() {
       if (library.readOnly || library.busy || !library.ready || requests.current.has(inquiryId)) return;
       const requestId = newId("request"), messageId = newId("message"), controller = new AbortController();
       const operation = request.operation ?? (request.intent === "why" ? "explain" : request.intent);
-      const scoped = { ...request, modelConfig: request.providerId === "codex" ? request.modelConfig ?? resolveModelConfig(operation, workspace.modelPreferences, codexModels) : undefined, requestId, operation, scope: request.scope ?? "initial" as const, round: request.round ?? 1 };
+      const imageAnchor=workspaceRef.current.inquiries.find(i=>i.id===inquiryId)?.anchor.pdf;
+      const image=request.image ?? (imageAnchor?.kind==="region" && library.entry ? {entryId:library.entry.id,fileHash:imageAnchor.fileHash,cropId:imageAnchor.cropId!} : undefined);
+      const scoped = { ...request, ...(image?{image}:{}), modelConfig: request.providerId === "codex" ? request.modelConfig ?? resolveModelConfig(operation, workspace.modelPreferences, codexModels) : undefined, requestId, operation, scope: request.scope ?? "initial" as const, round: request.round ?? 1 };
       requests.current.set(inquiryId, { id: requestId, controller });
-      updateInquiry(inquiryId, inquiry => ({ ...inquiry, messages: [...inquiry.messages, { id: messageId, role: "assistant", content: "", createdAt: now(), modelConfig: scoped.modelConfig, requestId, completion: "provisional", operation: scoped.operation, scope: scoped.scope, round: scoped.round, parentMessageId: scoped.parentMessageId }] }));
+      updateInquiry(inquiryId, inquiry => ({ ...inquiry, messages: [...inquiry.messages, { id: messageId, role: "assistant", content: "", createdAt: now(), modelConfig: scoped.modelConfig, requestId, completion: "provisional", operation: scoped.operation, explanationMode: scoped.explanationMode, scope: scoped.scope, round: scoped.round, parentMessageId: scoped.parentMessageId }] }));
       try {
         await readInquiryStream(scoped, event => {
           if (requests.current.get(inquiryId)?.id !== requestId) return;
@@ -391,9 +416,9 @@ function App() {
   }, [showToast, workspace.document.id, library.readOnly, library.busy, library.ready]);
 
   const createInquiry = useCallback(
-    (intent: InquiryIntent) => {
+    (intent: ActiveInquiryIntent, draftOverride?: SelectionDraft) => {
       if (library.readOnly || library.busy || !library.ready) return;
-      const draft = selectionDraft;
+      const draft = draftOverride ?? selectionDraft;
       if (!draft) return;
       if (workspace.activeProviderId === "codex" && (modelsLoading || modelsError || !codexModels.length)) { showToast("请先等待模型列表加载完成，或刷新连接后再试。"); return; }
       const matches = workspace.inquiries.filter(i => sameAnchor(i.anchor, draft.anchor));
@@ -433,7 +458,9 @@ function App() {
       }));
       const request: InquiryRequest = {
         providerId: workspace.activeProviderId,
+        ...(draft.anchor.pdf?.kind === "region" && library.entry ? {image:{entryId:library.entry.id,fileHash:draft.anchor.pdf.fileHash,cropId:draft.anchor.pdf.cropId!}} : {}),
         intent,
+        ...(intent === "explain" ? {explanationMode:"auto" as const} : {}),
         quote: draft.anchor.quote,
         context: readingContext(articleRef.current, draft.anchor),
         documentTitle: workspace.document.filename,
@@ -452,6 +479,7 @@ function App() {
     (action: Refinement) => {
       if (!activeInquiry || groupBusy || !canCompleteInquiry(activeInquiry)) return;
       if (activeInquiry.intent === "verify" || (action === "detail") !== (activeInquiry.intent === "entity")) return;
+      if (action === "web" && !activeProvider.supportsWebSearch) return;
       const content = REFINEMENTS[action].prompt;
       const userMessage: ThreadMessage = {
         id: newId("message"),
@@ -475,13 +503,14 @@ function App() {
         providerId: workspace.activeProviderId,
         intent: activeInquiry.intent,
         operation: action === "detail" ? "entity" : "explain",
+        ...(action !== "detail" ? { explanationMode: action === "web" ? "web" as const : "auto" as const } : {}),
         quote: activeInquiry.anchor.quote,
         context: readingContext(articleRef.current, activeInquiry.anchor),
         documentTitle: workspace.document.filename,
         question: content,
         history,
       });
-    }, [activeInquiry, groupBusy, askProvider, updateInquiry, workspace.activeProviderId, workspace.document.filename],
+    }, [activeInquiry, groupBusy, askProvider, updateInquiry, workspace.activeProviderId, workspace.document.filename, activeProvider.supportsWebSearch],
   );
 
   const retryInquiry = useCallback(() => {
@@ -504,6 +533,7 @@ function App() {
       context: readingContext(articleRef.current, activeInquiry.anchor),
       documentTitle: workspace.document.filename,
       modelConfig: failed?.modelConfig,
+      explanationMode: failed?.explanationMode,
       operation: failed?.operation ?? (activeInquiry.intent === "why" ? "explain" : activeInquiry.intent),
       scope: failed?.scope ?? failed?.verification?.scope ?? "initial", round: failed?.round ?? failed?.verification?.round ?? 1, parentMessageId,
       previous: parent?.verification ? { verification: parent.verification, sources: parent.sources ?? [] } : undefined,
@@ -511,6 +541,16 @@ function App() {
       history: activeInquiry.messages.slice(0, lastUserMessage ? activeInquiry.messages.lastIndexOf(lastUserMessage) : 0).filter(m => m.content.trim()).slice(-12).map(({ role, content }) => ({ role, content })),
     });
   }, [activeInquiry, groupBusy, askProvider, updateInquiry, workspace.activeProviderId, workspace.document.filename]);
+
+  const correctPdfText = (text:string) => {
+    if(!activeInquiry?.anchor.pdf||groupBusy||library.readOnly||!library.ready||!text.trim())return;
+    const current=activeInquiry,operation=current.intent==='why'?'explain':current.intent;
+    const anchor={...current.anchor,pdf:{...current.anchor.pdf!,context:text},...(current.anchor.pdf!.kind==='text'?{quote:text,end:current.anchor.start+text.length}:{})};
+    const question=INTENT_META[operation].prompt(anchor.quote);
+    const userMessage:ThreadMessage={id:newId('message'),role:'user',content:`修正识别文字：${text}\n${question}`,createdAt:now(),providerId:workspace.activeProviderId};
+    updateInquiry(current.id,i=>({...i,anchor,status:'answering',lastError:undefined,updatedAt:now(),messages:[...i.messages,userMessage]}));
+    void askProvider(current.id,{providerId:workspace.activeProviderId,intent:current.intent,operation,...(operation==='explain'?{explanationMode:'auto' as const}:{}),quote:anchor.quote,context:text,question,documentTitle:workspace.document.filename,history:current.messages.filter(m=>m.content.trim()).slice(-12).map(({role,content})=>({role,content}))});
+  };
 
   const continueVerification = useCallback(() => {
     if (!activeInquiry || activeInquiry.intent !== "verify" || groupBusy || !canCompleteInquiry(activeInquiry) || !activeProvider.supportsWebSearch || requests.current.has(activeInquiry.id)) return;
@@ -535,7 +575,37 @@ function App() {
     updateInquiry(activeInquiry.id, inquiry => ({ ...inquiry, status: "ready", lastError: "已停止本次请求；已收到的内容已保留，可手动重试。", messages: inquiry.messages.map(interruptMessage), updatedAt: now() }));
   };
 
+  const deleteInquiry = (inquiryId: string) => {
+    if (!deleteMode || library.readOnly || library.busy || !library.ready) return;
+    if (pendingDeleteId !== inquiryId) { setPendingDeleteId(inquiryId); return; }
+    const remaining = categoryItems.filter(item => item.id !== inquiryId);
+    const index = categoryItems.findIndex(item => item.id === inquiryId);
+    const nextId = remaining[Math.min(index, remaining.length - 1)]?.id;
+    // Invalidate callbacks before aborting: late output must never restore a deleted thread.
+    const request = requests.current.get(inquiryId);
+    requests.current.delete(inquiryId);
+    request?.controller.abort();
+    setProgress(current => { const next = { ...current }; delete next[inquiryId]; return next; });
+    setPendingDeleteId(null);
+    setFocusedInquiryId(null);
+    setPdfTarget(current => current?.id === inquiryId ? null : current);
+    updateWorkspace(current => ({
+      ...current,
+      inquiries: current.inquiries.filter(item => item.id !== inquiryId),
+      activeInquiryId: current.activeInquiryId === inquiryId ? null : current.activeInquiryId,
+      activeTab: current.activeTab?.anchorInquiryId === inquiryId ? { intent: current.activeTab.intent } : current.activeTab,
+    }));
+    const documentId = workspace.document.id;
+    window.requestAnimationFrame(() => {
+      if (workspaceRef.current.document.id !== documentId || workspaceRef.current.activeInquiryId) return;
+      const buttons = document.querySelectorAll<HTMLButtonElement>('[data-delete-inquiry-id]');
+      ([...buttons].find(button => button.dataset.deleteInquiryId === nextId)
+        ?? document.getElementById(nextId ? 'inquiry-delete-toggle' : `intent-tab-${tabIntent}`))?.focus();
+    });
+  };
+
   const switchTab = (intent: InquiryIntent) => {
+    setDeleteMode(false); setPendingDeleteId(null);
     setFocusedInquiryId(null);
     updateWorkspace(current => ({ ...current, activeInquiryId: null, activeTab: { intent } }));
   };
@@ -578,6 +648,7 @@ function App() {
   const jumpToInquiry = useCallback(
     (inquiryId: string) => {
       const documentId = workspaceRef.current.document.id;
+      if(workspaceRef.current.document.kind === "pdf")setPdfTarget({id:inquiryId,nonce:Date.now()});
       setFocusedInquiryId(null);
       updateWorkspace((current) => ({ ...current, activeInquiryId: inquiryId, activeTab: undefined }));
       setMobilePanelOpen(true);
@@ -627,7 +698,7 @@ function App() {
 
   return (
     <div
-      className={`app-frame ${mobileSidebarOpen ? "sidebar-open" : ""} ${mobilePanelOpen ? "panel-open" : ""}`}
+      className={`app-frame ${!sidebar.pinned ? "sidebar-collapsed" : ""} ${sidebar.peek ? "sidebar-peek" : ""} ${mobileSidebarOpen ? "sidebar-open" : ""} ${mobilePanelOpen ? "panel-open" : ""}`}
       onDragEnter={(event) => {
         event.preventDefault();
         setIsDragging(true);
@@ -637,22 +708,29 @@ function App() {
         if (event.currentTarget === event.target) setIsDragging(false);
       }}
       onDrop={handleDrop}
+      onKeyDown={event => { if (event.key === "Escape") {
+        if (deleteMode) { setDeleteMode(false); setPendingDeleteId(null); document.getElementById("inquiry-delete-toggle")?.focus(); return; }
+        sidebar.close(); setMobileSidebarOpen(false); setMobilePanelOpen(false); } }}
     >
       <input
         ref={fileInputRef}
         type="file"
-        accept=".md,.focus,.json,text/markdown,application/json"
-        aria-label="打开 Markdown 或阅读文档"
+        accept=".pdf,.md,.focus,.json,application/pdf,text/markdown,application/json"
+        aria-label="打开 PDF、Markdown 或阅读文档"
         hidden
         onChange={handleFileChange}
       />
 
-      <aside className="left-sidebar" aria-label="文档导航">
+      <div className="sidebar-rail" onMouseEnter={sidebar.reveal} onMouseLeave={sidebar.leave}><button type="button" className="icon-button" aria-label="展开导航" aria-expanded={sidebar.peek} onClick={sidebar.reveal}><PanelLeftOpen size={17} /></button></div>
+      <aside ref={sidebar.ref} className="left-sidebar" aria-label="文档导航" inert={sidebar.narrow ? !mobileSidebarOpen : !sidebar.pinned && !sidebar.peek} onMouseEnter={sidebar.cancel} onMouseLeave={sidebar.leave} onBlur={sidebar.leave}>
         <div className="brand-row">
           <BrandMark />
           <div>
             <strong>Got-it</strong>
             <span>knowledge-gap reader</span>
+          </div>
+          <div className="desktop-sidebar-controls">
+            {<button className="icon-button" type="button" aria-label={sidebar.pinned ? "解除固定导航" : "固定导航"} aria-pressed={sidebar.pinned} title={sidebar.pinned ? "解除固定，移开后收起" : "固定导航"} onClick={e => { sidebar.pin(!sidebar.pinned); if(sidebar.pinned && e.detail>0)e.currentTarget.blur(); }}><Pin size={15} fill={sidebar.pinned ? "currentColor" : "none"} /></button>}
           </div>
           <button
             className="icon-button sidebar-close"
@@ -684,10 +762,10 @@ function App() {
         <nav className="sidebar-scroll">
           <section className="nav-section">
             <div className="section-label">
-              <span>文档结构</span>
-              <span>{rendered.outline.length}</span>
+              <span>{workspace.document.kind === "pdf" ? "PDF 原页" : "文档结构"}</span>
+              <span>{workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页` : rendered.outline.length}</span>
             </div>
-            {!filteredOutline.length ? <p className="nav-empty" role="status">{rendered.outline.length ? "没有匹配的目录标题。" : "本文暂无标题目录。"}</p> : null}
+            {workspace.document.kind === "pdf" ? <p className="nav-empty">向下滚动阅读后续页面。页面自动适合宽度，收起左栏可扩大阅读空间。</p> : !filteredOutline.length ? <p className="nav-empty" role="status">{rendered.outline.length ? "没有匹配的目录标题。" : "本文暂无标题目录。"}</p> : null}
             <div className="outline-list">
               {filteredOutline.map((item) => (
                 <button
@@ -722,7 +800,7 @@ function App() {
             <FileText size={15} />
             <div>
               <strong>{workspace.document.filename}</strong>
-              <span>{workspace.document.isDemo ? "示例文档" : "本地文档"} · {Math.max(1, Math.round(workspace.document.markdown.length / 1000))}k 字符</span>
+              <span>{workspace.document.isDemo ? "示例文档" : "本地文档"} · {workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页 PDF` : `${Math.max(1, Math.round(workspace.document.markdown.length / 1000))}k 字符`}</span>
             </div>
           </div>
 
@@ -783,7 +861,7 @@ function App() {
           </div>
         </header>
 
-        <div className="library-save-status" role="status">{library.status}{library.busy ? " · 正在处理…" : ""}</div>
+        {workspace.document.kind !== "pdf" ? <div className="library-save-status" role="status">{library.status}{library.busy ? " · 正在处理…" : ""}</div> : null}
         <ReadingLibraryStatus library={library} />
         <div className="reader-scroll" onScroll={library.scrolled}>
           {workspace.document.isDemo ? (
@@ -793,13 +871,13 @@ function App() {
               <button type="button" onClick={() => void library.choose()}>换成我的文档</button>
             </div>
           ) : null}
-          <article
+          {workspace.document.kind === "pdf" && library.entry ? <Suspense fallback={<p className="pdf-status">正在加载 PDF 阅读器…</p>}><PdfReader key={workspace.document.id+documentLoadId} document={workspace.document} entryId={library.entry.id} inquiries={workspace.inquiries} activeId={workspace.activeInquiryId} target={pdfTarget} initialPosition={library.initialPosition} readOnly={library.readOnly} saveStatus={library.status} saveBusy={library.busy} saveError={library.blocked||library.status==="阅读进度暂未保存"} onCreate={createInquiry} onActivate={jumpToInquiry} onReady={library.rendered} onView={library.scrolled}/></Suspense> : <article
             ref={articleRef}
             className="markdown-article"
             onMouseUp={handleArticleMouseUp}
             onClick={handleArticleClick}
             dangerouslySetInnerHTML={{ __html: rendered.html }}
-          />
+          />}
           <footer className="reader-footer">
             <BookOpenText size={15} />
             <span>读到不懂处，选中原文。一次只解决一个知识缺口。</span>
@@ -810,7 +888,7 @@ function App() {
       <aside className="right-panel" aria-label="活动知识贴">
         <div className="panel-mobile-head">
           <span>活动知识贴</span>
-          <button className="icon-button" type="button" onClick={() => setMobilePanelOpen(false)}>
+          <button className="icon-button" type="button" aria-label="关闭知识贴" onClick={() => setMobilePanelOpen(false)}>
             <X size={17} />
           </button>
         </div>
@@ -827,17 +905,28 @@ function App() {
                 }}><Icon size={14} aria-hidden="true" /><span>{INTENT_META[intent].label}{items.length > 0 ? <span className="tab-count">({items.length > 99 ? "99+" : items.length})</span> : null}</span>{busy ? <i className="tab-busy" aria-label="处理中" /> : null}</button>;
             })}
           </div>
-          {activeInquiry && history.length > 1 ? <label className="history-picker">历史记录<select aria-label="历史记录" value={activeInquiry?.id} onChange={e => updateWorkspace(current => ({ ...current, activeInquiryId: e.target.value }))}>{history.map(i => <option key={i.id} value={i.id}>{new Date(i.updatedAt).toLocaleString()} · {i.question}</option>)}</select></label> : null}
+          {activeInquiry && history.length > 1 ? <label className="history-picker">历史记录<select aria-label="历史记录" value={activeInquiry?.id} onChange={e => jumpToInquiry(e.target.value)}>{history.map(i => <option key={i.id} value={i.id}>{new Date(i.updatedAt).toLocaleString()} · {i.question}</option>)}</select></label> : null}
         </>
         <div className={`intent-result${activeInquiry ? "" : " category-view"}`} id="intent-result" role="tabpanel" aria-labelledby={tabIntent !== "why" ? `intent-tab-${tabIntent}` : undefined}>
         {activeInquiry ? <div className="result-navigation"><button type="button" onClick={() => switchTab(tabIntent)}>‹ 全部{INTENT_META[tabIntent].label}</button><strong title={activeInquiry.anchor.quote}>{activeInquiry.anchor.quote}</strong></div> : null}
         <nav hidden={!!activeInquiry} className="category-items" aria-label={`${INTENT_META[tabIntent].label}条目`}>
-          <div className="category-heading"><strong>本文的{INTENT_META[tabIntent].label}</strong><span>{categoryItems.length} 条</span></div>
-          {categoryItems.length ? categoryItems.map(item => <button type="button" key={item.id} data-inquiry-id={item.id} aria-current={activeInquiry?.id === item.id ? "true" : undefined} onFocus={() => setFocusedInquiryId(item.id)} onBlur={() => setFocusedInquiryId(null)} onClick={() => jumpToInquiry(item.id)}>
-            <span>{item.anchor.quote}</span><small>{inquiryCategoryStatus(item)}</small>
-          </button>) : <p>还没有{INTENT_META[tabIntent].label}条目。在原文选中文字，再选择“{INTENT_META[tabIntent].label}”即可创建。</p>}
+          <div className="category-heading"><strong>本文的{INTENT_META[tabIntent].label}</strong><div className="category-heading-actions"><span>{categoryItems.length} 条</span>
+            <button id="inquiry-delete-toggle" className="category-delete-toggle" type="button" aria-label={deleteMode ? "退出删除模式" : "删除知识贴"} title={deleteMode ? "退出删除模式（Esc）" : "删除知识贴"} aria-pressed={deleteMode}
+              disabled={!categoryItems.length || library.readOnly || library.busy || !library.ready}
+              onClick={() => { setDeleteMode(value => !value); setPendingDeleteId(null); }}><Trash2 size={16} aria-hidden="true" /></button>
+          </div></div>
+          {categoryItems.length ? categoryItems.map(item => <div className="category-row" key={item.id}>
+            <button className="category-open" type="button" data-inquiry-id={item.id} aria-current={activeInquiry?.id === item.id ? "true" : undefined} onFocus={() => setFocusedInquiryId(item.id)} onBlur={() => setFocusedInquiryId(null)} onClick={() => jumpToInquiry(item.id)}>
+              <span>{item.anchor.quote}</span><small>{inquiryCategoryStatus(item)}</small>
+            </button>
+            {deleteMode ? <button className={`category-delete${pendingDeleteId === item.id ? " confirming" : ""}`} type="button" data-delete-inquiry-id={item.id}
+              aria-label={`${pendingDeleteId === item.id ? "确认删除知识贴" : "删除知识贴"}：${item.anchor.quote}`}
+              title={pendingDeleteId === item.id ? "再次点击，删除此知识贴及全部回答" : "删除此知识贴"}
+              onClick={() => deleteInquiry(item.id)}>{pendingDeleteId === item.id ? <Check size={16} aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}</button> : null}
+          </div>) : <p>还没有{INTENT_META[tabIntent].label}条目。在原文选中文字，再选择“{INTENT_META[tabIntent].label}”即可创建。</p>}
         </nav>
         {activeInquiry && new Set(group.map(i => i.intent)).size > 1 ? <nav className="anchor-requests" aria-label="这处原文的已有需求"><small>此处已有</small>{([...NEW_INQUIRY_INTENTS, "why"] as InquiryIntent[]).filter(intent => group.some(i => i.intent === intent)).map(intent => <button type="button" key={intent} aria-current={intent === activeInquiry.intent ? "true" : undefined} onClick={() => { if (intent !== activeInquiry.intent) jumpToInquiry(intentHistory(group, intent)[0].id); }}>{INTENT_META[intent].shortLabel}</button>)}</nav> : null}
+        {activeInquiry?.anchor.pdf && library.entry ? <PdfSourcePreview entryId={library.entry.id} inquiry={activeInquiry} onJump={()=>jumpToInquiry(activeInquiry.id)} onCorrect={library.readOnly?undefined:correctPdfText} disabled={groupBusy||library.busy||!library.ready||modelsLoading||!!modelsError||!codexModels.length}/> : null}
         {activeInquiry ? (
           <InquiryPanel
             key={activeInquiry.id}
@@ -969,7 +1058,7 @@ function SelectionToolbar({
   onClose,
 }: {
   draft: SelectionDraft;
-  onSelect: (intent: InquiryIntent) => void;
+  onSelect: (intent: ActiveInquiryIntent) => void;
   onClose: () => void;
 }) {
   const left = Math.min(
@@ -1083,7 +1172,7 @@ function InquiryPanel({
         ) : null}
         {inquiry.status === "answering" ? <button className="secondary-action stop-action" type="button" onClick={onCancel}>停止本次请求</button> : <button type="button" className="primary-action" disabled={groupBusy || isComplete || (inquiry.intent !== "verify" && !actionsEnabled)} onClick={() => { onSetStatus("understood"); if (inquiry.intent === "verify") onReturnToReading(); }}><CircleCheck size={14} />{isComplete ? inquiry.intent === "verify" ? "已查找" : "已理解" : verificationUnfinished ? "暂时先这样" : "明白了，继续阅读"}</button>}
       </footer>
-      {inquiry.intent === "verify" && recheckDisabledReason ? <p className="recheck-unavailable" id="recheck-unavailable">{recheckDisabledReason}</p> : null}
+      {(inquiry.intent === "verify" || inquiry.intent === "explain" || inquiry.intent === "why") && recheckDisabledReason ? <p className="recheck-unavailable" id="recheck-unavailable">{recheckDisabledReason}</p> : null}
       </div>
     </div>
   );
@@ -1096,6 +1185,7 @@ function StatusBadge({ status }: { status: Inquiry["status"] }) {
 
 export function AssistantMessage({ message, verification = false, entity = false, failure, history = false }: { message: ThreadMessage; verification?: boolean; entity?: boolean; failure?: string; history?: boolean }) {
   const isReview = message.operation ? message.operation === "verify" : verification;
+  const isWebExplanation = !isReview && (message.explanationMode === "web" || (message.explanationMode === "auto" && (message.search?.status !== "not-executed" && message.search !== undefined || !!message.sources?.length)));
   const isIntroduction = message.operation ? message.operation === "entity" : entity;
   const websites = (message.sources ?? []).filter(source => safeSourceUrl(source.url)).filter((source, index, all) => all.findIndex(other => other.url === source.url) === index).sort((a, b) => Number(b.websiteRole === "official") - Number(a.websiteRole === "official"));
   const renderedAnswer = useMemo(() => renderMarkdown(message.content), [message.content]);
@@ -1105,9 +1195,13 @@ export function AssistantMessage({ message, verification = false, entity = false
       {message.mode === "demo" ? (
         <div className="demo-answer-label"><Info size={12} /> 演示回答 · 未调用真实模型</div>
       ) : null}
-      {message.completion === "provisional" && !message.verification ? <p className="provisional-note" role="status">正在生成，内容尚未完成{message.operation === "verify" || message.operation === "entity" ? "；来源与结论尚未核对" : ""}。</p> : null}
+      {message.completion === "provisional" && !message.verification ? <p className="provisional-note" role="status">正在生成，内容尚未完成{message.operation === "verify" || message.operation === "entity" || isWebExplanation ? "；来源与结论尚未核对" : ""}。</p> : null}
       {message.completion === "interrupted" ? <p className="no-source-note">本轮中断，未收到最终结果。</p> : null}
       <div className="answer-markdown" dangerouslySetInnerHTML={{ __html: renderedAnswer.html }} />
+      {isWebExplanation ? <div className="explanation-sources">
+        <p className="no-source-note">{message.search?.status === "executed" ? "本轮已搜索；引用核对情况见来源详情。" : message.search?.status === "failed" ? "本轮资料查找失败；现有解释可能缺少必要依据。" : message.completion === "provisional" ? "正在处理资料，来源尚未核对。" : message.search?.status === "not-executed" ? (message.explanationMode === "auto" ? "本轮未执行搜索；相关链接的核对情况见详情。" : "本轮没有执行搜索，未完成联网补充。") : "本轮无法确认搜索成功，请留意外部信息的限制。"}</p>
+        {(message.sources ?? []).map(source => <SourceCard key={source.id} source={source} sourceFirst explanation />)}
+      </div> : null}
       {isIntroduction && websites.length > 0 ? <nav className="website-links" aria-label="相关网站"><small>相关网站</small>{websites.map(source => <a key={source.id} href={safeSourceUrl(source.url)} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} aria-hidden="true" /><span>{source.title}<small>{new URL(source.url).hostname}</small></span>{source.websiteRole === "official" ? <em>官网</em> : null}</a>)}</nav> : null}
       </>}
     </article>
