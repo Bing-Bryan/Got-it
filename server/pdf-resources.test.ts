@@ -10,11 +10,12 @@ import type {LibraryEntry} from '../src/lib/library-types';
 let dirs:string[]=[];afterEach(async()=>{vi.restoreAllMocks();await Promise.all(dirs.map(d=>rm(d,{recursive:true,force:true})));dirs=[];});
 async function setup(){const dir=await mkdtemp(join(tmpdir(),'got-it-pdf-test-'));dirs.push(dir);const source=join(dir,'source.pdf');await writeFile(source,pdfFixture(3));const library=new ReadingLibrary(join(dir,'library'),async()=>source);const selected=await library.choose();const entry=await library.add(selected!.workspace,'first',selected!.selectionId);return {dir,source,library,entry};}
 const crop=()=>PNG.sync.write(new PNG({width:20,height:20,fill:true}));
+// Includes the first PDF.js load plus durable filesystem writes on hosted Windows runners.
 it('imports native/browser PDFs separately, reuses native paths and restores immutable pages after restart',async()=>{
  const s=await setup();expect(s.entry.workspace.document.kind).toBe('pdf');const selected=await s.library.choose();expect((await s.library.add(selected!.workspace,'again',selected!.selectionId)).id).toBe(s.entry.id);
  const browser=await s.library.uploadPdf('same.pdf',pdfFixture(3));const second=await s.library.add(browser.workspace,'browser',browser.selectionId);expect(second.id).not.toBe(s.entry.id);expect(second.source).toBeNull();
  const next=new ReadingLibrary(s.library.dir);const e=await next.get(s.entry.id);expect(e.workspace.document).toEqual(s.entry.workspace.document);expect((await next.resources.read(e.id,e.workspace.document.contentHash)).bytes.equals(pdfFixture(3))).toBe(true);
-});
+}, 15_000);
 it('requires upload authority; rejects fake metadata, outside-page anchors, external records and invalid formats',async()=>{
  const s=await setup();const w=s.entry.workspace;
  await expect(s.library.add(w,'fake')).rejects.toThrow('上传');

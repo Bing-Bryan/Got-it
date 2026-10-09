@@ -11,7 +11,7 @@ it('prefers executable desktop runtime, preserves overrides and falls back to PA
 });
 
 it('finds the current ChatGPT bundled layout before legacy paths and PATH',()=>{
- const root='/Applications/ChatGPT.app/Contents/Resources/';
- expect(resolveCodexBinary(undefined,'darwin',p=>p===root+'codex-cli/bin/codex'||p===root+'codex')).toBe(root+'codex-cli/bin/codex');
- expect(resolveCodexBinary(undefined,'darwin',p=>p===root+'codex-cli/CodexCLI.app/Contents/MacOS/codex')).toBe(root+'codex-cli/CodexCLI.app/Contents/MacOS/codex');
+ const root=join('/Applications','ChatGPT.app','Contents','Resources');
+ expect(resolveCodexBinary(undefined,'darwin',p=>p===join(root,'codex-cli/bin/codex')||p===join(root,'codex'))).toBe(join(root,'codex-cli/bin/codex'));
+ expect(resolveCodexBinary(undefined,'darwin',p=>p===join(root,'codex-cli/CodexCLI.app/Contents/MacOS/codex'))).toBe(join(root,'codex-cli/CodexCLI.app/Contents/MacOS/codex'));
 });

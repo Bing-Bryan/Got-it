@@ -438,8 +438,8 @@
     },
     {
       "path": "server/codex-runtime.test.ts",
-      "bytes": 1067,
-      "sha256": "d8f4f68f1f2af00aaad521fe374114d58f66543d1654593a655715cfa40da1e1"
+      "bytes": 1108,
+      "sha256": "577fbc6f20d6d539575481d8ef349f58d9810bf8949778c740e45d02c5a6b5d1"
     },
     {
       "path": "server/codex-runtime.ts",
@@ -533,8 +533,8 @@
     },
     {
       "path": "server/pdf-resources.test.ts",
-      "bytes": 14541,
-      "sha256": "ade012fd7b7348d9488f9d3cb5d17eb875ef58082125bbce091d615bece35989"
+      "bytes": 14641,
+      "sha256": "a618fc9ecd35f9b71c1723cf833848b85e4a4fafb2106ca45c8c04fd2314fdbc"
     },
     {
       "path": "server/pdf-resources.ts",
@@ -718,8 +718,8 @@
     },
     {
       "path": "docs/updates/2026-10-09.md",
-      "bytes": 2438,
-      "sha256": "c597e0fcbd0dbc6681ad3540ef8caa8e7c2e753f71f0af892d2911e925b4e44a"
+      "bytes": 2743,
+      "sha256": "afbf765449109ede1fedaf5a633b122622244a3468f61aebb1ee226dd3ce8822"
     },
     {
       "path": "docs/release-checklist.md",
