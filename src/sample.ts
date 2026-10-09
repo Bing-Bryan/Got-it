@@ -2,7 +2,7 @@ import { SCHEMA_VERSION, type DocumentSnapshot, type Workspace } from "./types";
 
 export const SAMPLE_MARKDOWN = `# 陪伴类 AI 产品分析
 
-> **示例文档**：这份节选用于体验 Got-it。文中的市场数据与用户比例尚未核查，请把它们当作练习材料，而不是研究结论。
+> **示例文档**：这份节选用于体验 Got it。文中的市场数据与用户比例尚未核查，请把它们当作练习材料，而不是研究结论。
 
 ## 执行摘要
 

@@ -1,12 +1,12 @@
-# Got-it
+# Got it
 
 [简体中文](README.md) · **English**
 
 **Make sense of it. Keep reading.**
 
-Got-it is a local-first Markdown and PDF reader. Select an unfamiliar passage, explain it or find sources beside the original, and keep useful answers linked to the text. Your reading records stay in a local library, ready to reopen.
+Got it is a local-first Markdown and PDF reader. Select an unfamiliar passage, explain it or find sources beside the original, and keep useful answers linked to the text. Your reading records stay in a local library, ready to reopen.
 
-> **v0.1.0 · Early preview.** Requires a locally installed, signed-in Codex. macOS Apple Silicon has been tested; Windows/Linux remain experimental pending native UI validation. No accounts, cloud sync or collaboration inside Got-it.
+> **v0.1.0 · Early preview.** Requires a locally installed, signed-in Codex. macOS Apple Silicon has been tested; Windows/Linux remain experimental pending native UI validation. No accounts, cloud sync or collaboration inside Got it.
 
 ## See it in action
 
@@ -75,7 +75,7 @@ The browser opens <http://127.0.0.1:8787/>. Keep the terminal running; Ctrl+C st
 3. Select a passage or PDF region and choose an action.
 4. Wait for the saved status before closing.
 
-Got-it does not read, copy or store Codex tokens. On macOS it prefers the Codex.app / ChatGPT.app executable, then `codex` on PATH; `CODEX_CLI_PATH` can override it. See [validation results](docs/release-results.md) for the tested setup.
+Got it does not read, copy or store Codex tokens. On macOS it prefers the Codex.app / ChatGPT.app executable, then `codex` on PATH; `CODEX_CLI_PATH` can override it. See [validation results](docs/release-results.md) for the tested setup.
 
 For development:
 
