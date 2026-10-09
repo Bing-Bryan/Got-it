@@ -15,8 +15,11 @@ it('opens one focused inline field, disables blank send and preserves draft when
  await type('这个价格包含什么？');await key({key:'Escape'});expect(host.querySelector('textarea')).toBeNull();await click('.question-toggle');expect(host.querySelector('textarea')!.value).toBe('这个价格包含什么？');
  await click('[type=submit]');expect(send).toHaveBeenCalledExactlyOnceWith('这个价格包含什么？');
 });
-it('does not send IME confirmation or Shift+Enter but sends a normal Enter once',async()=>{
- const send=vi.fn();await act(async()=>root.render(<QuestionComposer inline onSubmit={send}/>));await click('.question-toggle');await type('请说明原文');
+it.each([{inline:true},{inline:false},{inline:false,followUp:true}])('uses Enter to send and protects newline/IME in %j',async props=>{
+ const send=vi.fn();await act(async()=>root.render(<QuestionComposer {...props} onSubmit={send}/>));await click('.question-toggle');await type('请说明原文');
  await key({key:'Enter',isComposing:true});await key({key:'Enter',keyCode:229});await key({key:'Enter',shiftKey:true});expect(send).not.toHaveBeenCalled();
  await key({key:'Enter'});expect(send).toHaveBeenCalledExactlyOnceWith('请说明原文');expect(host.querySelector('textarea')).toBeNull();
+});
+it('opens a document composer without sending, and closes its parent on Escape',async()=>{
+ const send=vi.fn(),close=vi.fn();await act(async()=>root.render(<QuestionComposer initialOpen onSubmit={send} onClose={close}/>));expect(host.querySelector('textarea')).not.toBeNull();expect(send).not.toHaveBeenCalled();await key({key:'Escape'});expect(close).toHaveBeenCalledOnce();expect(send).not.toHaveBeenCalled();
 });

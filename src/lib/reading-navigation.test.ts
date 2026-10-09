@@ -7,3 +7,17 @@ it.each([[150,180,0],[70,90,-38],[480,520,28],[150,850,0]])('minimally reveals %
  vi.spyOn(scroll,'getBoundingClientRect').mockReturnValue(rect(50,500));vi.spyOn(tools,'getBoundingClientRect').mockReturnValue(rect(50,100));vi.spyOn(target,'getBoundingClientRect').mockReturnValue(rect(top,bottom));scroll.scrollTop=200;
  expect(revealReadingTarget(target)).toBe(true);expect(scroll.scrollTop).toBe(200+delta);
 });
+it('reveals an offscreen horizontal PDF target without scrolling the application frame',()=>{
+ const scroll=document.createElement('div');scroll.className='reader-scroll';const target=document.createElement('mark');scroll.append(target);document.body.append(scroll);
+ vi.spyOn(scroll,'getBoundingClientRect').mockReturnValue(rect(0,500));vi.spyOn(target,'getBoundingClientRect').mockReturnValue({...rect(100,150),left:650,right:700,width:50});
+ scroll.scrollLeft=100;scroll.scrollTo=vi.fn();expect(revealReadingTarget(target)).toBe(true);
+ expect(scroll.scrollTo).toHaveBeenCalledWith({top:0,left:308,behavior:'instant'});
+});
+it('aligns a Markdown heading within the reader without invoking ancestor scrolling',()=>{
+ const frame=document.createElement('div');frame.className='app-frame';const scroll=document.createElement('div');scroll.className='reader-scroll';const target=document.createElement('h2');scroll.append(target);frame.append(scroll);document.body.append(frame);
+ vi.spyOn(scroll,'getBoundingClientRect').mockReturnValue(rect(132,900));vi.spyOn(target,'getBoundingClientRect').mockReturnValue({...rect(1200,1240),left:40,right:400,width:360});
+ scroll.scrollTo=vi.fn();target.scrollIntoView=vi.fn();frame.scrollTo=vi.fn();
+ expect(revealReadingTarget(target,{align:'start'})).toBe(true);
+ expect(scroll.scrollTo).toHaveBeenCalledWith({top:1060,left:0,behavior:'instant'});
+ expect(frame.scrollTo).not.toHaveBeenCalled();expect(target.scrollIntoView).not.toHaveBeenCalled();
+});

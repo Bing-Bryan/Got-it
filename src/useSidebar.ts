@@ -15,6 +15,7 @@ export function useSidebar() {
     const media = window.matchMedia?.('(max-width: 1080px)');
     const resize = () => { setNarrow(media?.matches ?? false); setPeek(false); };
     media?.addEventListener('change', resize);
+    resize(); // Reconcile a viewport change between initial render and subscribing.
     return () => { media?.removeEventListener('change', resize); clearTimeout(timer.current); };
   }, []);
   return { pinned, peek, narrow, ref, reveal, leave, cancel, pin, close: () => { returnFocus(); cancel(); setPeek(false); } };

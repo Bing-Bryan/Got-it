@@ -1,3 +1,4 @@
+import { REFINEMENTS } from "./lib/learning";
 import { resetTestLibrary, testWorkspace, testLibraryRequest } from "./test-support/library";
 vi.mock("./lib/library-client", async () => ({ libraryRequest: (await import("./test-support/library")).testLibraryRequest }));
 vi.mock('./PdfReader',async()=>{const {useEffect}=await import('react');return {default:(props:{onReady?:()=>void})=>{useEffect(()=>props.onReady?.(),[]);return <div className="pdf-reader" data-page="1" data-zoom="0"/>;}};});
@@ -28,6 +29,14 @@ beforeEach(async()=>{
  host=document.createElement('div');document.body.append(host);root=createRoot(host);stream.mockReset();
 });
 async function mount(){localStorage.setItem(STORAGE_KEY,JSON.stringify(w));await act(async()=>root.render(<App/>));}
+async function mountLegacyRetry(){
+ w.inquiries[0].lastError='历史固定解释未完成';
+ w.inquiries[0].messages.push({id:'legacy-question',role:'user',content:REFINEMENTS.simplify.prompt,createdAt:'2026'}, {id:'legacy-failure',role:'assistant',content:'',createdAt:'2026',completion:'interrupted',operation:'explain',explanationMode:'auto'});
+ const entry=await testLibraryRequest('/entries',{workspace:w,creationKey:'legacy-retry'}) as {id:string};
+ await testLibraryRequest(`/entries/${entry.id}/activate`,{});
+ await mount();
+}
+
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();localStorage.removeItem(STORAGE_KEY);vi.unstubAllGlobals();});
 it('categories list the whole document and highlights open their own results without generating',async()=>{
  const base=w.inquiries[0];
@@ -78,7 +87,7 @@ it('preserves unavailable SOL 6.1 defaults, reports missing catalog and refreshe
  w.modelDefaultsVersion=3;
  let failed=false;
  vi.stubGlobal('fetch',vi.fn(async(input:string)=>({ok:!failed,json:async()=>input.includes('/models')?failed?{error:'连接中断'}:{models:TEST_MODELS.filter(m=>m.model!=='gpt-6.1-sol')}:{providers:[{id:'codex',name:'Codex',availability:'connected',supportsWebSearch:true}],defaultProviderId:'codex'}})));
- await mount();expect(host.querySelector('[role=alert]')).toBeNull();expect((host.querySelector('.explain-again-action') as HTMLButtonElement).disabled).toBe(true);expect(host.textContent).toContain('不会自动换模型');
+ await mount();expect(host.querySelector('[role=alert]')).toBeNull();expect((host.querySelector('.question-toggle') as HTMLButtonElement).disabled).toBe(true);expect(host.textContent).toContain('不会自动换模型');
  expect((host.querySelector('select[aria-label="当前用途的模型"]') as HTMLSelectElement).value).toBe('gpt-6.1-sol');
  expect(testWorkspace().modelPreferences!.explain).toEqual({model:'gpt-6.1-sol',reasoningEffort:'medium'});
  failed=true;await act(async()=>{const details=host.querySelector('.model-settings') as HTMLDetailsElement;details.open=true;details.dispatchEvent(new Event('toggle'));});expect(host.querySelector('[role=alert]')?.textContent).toContain('连接中断');expect((host.querySelector('select[aria-label="当前用途的模型"]') as HTMLSelectElement).disabled).toBe(true);
@@ -97,7 +106,7 @@ it('replacing a document preserves preferences, clears search and aborts old req
  stream.mockImplementation((_request:any,_cb:any,s:AbortSignal)=>{signal=s;return new Promise<void>((_resolve,reject)=>s.addEventListener('abort',()=>reject(new Error('aborted'))));});
  HTMLElement.prototype.scrollTo=vi.fn();vi.spyOn(window,'confirm').mockReturnValue(true);
  w.modelPreferences={explain:{model:'gpt-5.5',reasoningEffort:'high'}};
- await mount();await click('.explain-again-action');
+ await mountLegacyRetry();await click('.regenerate-action');
  const file=new File(['# 新文档\n新正文'],'next.md',{type:'text/markdown'});Object.defineProperty(file,'text',{value:async()=>'# 新文档\n新正文'});
  await act(async()=>{const input=host.querySelector('input[type=file]') as HTMLInputElement;Object.defineProperty(input,'files',{value:[file],configurable:true});input.dispatchEvent(new Event('change',{bubbles:true}));});
  expect(signal?.aborted).toBe(true);
@@ -106,7 +115,7 @@ it('replacing a document preserves preferences, clears search and aborts old req
 it('stopping a request preserves history, aborts transport and ignores late completion',async()=>{
  let emit!:(event:InquiryEvent)=>void,signal!:AbortSignal,finish!:()=>void;
  stream.mockImplementation((_r:any,cb:any,s:AbortSignal)=>{emit=cb;signal=s;return new Promise<void>(r=>finish=r);});
- await mount();await click('.explain-again-action');const request=stream.mock.calls[0][0];
+ await mountLegacyRetry();await click('.regenerate-action');const request=stream.mock.calls[0][0];
  const stop=[...host.querySelectorAll<HTMLButtonElement>('button')].find(e=>e.textContent==='停止本次请求')!;
  await act(async()=>stop.click());expect(signal.aborted).toBe(true);expect(host.textContent).toContain('已停止本次请求');
  await act(async()=>{emit({requestId:request.requestId,sequence:9,type:'complete',response:{answer:'迟到结果',sources:[],providerId:'codex',providerName:'Codex',mode:'live',evidenceStatus:'not-applicable'}});finish();});
@@ -115,7 +124,7 @@ it('stopping a request preserves history, aborts transport and ignores late comp
 it('followups after failed attempts omit empty historical messages and retry preserves that boundary',async()=>{
  w.inquiries[0].messages.unshift({id:'empty',role:'assistant',content:'',completion:'interrupted',createdAt:'2025'});
  stream.mockRejectedValue(new Error('测试失败'));
- await mount();await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='再解释下')!.click());
+ await mountLegacyRetry();await click('.regenerate-action');
  expect(stream.mock.calls[0][0].history.every((m:any)=>m.content.trim())).toBe(true);
  await click('.regenerate-action');expect(stream.mock.calls[1][0].history.every((m:any)=>m.content.trim())).toBe(true);
 });
@@ -129,7 +138,7 @@ it('migrates old workspace defaults once to GPT-6 without rewriting historical m
 it('renders deltas before completion, keeps them provisional and preserves partial text on stop',async()=>{
  let emit!:(event:InquiryEvent)=>void;
  stream.mockImplementation((_r:InquiryRequest,cb:any,signal:AbortSignal)=>{emit=cb;return new Promise<void>((_,reject)=>signal.addEventListener('abort',()=>reject(new Error('中断'))));});
- await mount();await click('.explain-again-action');const request=stream.mock.calls[0][0];
+ await mountLegacyRetry();await click('.regenerate-action');const request=stream.mock.calls[0][0];
  await act(async()=>{emit({type:'answer-delta',delta:'这是',requestId:request.requestId,sequence:1});emit({type:'answer-delta',delta:'逐步解释',requestId:request.requestId,sequence:2});});
  expect(host.querySelectorAll('.answer-markdown')[0].textContent?.trim()).toBe('这是逐步解释');expect(host.textContent).toContain('正在生成，内容尚未完成');
  const saved=testWorkspace();expect(saved.inquiries[0].messages.at(-1)?.completion).toBe('provisional');
@@ -138,7 +147,7 @@ it('renders deltas before completion, keeps them provisional and preserves parti
  await act(async()=>emit({type:'answer-delta',delta:'迟到内容',requestId:request.requestId,sequence:3}));expect(host.textContent).not.toContain('迟到内容');
 });
 it('shows model controls inside the closed provider menu and exposes secondary actions alongside completion',async()=>{
- await mount();expect((host.querySelector('.model-settings') as HTMLDetailsElement).open).toBe(true);expect((host.querySelector('.provider-shell') as HTMLElement).hidden).toBe(true);expect(host.querySelector('.more-actions')).toBeNull();expect(host.querySelector('.compact-actions')?.textContent).toContain('再解释下');
+ await mount();expect((host.querySelector('.model-settings') as HTMLDetailsElement).open).toBe(true);expect((host.querySelector('.provider-shell') as HTMLElement).hidden).toBe(true);expect(host.querySelector('.more-actions')).toBeNull();expect(host.querySelector('.compact-actions')?.textContent).toContain('还是不懂？');
  expect(host.querySelector('.anchor-card')).toBeNull();expect(host.querySelector('.user-message')).toBeNull();expect(host.querySelector('.inquiry-head')).toBeNull();expect((host.querySelector('.category-items') as HTMLElement).hidden).toBe(true);
  await click('.result-navigation button');expect((host.querySelector('.category-items') as HTMLElement).hidden).toBe(false);expect(host.querySelector('.answer-markdown')).toBeNull();expect(stream).not.toHaveBeenCalled();
 });
@@ -148,22 +157,37 @@ it.each([[99, '(99)'], [100, '(99+)']] as const)('renders single-line tab icons 
  expect(host.querySelectorAll('.inquiry-tabs button > svg').length).toBe(3);expect(host.querySelector('.inquiry-tabs small')).toBeNull();
 });
 
-it('keeps actions stable after completion and allows explaining again without reopening',async()=>{
+it.each(['explain','why','verify'] as const)('uses a noninteractive prompt and explicitly submitted question for %s',async intent=>{
+ w.inquiries[0].intent=intent;
  stream.mockRejectedValue(new Error('测试请求失败'));
- await mount();expect(host.querySelector('.compact-actions .primary-action')).toBeNull();
- expect(host.querySelector('.compact-actions')?.textContent).not.toContain('重新打开');
- expect((host.querySelector('.explain-again-action') as HTMLButtonElement).disabled).toBe(false);
- await click('.explain-again-action');
- const request=stream.mock.calls[0][0];expect(request.operation).toBe('explain');expect(request.question).toContain('更简单');expect(request.question).toContain('日常生活例子');
- expect(host.querySelector('.answer-history')?.textContent).toContain('已有解释');
+ await mount();const original=structuredClone(testWorkspace().inquiries[0]);
+ const prompt=host.querySelector<HTMLElement>('.question-prompt')!;
+ expect(prompt.tagName).toBe('SPAN');expect(prompt.textContent).toBe('还是不懂？');
+ expect(prompt.hasAttribute('tabindex')).toBe(false);expect(prompt.hasAttribute('role')).toBe(false);
+ expect(host.querySelector('.explain-again-action')).toBeNull();
+ await click('.question-prompt');expect(stream).not.toHaveBeenCalled();expect(host.querySelector('textarea')).toBeNull();
+ await click('.question-toggle');expect(stream).not.toHaveBeenCalled();
+ expect(host.querySelector('.question-prompt')).toBeNull();
+ expect(host.querySelector('textarea')?.getAttribute('placeholder')).toBeNull();
+ await typeQuestion('能举个例子吗？');
+ await act(async()=>host.querySelector<HTMLTextAreaElement>('textarea')!.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+ expect(stream).not.toHaveBeenCalled();await click('.question-toggle');
+ expect(host.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('能举个例子吗？');
+ await click('.question-composer [type=submit]');
+ expect(stream).toHaveBeenCalledTimes(1);expect(stream.mock.calls[0][0]).toMatchObject({intent:'ask',question:'能举个例子吗？'});
+ expect(testWorkspace().inquiries).toHaveLength(2);expect(testWorkspace().inquiries[0]).toEqual(original);
+ expect(testWorkspace().inquiries[1].anchor).toEqual(original.anchor);
+ expect(stream.mock.calls[0][0].history).toContainEqual({role:'assistant',content:'已有解释'});
+ expect(host.querySelector('#intent-tab-ask')?.getAttribute('aria-selected')).toBe('true');
 });
+
 it('keeps legacy distilled records readable and complete without distillation controls',async()=>{
  w.inquiries[0].status='distilled';w.inquiries[0].messages[0].evidenceStatus='unsupported';await mount();
  const saved=testWorkspace().inquiries[0];
  expect(saved.status).toBe('distilled');expect(saved.messages[0].evidenceStatus).toBe('unsupported');expect(saved.messages).toHaveLength(1);
  expect(host.querySelector('.distill-action')).toBeNull();expect(host.querySelector('.undo-popover')).toBeNull();
  expect(host.querySelector('.compact-actions .primary-action')).toBeNull();
- expect((host.querySelector('.explain-again-action') as HTMLButtonElement).disabled).toBe(false);expect(stream).not.toHaveBeenCalled();
+ expect((host.querySelector('.question-toggle') as HTMLButtonElement).disabled).toBe(false);expect(stream).not.toHaveBeenCalled();
 });
 
 it.each(['explain','verify','entity'] as const)('only exposes regeneration after failure for %s and hides it during retry and after success',async intent=>{
@@ -190,15 +214,28 @@ it('detailed introduction uses entity preferences and preserves its instruction 
  await click('.regenerate-action');const retry=stream.mock.calls[1][0];expect(retry.operation).toBe('entity');expect(retry.question).toBe(first.question);expect(retry.modelConfig).toEqual(first.modelConfig);
  expect(host.querySelector('.answer-history')?.textContent).toContain('已有解释');expect(testWorkspace().inquiries).toHaveLength(1);
 });
-it('recheck is the single verification followup and carries evidence gaps, round and parent through retry',async()=>{
- w.inquiries[0].intent='verify';w.inquiries[0].messages[0].verification={verdict:'partial',summary:'只支持一部分',reason:'缺少同年份资料',readingAdvice:'保留限制',claims:[],round:3,scope:'expanded',completion:'complete'};
- w.inquiries[0].messages[0].sources=[{id:'s1',title:'已有来源',url:'https://example.com',domain:'example.com'}];
- stream.mockRejectedValue(new Error('受控查证失败'));await mount();
- expect([...host.querySelectorAll('.compact-actions button')].map(b=>b.textContent)).toEqual(['再找一下']);
- await click('.verify-again-action');const first=stream.mock.calls[0][0];
- expect(first.operation).toBe('verify');expect(first.scope).toBe('expanded');expect(first.round).toBe(4);expect(first.parentMessageId).toBe('old');expect(first.previous.verification.reason).toBe('缺少同年份资料');expect(first.previous.sources[0].id).toBe('s1');expect(first.modelConfig.model).toBe('gpt-6.1-sol');
- expect((host.querySelector('.verify-again-action') as HTMLButtonElement).disabled).toBe(false);
- await click('.verify-again-action');const retry=stream.mock.calls[1][0];expect(retry.round).toBe(4);expect(retry.previous).toEqual(first.previous);expect(retry.scope).toBe('expanded');expect(retry.operation).toBe('verify');
+it('verification offers only questions, hides old answers, and keeps existing data',async()=>{
+ w.inquiries[0].intent='verify';
+ w.inquiries[0].messages[0].verification={verdict:'partial',summary:'只支持一部分',reason:'缺少同年份资料',readingAdvice:'保留限制',claims:[],round:3,scope:'expanded',completion:'complete'};
+ w.inquiries[0].messages.unshift({...w.inquiries[0].messages[0],id:'older-verify',content:'旧查证结果'});
+ await mount();
+ expect([...host.querySelectorAll('.compact-actions button')].map(b=>b.textContent)).toEqual(['问一问']);
+ expect(host.querySelector('.question-prompt')?.textContent).toBe('还是不懂？');
+ expect(host.querySelector('.answer-history')).toBeNull();
+ expect(testWorkspace().inquiries[0].messages).toHaveLength(2);
+ expect(stream).not.toHaveBeenCalled();
+});
+it('verification retry retains legacy expanded scope and evidence without exposing history',async()=>{
+ w.inquiries[0].intent='verify';
+ w.inquiries[0].messages[0].verification={verdict:'partial',summary:'部分来源',reason:'缺口',readingAdvice:'',claims:[],round:3,scope:'expanded',completion:'complete'};
+ w.inquiries[0].lastError='受控失败';
+ w.inquiries[0].messages.push({id:'failed',role:'assistant',content:'',createdAt:'2026',operation:'verify',completion:'interrupted',scope:'expanded',round:4,parentMessageId:'old'});
+ stream.mockRejectedValue(new Error('受控失败'));await mount();
+ expect(host.querySelector('.verify-again-action')?.textContent).toBe('重试');
+ await click('.verify-again-action');const retry=stream.mock.calls[0][0];
+ expect(retry).toMatchObject({intent:'verify',operation:'verify',scope:'expanded',round:4,parentMessageId:'old'});
+ expect(retry.previous.verification.reason).toBe('缺口');
+ expect(host.querySelector('.answer-history')).toBeNull();
  expect(testWorkspace().inquiries[0].messages[0].verification?.round).toBe(3);
 });
 it('moves legacy DeepSeek selection to Codex, preserving answers and using Codex for new requests',async()=>{
@@ -207,7 +244,7 @@ it('moves legacy DeepSeek selection to Codex, preserving answers and using Codex
  w.inquiries[0].messages[0].providerId='deepseek';
  vi.stubGlobal('fetch',vi.fn(async()=>({ok:true,json:async()=>({models:TEST_MODELS,providers:[{id:'codex',name:'Codex',availability:'connected',supportsWebSearch:true},{id:'deepseek',name:'DeepSeek',availability:'connected',supportsWebSearch:false}],defaultProviderId:'deepseek'})})));
  stream.mockRejectedValue(new Error('受控请求失败'));
- await mount();await click('.provider-trigger');
+ await mountLegacyRetry();await click('.provider-trigger');
  expect(host.querySelector('.provider-popover')?.textContent).not.toMatch(/DeepSeek|API Key|本地实验/);
  expect(host.querySelectorAll('.provider-option')).toHaveLength(1);
  expect(host.querySelector('#deepseek-key')).toBeNull();
@@ -215,7 +252,7 @@ it('moves legacy DeepSeek selection to Codex, preserving answers and using Codex
  expect(testWorkspace().modelPreferences!.explain).toEqual({model:'gpt-5.5',reasoningEffort:'high'});
  expect(testWorkspace().inquiries[0].messages[0].providerId).toBe('deepseek');
  expect(host.textContent).toContain('已有解释');expect(stream).not.toHaveBeenCalled();
- await click('.explain-again-action');expect(stream.mock.calls[0][0]).toMatchObject({providerId:'codex',modelConfig:{model:'gpt-5.5',reasoningEffort:'high'}});
+ await click('.regenerate-action');expect(stream.mock.calls[0][0]).toMatchObject({providerId:'codex',modelConfig:{model:'gpt-5.5',reasoningEffort:'high'}});
 });
 
 it.each(['incomplete','interrupted','failed'] as const)('leaving unfinished sources preserves state and retry: %s',async state=>{
@@ -230,6 +267,7 @@ it.each(['incomplete','interrupted','failed'] as const)('leaving unfinished sour
  expect(host.querySelector('.category-items')?.textContent).toContain('未完成');
  await click('.category-open');expect(host.querySelector('.primary-action')).toBeNull();
  expect(stream).not.toHaveBeenCalled();
+ if(state==='incomplete'){expect(host.querySelector('.verify-again-action')).toBeNull();return;}
  stream.mockImplementation(()=>new Promise(()=>{}));await click('.verify-again-action');expect(stream).toHaveBeenCalledTimes(1);
 });
 
@@ -243,15 +281,16 @@ it('completed verification with insufficient evidence returns without changing l
  await click('.category-open');expect(host.querySelector('.primary-action')).toBeNull();
 });
 
-it.each(['unknown','failed','not-executed'] as const)('retries incomplete verification with %s search without expanding or losing history',async search=>{
+it.each(['unknown','failed','not-executed'] as const)('only retries explicit failure for %s search, preserving legacy scope',async search=>{
  const inquiry=w.inquiries[0];inquiry.intent='verify';inquiry.status='needs-verification';
  const old=inquiry.messages[0];old.operation='verify';old.search={status:search,completedSearches:0,failedSearches:search==='failed'?1:0};
  old.verification={verdict:'incomplete',summary:'查证未完成',reason:'缺少搜索记录',readingAdvice:'保留限制',round:3,scope:'expanded',completion:'complete',claims:[]};
  stream.mockImplementation(()=>new Promise(()=>{}));await mount();
+ if(search!=='failed'){expect(host.querySelector('.verify-again-action')).toBeNull();expect(stream).not.toHaveBeenCalled();return;}
  expect((host.querySelector('.verify-again-action') as HTMLButtonElement).disabled).toBe(false);expect(host.querySelector('.regenerate-action')).toBeNull();
  expect(host.querySelector('.verification-summary')?.textContent).not.toContain('可以再试一次');expect(host.querySelector('.verification-summary')?.textContent).not.toContain('本轮公开网页搜索未找到');
  await click('.verify-again-action');const request=stream.mock.calls[0][0];expect(request.operation).toBe('verify');expect(request.scope).toBe('expanded');expect(request.round).toBe(3);
- expect((host.querySelector('.verify-again-action') as HTMLButtonElement).disabled).toBe(true);expect(host.querySelector('.stop-action')).not.toBeNull();
+ expect(host.querySelector('.verify-again-action')).toBeNull();expect(host.querySelector('.stop-action')).not.toBeNull();
  expect(testWorkspace().inquiries[0].messages[0]).toMatchObject({id:old.id,verification:{verdict:'incomplete',round:3}});
 });
 
@@ -335,31 +374,31 @@ it('same-anchor navigation includes current intent and preserves its chosen hist
  expect(JSON.stringify(testWorkspace().inquiries)).toBe(before);
  expect(stream).not.toHaveBeenCalled();
 });
-it('auto explanation keeps local history, retries its mode, and simplify stays auto',async()=>{
+it('historical fixed explanation retry keeps local history and auto mode',async()=>{
  w.inquiries[0].status='understood';
  stream.mockRejectedValueOnce(new Error('受控失败'));
- await mount();await click('.explain-again-action');
+ await mountLegacyRetry();await click('.regenerate-action');
  const first=stream.mock.calls[0][0];expect(first.operation).toBe('explain');expect(first.explanationMode).toBe('auto');expect(first.modelConfig.model).toBe('gpt-6.1-sol');expect(first.history[0].content).toBe('已有解释');
  expect(testWorkspace().inquiries[0].messages[0].content).toBe('已有解释');expect(host.querySelectorAll('.regenerate-action')).toHaveLength(1);
  stream.mockImplementation(async(request:InquiryRequest,cb:any)=>{cb({requestId:request.requestId,sequence:1,type:'complete',response:{answer:'联网补充结果',sources:[{id:'s',title:'官方定义',url:'https://example.org/',domain:'example.org',retrievalStatus:'unavailable'}],search:{status:'executed',completedSearches:1,failedSearches:0},evidenceStatus:'not-applicable',mode:'live',providerId:'codex',providerName:'Codex'}});});
  await click('.regenerate-action');expect(stream.mock.calls[1][0].explanationMode).toBe('auto');expect(stream.mock.calls[1][0].modelConfig).toEqual(first.modelConfig);
  expect([...host.querySelectorAll('.explanation-sources')].at(-1)?.textContent).toContain('正文未取得');expect([...host.querySelectorAll('.explanation-sources')].at(-1)?.textContent).not.toContain('历史评估记录');
- await click('.explain-again-action');expect(stream.mock.calls[2][0].explanationMode).toBe('auto');expect(testWorkspace().inquiries[0].messages.some(m=>m.explanationMode==='auto')).toBe(true);
+ expect(host.querySelector('.explain-again-action')).toBeNull();expect(host.querySelector('.regenerate-action')).toBeNull();expect(testWorkspace().inquiries[0].messages.some(m=>m.explanationMode==='auto')).toBe(true);
 });
-it('auto explanation locks while running, stops without losing history, and remains disabled without search capability',async()=>{
+it('historical explanation retry locks while running and stops without losing history',async()=>{
  stream.mockImplementation((_r:InquiryRequest,_cb:any,s:AbortSignal)=>new Promise((_,reject)=>s.addEventListener('abort',()=>reject(new Error('已中断')))));
- await mount();await click('.explain-again-action');expect((host.querySelector('.explain-again-action') as HTMLButtonElement).disabled).toBe(true);await click('.stop-action');expect(host.querySelector('.stop-action')).toBeNull();expect(host.querySelector('.regenerate-action')).not.toBeNull();expect(testWorkspace().inquiries[0].messages[0].content).toBe('已有解释');
+ await mountLegacyRetry();await click('.regenerate-action');expect((host.querySelector('.question-toggle') as HTMLButtonElement).disabled).toBe(true);await click('.stop-action');expect(host.querySelector('.stop-action')).toBeNull();expect(host.querySelector('.regenerate-action')).not.toBeNull();expect(testWorkspace().inquiries[0].messages[0].content).toBe('已有解释');
 });
-it('disables supplement with an explanation when the provider cannot search',async()=>{
+it('does not expose retired explanation shortcuts when the provider cannot search',async()=>{
  vi.stubGlobal('fetch',vi.fn(async()=>({ok:true,json:async()=>({models:TEST_MODELS,providers:[{id:'codex',name:'Codex',availability:'connected',supportsWebSearch:false}],defaultProviderId:'codex'})})));
- await mount();expect(host.querySelector('.explanation-web-action')).toBeNull();expect(host.querySelector('.recheck-unavailable')?.textContent).toContain('不支持联网');expect(stream).not.toHaveBeenCalled();
+ await mount();expect(host.querySelector('.explanation-web-action')).toBeNull();expect(host.querySelector('.explain-again-action')).toBeNull();expect(stream).not.toHaveBeenCalled();
 });
 
 it('PDF image auto retry keeps the saved crop and auto mode; navigation does not change evidence',async()=>{
  const h='a'.repeat(64),cropId='b'.repeat(64);w.document={id:w.document.id,filename:'safe.pdf',kind:'pdf',contentHash:h,isDemo:false,importedAt:'2026',pdf:{resourceId:h,pages:[{view:[0,0,400,300],rotation:0}]}};
  w.inquiries[0].anchor.pdf={kind:'region',source:'image',fileHash:h,page:1,rects:[[20,20,100,100]],cropId};w.inquiries[0].messages[0].evidenceStatus='not-applicable';stream.mockRejectedValue(new Error('controlled network failure'));
  const entry=await testLibraryRequest('/entries',{workspace:w,creationKey:'pdf-test'}) as {id:string};await testLibraryRequest(`/entries/${entry.id}/activate`,{});
- await mount();await click('.explain-again-action');const first=stream.mock.calls[0][0];expect(first.image).toMatchObject({fileHash:h,cropId});expect(first.image.entryId).toBeTruthy();expect(first.explanationMode).toBe('auto');
+ await mountLegacyRetry();await click('.regenerate-action');const first=stream.mock.calls[0][0];expect(first.image).toMatchObject({fileHash:h,cropId});expect(first.image.entryId).toBeTruthy();expect(first.explanationMode).toBe('auto');
  await click('.regenerate-action');expect(stream.mock.calls[1][0].image).toEqual(first.image);expect(stream.mock.calls[1][0].explanationMode).toBe('auto');
  stream.mockImplementation(async(request:InquiryRequest,cb:any)=>{cb({requestId:request.requestId,sequence:1,type:'complete',response:{answer:'controlled completion',sources:[],search:{status:'not-executed',completedSearches:0,failedSearches:0},evidenceStatus:'not-applicable',mode:'live',providerId:'codex',providerName:'Codex'}});});
  await click('.regenerate-action');await click('.return-to-list');expect(host.querySelector('.primary-action')).toBeNull();
@@ -375,10 +414,10 @@ it('retains old corrected OCR and crop after removing detail controls and uses t
  w.inquiries[0].anchor.pdf={kind:'region',source:'image',fileHash:h,page:1,rects:[[20,20,100,100]],cropId,ocrId:'c'.repeat(64),originalText:'2096',context:'20%'};
  w.inquiries[0].status='understood';w.inquiries[0].completedAt='2026-01-01';
  const entry=await testLibraryRequest('/entries',{workspace:w,creationKey:'correction-test'})as {id:string};await testLibraryRequest(`/entries/${entry.id}/activate`,{});
- await mount();expect(host.querySelector('.pdf-source-preview')).toBeNull();expect(host.querySelector('textarea')).toBeNull();
+ await mountLegacyRetry();expect(host.querySelector('.pdf-source-preview')).toBeNull();expect(host.querySelector('textarea')).toBeNull();
  const before=structuredClone(testWorkspace().inquiries[0]);await click('.return-to-list');await click('.category-open');
  expect(testWorkspace().inquiries[0]).toEqual(before);
- await click('.explain-again-action');expect(stream.mock.calls[0][0]).toMatchObject({context:'20%',explanationMode:'auto',image:{fileHash:h,cropId}});
+ await click('.regenerate-action');expect(stream.mock.calls[0][0]).toMatchObject({context:'20%',explanationMode:'auto',image:{fileHash:h,cropId}});
  expect(testWorkspace().inquiries[0].anchor.pdf).toEqual(before.anchor.pdf);
 });
 
@@ -411,7 +450,7 @@ it('has one pending confirmation and resets it on Escape, mode exit, tab and det
 it('aborts a deleted running thread and ignores late delta, complete and failure events',async()=>{
  let emit!:(event:InquiryEvent)=>void,signal!:AbortSignal,fail!:(e:Error)=>void;
  stream.mockImplementation((_r:any,cb:any,s:AbortSignal)=>{emit=cb;signal=s;return new Promise<void>((_,reject)=>fail=reject);});
- await mount();await click('.explain-again-action');const request=stream.mock.calls[0][0];await click('#intent-tab-explain');await click('#inquiry-delete-toggle');await click('[data-delete-inquiry-id="explain"]');
+ await mountLegacyRetry();await click('.regenerate-action');const request=stream.mock.calls[0][0];await click('#intent-tab-explain');await click('#inquiry-delete-toggle');await click('[data-delete-inquiry-id="explain"]');
  expect(signal.aborted).toBe(false);await click('[data-delete-inquiry-id="explain"]');expect(signal.aborted).toBe(true);
  await act(async()=>{emit({type:'answer-delta',requestId:request.requestId,sequence:1,delta:'迟到增量'});emit({type:'complete',requestId:request.requestId,sequence:2,response:{answer:'迟到内容',mode:'live',providerId:'codex',providerName:'Codex',sources:[],evidenceStatus:'not-applicable'}});fail(new Error('迟到错误'));});
  expect(testWorkspace().inquiries).toEqual([]);expect(host.textContent).not.toContain('迟到');expect(host.querySelector('.tab-busy')).toBeNull();
@@ -452,8 +491,74 @@ it('keeps first-open explanation, exact question selection, persisted last-view 
  await click('.return-to-list');await click('mark[data-inquiry-id]');expect(host.querySelector('.answer-markdown')?.textContent).toContain('补充回答');expect(stream).toHaveBeenCalledTimes(1);
 });
 it('allows explicit source selection without default explanation overriding it and blocks simultaneous questions',async()=>{
- const base=w.inquiries[0];w.inquiries.push({...base,id:'v',intent:'verify'});stream.mockImplementation(()=>new Promise(()=>{}));await mount();
+ const base=w.inquiries[0];w.inquiries.push({...base,id:'v',intent:'verify',lastError:'受控失败'});stream.mockImplementation(()=>new Promise(()=>{}));await mount();
  await click('#intent-tab-verify');await click('[data-inquiry-id=v]');
  expect(host.querySelector('.anchor-requests [aria-current=true]')?.textContent).toBe('来源');expect(stream).not.toHaveBeenCalled();
  await click('.verify-again-action');expect((host.querySelector('.question-toggle')as HTMLButtonElement).disabled).toBe(true);expect(stream).toHaveBeenCalledTimes(1);
+});
+
+it('opens a collapsed result from its original mark and preserves it through explicit hide and reopen',async()=>{
+ localStorage.setItem('got-it.result-panel-pinned.v1','false');
+ await mount();
+ const panel=()=>host.querySelector('.right-panel') as HTMLElement;
+ expect(panel().hasAttribute("inert")).toBe(true);
+ await click('mark[data-inquiry-id="explain"]');
+ expect(panel().hasAttribute("inert")).toBe(false);expect(host.querySelector('.answer-markdown')?.textContent).toContain('已有解释');
+ await act(async()=>panel().dispatchEvent(new MouseEvent('mouseout',{bubbles:true,relatedTarget:document.body})));
+ await act(async()=>new Promise(r=>setTimeout(r,250)));
+ expect(panel().hasAttribute("inert")).toBe(false);
+ await click('[aria-label="收起知识贴"]');expect(panel().hasAttribute("inert")).toBe(true);
+ await click('[aria-label="展开知识贴"]');expect(panel().hasAttribute("inert")).toBe(false);
+ expect(host.querySelector('.answer-markdown')?.textContent).toContain('已有解释');expect(stream).not.toHaveBeenCalled();
+ expect(testWorkspace().activeInquiryId).toBe('explain');
+});
+it('a model response completing after explicit collapse does not reopen the panel',async()=>{
+ localStorage.setItem('got-it.result-panel-pinned.v1','false');
+ let emit!:(event:InquiryEvent)=>void,finish!:()=>void;
+ stream.mockImplementation((_r:InquiryRequest,cb:any)=>{emit=cb;return new Promise<void>(r=>finish=r);});
+ await mountLegacyRetry();await click('mark[data-inquiry-id="explain"]');await click('.regenerate-action');
+ const request=stream.mock.calls[0][0];
+ await click('[aria-label="收起知识贴"]');
+ await act(async()=>{emit({type:'complete',requestId:request.requestId,sequence:1,response:{answer:'折叠后完成',mode:'live',providerId:'codex',providerName:'Codex',sources:[],evidenceStatus:'not-applicable'}});finish();});
+ expect(host.querySelector('.right-panel')!.hasAttribute("inert")).toBe(true);expect(stream).toHaveBeenCalledTimes(1);
+ await click('[aria-label="展开知识贴"]');expect(host.querySelector('.answer-markdown')?.textContent).toContain('折叠后完成');
+});
+it('settings Escape takes precedence over closing the unpinned result',async()=>{
+ localStorage.setItem('got-it.result-panel-pinned.v1','false');await mount();
+ await click('mark[data-inquiry-id="explain"]');await click('.provider-trigger');
+ await act(async()=>host.querySelector('.provider-popover')!.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+ expect((host.querySelector('.provider-shell') as HTMLElement).hidden).toBe(true);expect(host.querySelector('.right-panel')!.hasAttribute("inert")).toBe(false);
+ await act(async()=>host.querySelector('.right-panel')!.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+ expect(host.querySelector('.right-panel')!.hasAttribute("inert")).toBe(true);
+});
+it('narrow result close retains the desktop pin preference',async()=>{
+ vi.stubGlobal('matchMedia',vi.fn((query:string)=>({matches:query.includes('780'),addEventListener:vi.fn(),removeEventListener:vi.fn()})));
+ localStorage.setItem('got-it.result-panel-pinned.v1','true');await mount();
+ expect(host.querySelector('.right-panel')!.hasAttribute("inert")).toBe(true);
+ await click('mark[data-inquiry-id="explain"]');expect(host.querySelector('.right-panel')!.hasAttribute("inert")).toBe(false);
+ await click('[aria-label="关闭知识贴"]');expect(host.querySelector('.right-panel')!.hasAttribute("inert")).toBe(true);
+ expect(localStorage.getItem('got-it.result-panel-pinned.v1')).toBe('true');
+});
+
+it('isolates PDF scrolling and layout when switching back to Markdown', async()=>{
+ w.inquiries=[];w.activeInquiryId=null;
+ const markdown=await testLibraryRequest('/entries',{workspace:w,creationKey:'switch-markdown'}) as {id:string};
+ const pdf=structuredClone(w),hash='a'.repeat(64);
+ pdf.document={id:'switch-pdf',filename:'switch.pdf',kind:'pdf',contentHash:hash,isDemo:false,importedAt:'2026',pdf:{resourceId:hash,pages:[{view:[0,0,400,300],rotation:0}]}};
+ const entry=await testLibraryRequest('/entries',{workspace:pdf,creationKey:'switch-pdf'}) as {id:string};
+ await testLibraryRequest(`/entries/${entry.id}/activate`,{});
+ await mount();
+ const pdfScroll=host.querySelector<HTMLElement>('.reader-scroll--pdf')!;
+ expect(pdfScroll).not.toBeNull();pdfScroll.scrollLeft=800;
+ await click('.library-current');
+ await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('.library-open')].find(button=>button.textContent===w.document.filename)!.click());
+ const markdownScroll=host.querySelector<HTMLElement>('.reader-scroll')!;
+ expect(markdownScroll).not.toBe(pdfScroll);
+ expect(markdownScroll.classList.contains('reader-scroll--pdf')).toBe(false);
+ expect(markdownScroll.scrollLeft).toBe(0);
+ expect(host.querySelector('.markdown-article')).not.toBeNull();
+ expect(host.querySelector('[aria-label="AI 连接与模型设置"]')).not.toBeNull();
+ expect(testWorkspace().document.id).toBe(w.document.id);
+ expect(markdown.id).not.toBe(entry.id);
+ expect(stream).not.toHaveBeenCalled();
 });

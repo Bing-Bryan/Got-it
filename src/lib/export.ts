@@ -53,7 +53,7 @@ function threadMessageMarkdown(message: ThreadMessage): string {
   const trace = message.role === "assistant" ? `\n\n搜索：${SEARCH_LABELS[message.search?.status ?? "unknown"]}；证据：${message.evidenceStatus ?? "未知"}` : "";
   const v = message.verification;
   const review = v ? `\n\n第 ${v.round} 轮 · ${v.scope} · ${v.completion}\n\n查证结果：${VERDICT_LABELS[v.verdict]} — ${v.summary}\n\n关键理由：${v.reason}\n\n对原句意味着什么：${v.readingAdvice}\n\n${v.claims.map(c => `${c.text}：${VERDICT_LABELS[c.verdict]}（来源 ${c.sourceIds.join("、") || "暂无"}）`).join("\n")}\n\n${v.changeNote || ""}` : "";
-  return `**${label}** ${suffix}\n\n${body}${review}${trace}${sources}`;
+  return `**${label}** ${suffix}\n\n${message.contextNotice ? markdownSafe(message.contextNotice) + "\n\n" : ""}${body}${review}${trace}${sources}`;
 }
 
 function inquiryMarkdown(inquiry: Inquiry, index: number): string {
@@ -70,15 +70,13 @@ function inquiryMarkdown(inquiry: Inquiry, index: number): string {
     `## 知识贴 ${index + 1} · ${inquiry.status}`,
     "",
     `- 意图：${inquiry.intent}`,
-    `- 原文位置：${inquiry.anchor.start}–${inquiry.anchor.end}`,
     `- 状态：${inquiry.status}`,
-    `- 原文回链：[回到原文](${anchorLink})`,
-    `- 块 ID：${inlineCode(inquiry.anchor.blockId)}${headingPath}`,
-    "",
-    "### 原文锚点",
-    "",
-    quoteMarkdown(inquiry.anchor.quote),
-    "",
+    ...(inquiry.anchor.scope === "document" ? ["- 提问范围：全文", ""] : [
+      `- 原文位置：${inquiry.anchor.start}–${inquiry.anchor.end}`,
+      `- 原文回链：[回到原文](${anchorLink})`,
+      `- 块 ID：${inlineCode(inquiry.anchor.blockId)}${headingPath}`,
+      "", "### 原文锚点", "", quoteMarkdown(inquiry.anchor.quote), "",
+    ]),
     "### 我的问题",
     "",
     markdownSafe(inquiry.question),

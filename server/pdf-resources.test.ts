@@ -108,3 +108,12 @@ it('reopens old learning and corrected OCR records without dropping original res
  expect((await restart.resources.read(entry.id,ocr.id)).meta.kind).toBe('ocr');
  expect((await restart.resources.read(entry.id,fileHash)).bytes).toEqual(pdfFixture(3));
 });
+it('persists document questions without fabricated PDF page locations',async()=>{
+ const s=await setup(),w=structuredClone(s.entry.workspace);
+ const {documentAnchor}=await import('../src/lib/document-question');
+ w.inquiries=[{id:'whole',intent:'ask',question:'整体定位？',anchor:documentAnchor(w.document),status:'ready',messages:[],understanding:'',createdAt:'2026',updatedAt:'2026'}];
+ const saved=await s.library.save(s.entry.id,s.entry.version,s.entry.revisionId,w,{});
+ const restored=await s.library.get(saved.id);expect(restored.workspace.inquiries[0].anchor.scope).toBe('document');
+ const invalid=structuredClone(w);invalid.inquiries[0].anchor.scope=undefined;
+ await expect(s.library.save(saved.id,saved.version,saved.revisionId,invalid,{})).rejects.toThrow();
+});

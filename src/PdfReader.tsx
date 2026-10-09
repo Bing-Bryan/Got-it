@@ -1,4 +1,7 @@
-import { QuestionComposer } from "./QuestionComposer";
+import { pdfReadingMinutes } from "./lib/pdf-reading-time";
+import { usePdfZoom } from "./usePdfZoom";
+import { PdfZoomControls } from "./PdfZoomControls";
+import { SelectionActions } from "./SelectionActions";
 import { revealReadingTarget } from "./lib/reading-navigation";
 import type { PdfOutlineItem } from "./lib/pdf-outline";
 import {normalized,screenRect,originalRect} from "./lib/pdf-geometry";
@@ -15,23 +18,25 @@ import './pdf-reader.css';
 GlobalWorkerOptions.workerSrc = workerUrl;
 type PdfDocument = Extract<DocumentSnapshot, {kind:'pdf'}>;
 type Viewport = ReturnType<PDFPageProxy['getViewport']>;
-interface Props { outlineTarget?:{item:PdfOutlineItem;nonce:number}|null; onCurrentPage?:(page:number)=>void; document:PdfDocument; entryId:string; inquiries:Inquiry[]; activeId?:string|null; target?:{id:string;nonce:number;returnToSource?:boolean}|null; onLocated?:(id:string,success:boolean,returnToSource?:boolean,target?:HTMLElement)=>void; initialPosition?:ReadingPosition; readOnly?:boolean; saveStatus?:string; saveBusy?:boolean; saveError?:boolean; onCreate?:(intent:ActiveInquiryIntent,draft:SelectionDraft,question?:string)=>void; onActivate?:(id:string)=>void; onReady?:()=>void; onView?:()=>void }
+interface Props { onReadingTime?:(hash:string,minutes:number|null)=>void; outlineTarget?:{item:PdfOutlineItem;nonce:number}|null; onCurrentPage?:(page:number)=>void; document:PdfDocument; entryId:string; inquiries:Inquiry[]; activeId?:string|null; target?:{id:string;nonce:number;returnToSource?:boolean}|null; onLocated?:(id:string,success:boolean,returnToSource?:boolean,target?:HTMLElement)=>void; initialPosition?:ReadingPosition; readOnly?:boolean; saveStatus?:string; saveBusy?:boolean; saveError?:boolean; onCreate?:(intent:ActiveInquiryIntent,draft:SelectionDraft,question?:string)=>void; onActivate?:(id:string)=>void; onReady?:()=>void; onView?:()=>void }
 interface SheetToolbar {page:number;ready:boolean;mode:'text'|'region';busy:boolean;start:()=>void;cancel:()=>void}
 const rectStyle=(r:PdfRect)=>({left:r[0],top:r[1],width:r[2]-r[0],height:r[3]-r[1]});
 const errorText=(e:unknown)=>e instanceof Error?e.message:'PDF 操作未完成，请重试。';
 const tidy=(s:string)=>s.trim().replace(/(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g,'');
 export default function PdfReader(props:Props) {
   const [pdf,setPdf]=useState<PDFDocumentProxy|null>(null),[error,setError]=useState('');
-  const [width,setWidth]=useState(700),[draftPage,setDraftPage]=useState<number|null>(null);
+  const [draftPage,setDraftPage]=useState<number|null>(null);
   const [currentPage,setCurrentPage]=useState(props.initialPosition?.pdfPage??1),[toolbar,setToolbar]=useState<SheetToolbar|null>(null);
   const root=useRef<HTMLDivElement>(null),restored=useRef(false);
+  const zoom=usePdfZoom(root,props.document.pdf.resourceId,props.document.pdf.pages[currentPage-1]??props.document.pdf.pages[0]);
+  const width=zoom.fitWidth;
   useEffect(()=>{if(!pdf||restored.current)return;const frame=requestAnimationFrame(()=>{restored.current=true;props.onReady?.();});return()=>cancelAnimationFrame(frame);},[pdf,width]);
   useEffect(()=>{
     const scroll=root.current?.closest<HTMLElement>('.reader-scroll,.recovery-original');if(!scroll||!pdf)return;
     const update=()=>{const reader=root.current;if(!reader)return;const bounds=scroll.getBoundingClientRect(),top=bounds.top+36;let visible=0,page=0;for(const sheet of reader.querySelectorAll<HTMLElement>('[data-pdf-page]')){const r=sheet.getBoundingClientRect(),height=Math.max(0,Math.min(r.bottom,bounds.bottom)-Math.max(r.top,top));if(height>visible){visible=height;page=Number(sheet.dataset.pdfPage);}}if(page)setCurrentPage(page);};
     update();scroll.addEventListener('scroll',update,{passive:true});window.addEventListener('resize',update);
     return()=>{scroll.removeEventListener('scroll',update);window.removeEventListener('resize',update);};
-  },[pdf,width]);
+  },[pdf,width,zoom.manual]);
   useEffect(()=>{props.onCurrentPage?.(currentPage);},[currentPage,props.onCurrentPage]);
   useEffect(()=>{
     if(!pdf||!props.outlineTarget)return;
@@ -41,34 +46,43 @@ export default function PdfReader(props:Props) {
       if(sheet&&scroll){scroll.scrollTo({top:scroll.scrollTop+sheet.getBoundingClientRect().top-scroll.getBoundingClientRect().top+item.top*sheet.clientHeight-44,behavior:'instant'});setCurrentPage(item.page);props.onView?.();}
     });return()=>cancelAnimationFrame(frame);
   },[pdf,props.outlineTarget]);
-  const resizeAnchor=useRef<{node:HTMLElement;fraction:number}|null>(null);
-  useLayoutEffect(()=>{const a=resizeAnchor.current,scroll=root.current?.closest<HTMLElement>('.reader-scroll');if(!a||!scroll)return;resizeAnchor.current=null;const top=scroll.scrollTop+a.node.getBoundingClientRect().top-scroll.getBoundingClientRect().top+a.fraction*a.node.clientHeight;if(typeof scroll.scrollTo==='function')scroll.scrollTo({top,behavior:'instant'});else scroll.scrollTop=top;},[width]);
-  useEffect(()=>{const el=root.current;if(!el)return;const resize=()=>{const next=Math.max(120,el.clientWidth-40);const scroll=el.closest<HTMLElement>('.reader-scroll');if(scroll&&restored.current){const top=scroll.getBoundingClientRect().top;const node=[...el.querySelectorAll<HTMLElement>('.pdf-page')].find(p=>p.getBoundingClientRect().bottom>top+55);if(node)resizeAnchor.current={node,fraction:(top-node.getBoundingClientRect().top)/Math.max(1,node.clientHeight)};}setWidth(next);};const observer=new ResizeObserver(resize);observer.observe(el);resize();return()=>observer.disconnect();},[]);
   useEffect(()=>{
     let disposed=false;let task:ReturnType<typeof getDocument>|undefined;
     void(async()=>{try{const response=await libraryBinary(`/entries/${props.entryId}/resources/${props.document.pdf.resourceId}`);if(disposed)return;task=getDocument({data:new Uint8Array(await response.arrayBuffer()),cMapUrl:'/pdf-assets/cmaps/',cMapPacked:true,standardFontDataUrl:'/pdf-assets/standard_fonts/',wasmUrl:'/pdf-assets/wasm/',enableXfa:false});const doc=await task.promise;if(!disposed)setPdf(doc);}catch(e){if(!disposed)setError(errorText(e));}})();
     return()=>{disposed=true;void task?.destroy();};
   },[props.entryId,props.document.pdf.resourceId]);
+  useEffect(() => {
+    if (!pdf || !props.onReadingTime) return;
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]);
+    const hash = props.document.pdf.resourceId;
+    void pdfReadingMinutes(pdf, hash, signal).then(minutes => {
+      if (!signal.aborted) props.onReadingTime?.(hash, minutes);
+    }).catch(() => { /* Optional estimate: missing text or failure must not block reading. */ });
+    return () => controller.abort();
+  }, [pdf, props.document.pdf.resourceId, props.onReadingTime]);
   useEffect(()=>{if(error&&props.target)props.onLocated?.(props.target.id,false,props.target.returnToSource);},[error,props.target]);
   const activeToolbar=toolbar?.page===currentPage?toolbar:null;
-  const saved=props.saveStatus==='已保存到本机';
-  const saveLabel=props.saveError?'未保存':props.saveBusy?'处理中':saved?'✓ 已保存':props.saveStatus==='保存中…'?'保存中…':props.saveStatus??'';
-  return <div ref={root} className="pdf-reader" data-zoom="0">
+  const saveLabel=props.saveError?'未保存':props.saveBusy?'处理中':props.saveStatus??'';
+  return <div ref={root} className="pdf-reader" data-zoom={zoom.manual??0}>
     <div className="pdf-toolbar" aria-label="PDF 阅读工具栏">
       <span className="pdf-page-number" aria-live="off">第 {currentPage} / {props.document.pdf.pages.length} 页</span>
       {!props.readOnly?<><button type="button" className="pdf-select-mode" aria-pressed={activeToolbar?.mode==='region'} disabled={!activeToolbar?.ready} onClick={()=>{if(activeToolbar?.busy||activeToolbar?.mode==='region')activeToolbar.cancel();else activeToolbar?.start();}}>{activeToolbar?.busy?'取消识别':activeToolbar?.mode==='region'?'取消框选':'框选内容'}</button>{activeToolbar?.mode==='region'||activeToolbar?.busy?<span className="pdf-mode-hint">{activeToolbar.busy?'识别中…':'拖动框选'}</span>:null}</>:<span className="pdf-mode-hint">只读</span>}
-      <span className="pdf-inline-help" title="文字可直接拖选；图片或不可选文字可先框选，再选择功能。按 Esc、取消或点击空白处清除选区。">文字可直接拖选；图片或不可选文字可先框选，再选择功能。按 Esc、取消或点击空白处清除选区。</span>
+      <span className="pdf-inline-help" title="文字可直接拖选；图片可框选，再选择功能。">文字可直接拖选；图片可框选，再选择功能。</span>
       <span className={`pdf-save-state ${props.saveError?'failed':''}`} role="status" title={props.saveStatus}>{saveLabel}</span>
     </div>
+    <div className="reading-adjustment-dock reading-adjustment-dock--pdf"><PdfZoomControls scale={zoom.scale} automatic={zoom.manual===null} onChange={zoom.change}/></div>
     {error?<p className="pdf-error" role="alert">{error}</p>:null}
     {!pdf&&!error?<p className="pdf-status">正在加载 PDF…</p>:null}
-    {pdf?props.document.pdf.pages.map((info,index)=><PdfSheet key={index} {...props} pdf={pdf} page={index+1} width={width} info={info} draftPage={draftPage} currentPage={currentPage} onToolbar={setToolbar} claim={()=>setDraftPage(index+1)}/>):null}
+    {pdf?props.document.pdf.pages.map((info,index)=><PdfSheet key={index} {...props} pdf={pdf} page={index+1} width={zoom.widthFor(info)} info={info} draftPage={draftPage} currentPage={currentPage} onToolbar={setToolbar} claim={()=>setDraftPage(index+1)}/>):null}
   </div>;
 }
 interface SheetProps extends Props {pdf:PDFDocumentProxy;page:number;width:number;info:PdfDocument['pdf']['pages'][number];draftPage:number|null;currentPage:number;onToolbar:(state:SheetToolbar)=>void;claim:()=>void}
 function PdfSheet(props:SheetProps) {
   const {pdf,page,width,info}=props;
   const latest=useRef(props);latest.current=props;
+  const [renderWidth,setRenderWidth]=useState(width);
+  useEffect(()=>{const timer=setTimeout(()=>setRenderWidth(width),140);return()=>clearTimeout(timer);},[width]);
   const appliedTarget=useRef('');
   const [near,setNear]=useState(page===(props.initialPosition?.pdfPage??1));
   const [viewport,setViewport]=useState<Viewport|null>(null),[ready,setReady]=useState(false),[error,setError]=useState('');
@@ -81,6 +95,7 @@ function PdfSheet(props:SheetProps) {
   const drag=useRef<[number,number]|null>(null),operation=useRef<AbortController|null>(null),pageProxy=useRef<PDFPageProxy|null>(null);
   const cancel=()=>{drag.current=null;operation.current?.abort();operation.current=null;setBusy(false);setStatus('');setBox(null);setPreview('');setSelection(null);setMode('text');const selected=window.getSelection();if(selected?.anchorNode&&surface.current?.contains(selected.anchorNode))selected.removeAllRanges();};
   useEffect(()=>{if(props.currentPage===page)props.onToolbar({page,ready,mode,busy,start:()=>{props.claim();cancel();setMode('region');},cancel});else cancel();},[props.currentPage,page,ready,mode,busy]);
+  const displayViewport=viewport?.clone({scale:viewport.scale*width/viewport.width})??null;
   useLayoutEffect(()=>{
     const popup=card.current, pageElement=surface.current;
     if(!popup||!pageElement||!viewport)return;
@@ -92,10 +107,10 @@ function PdfSheet(props:SheetProps) {
       const left=Math.max(12,(reader?.left??0)+12), right=Math.min(innerWidth-12,(reader?.right??innerWidth)-12);
       const top=Math.max(12,(reader?.top??0)+(root.current?.closest('.pdf-reader')?.querySelector('.pdf-toolbar')?.getBoundingClientRect().height??0)+8);
       const bottom=Math.min(innerHeight-12,(reader?.bottom??innerHeight)-12);
-      const r=screenRect(viewport,rects[rects.length-1]);
+      const r=screenRect(displayViewport!,rects[rects.length-1]);
       const anchor={left:pageBounds.left+r[0],right:pageBounds.left+r[2],top:pageBounds.top+r[1],bottom:pageBounds.top+r[3]};
       popup.style.visibility=anchor.bottom<top||anchor.top>bottom?'hidden':'visible';
-      popup.style.width=`${Math.max(0,Math.min(360,right-left))}px`;
+      popup.style.width=`${Math.max(0,Math.min(440,right-left))}px`;
       popup.style.maxHeight=`${Math.max(0,bottom-top)}px`;
       const size=popup.getBoundingClientRect();
       const below=anchor.bottom+10, above=anchor.top-size.height-10;
@@ -107,7 +122,7 @@ function PdfSheet(props:SheetProps) {
     const observer=new ResizeObserver(place);observer.observe(popup);observer.observe(pageElement);
     window.addEventListener('scroll',place,true);window.addEventListener('resize',place);
     return()=>{observer.disconnect();window.removeEventListener('scroll',place,true);window.removeEventListener('resize',place);};
-  },[box,selection,preview,viewport]);
+  },[box,selection,preview,viewport,width]);
   useEffect(()=>{const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')cancel();};window.addEventListener('keydown',escape);return()=>{window.removeEventListener('keydown',escape);operation.current?.abort();};},[]);
   useEffect(()=>{const el=root.current;if(!el)return;const observer=new IntersectionObserver(entries=>setNear(entries[0].isIntersecting),{root:el.closest('.reader-scroll,.recovery-original'),rootMargin:'600px 0px'});observer.observe(el);return()=>observer.disconnect();},[]);
   useEffect(()=>{if(props.draftPage!==page)cancel();},[props.draftPage,page]);
@@ -116,9 +131,9 @@ function PdfSheet(props:SheetProps) {
     if(root.current?.closest('.pdf-reader')?.querySelector('.pdf-toolbar')?.contains(event.target as Node))return;
     const bounds=surface.current?.getBoundingClientRect();
     const rects=box?[box]:selection?.anchor.pdf?.rects??[];
-    if(bounds&&viewport&&rects.some(r=>{const sr=screenRect(viewport,r);return event.clientX>=bounds.left+sr[0]&&event.clientX<=bounds.left+sr[2]&&event.clientY>=bounds.top+sr[1]&&event.clientY<=bounds.top+sr[3];}))return;
+    if(bounds&&viewport&&rects.some(r=>{const sr=screenRect(displayViewport!,r);return event.clientX>=bounds.left+sr[0]&&event.clientX<=bounds.left+sr[2]&&event.clientY>=bounds.top+sr[1]&&event.clientY<=bounds.top+sr[3];}))return;
     cancel();
-  };document.addEventListener('pointerdown',outside);return()=>document.removeEventListener('pointerdown',outside);},[box,selection,viewport]);
+  };document.addEventListener('pointerdown',outside);return()=>document.removeEventListener('pointerdown',outside);},[box,selection,viewport,width]);
 
   useEffect(()=>{if(!near){cancel();setReady(false);}},[near]);
   useEffect(()=>{cancel();setOcr([]);},[page]);
@@ -127,12 +142,16 @@ function PdfSheet(props:SheetProps) {
     if(!near)return;
     void(async()=>{try{
       const p=await pdf.getPage(page);if(disposed)return;pageProxy.current=p;
-      const base=p.getViewport({scale:1});const scale=width/base.width;
+      const base=p.getViewport({scale:1});const scale=renderWidth/base.width;
       const v=p.getViewport({scale});const dpr=Math.min(window.devicePixelRatio||1,2,Math.sqrt(12_000_000/(v.width*v.height)));
-      const c=canvas.current!,layer=native.current!;c.width=Math.ceil(v.width*dpr);c.height=Math.ceil(v.height*dpr);c.style.width=v.width+'px';c.style.height=v.height+'px';layer.replaceChildren();
-      setViewport(v);render=p.render({canvas:c,viewport:v,transform:[dpr,0,0,dpr,0,0]});await render.promise;if(disposed)return;
+      const c=document.createElement('canvas'),layer=document.createElement('div');c.width=Math.ceil(v.width*dpr);c.height=Math.ceil(v.height*dpr);
+      render=p.render({canvas:c,viewport:v,transform:[dpr,0,0,dpr,0,0]});await render.promise;if(disposed)return;
       const content=await p.getTextContent();if(disposed)return;
       layer.style.setProperty('--scale-factor',String(scale));layer.style.setProperty('--total-scale-factor',String(scale));text=new TextLayer({textContentSource:content,container:layer,viewport:v});await text.render();if(disposed)return;
+      const visible=canvas.current!,nativeLayer=native.current!;
+      visible.width=c.width;visible.height=c.height;visible.style.width=v.width+'px';visible.style.height=v.height+'px';visible.getContext('2d')!.drawImage(c,0,0);
+      nativeLayer.style.setProperty('--scale-factor',String(scale));nativeLayer.style.setProperty('--total-scale-factor',String(scale));nativeLayer.replaceChildren(...Array.from(layer.childNodes));
+      setViewport(v);
       const ids=[...new Set(latest.current.inquiries.filter(i=>i.anchor.pdf?.page===page).map(i=>i.anchor.pdf?.ocrId).filter((id):id is string=>!!id))];
       const cached=await Promise.allSettled(ids.map(async id=>{const r=await libraryBinary(`/entries/${props.entryId}/resources/${id}`);const data=copyOcr(await r.json());if(!data||data.fileHash!==props.document.pdf.resourceId||data.page!==page)throw new Error('识别资源与当前原页不符。');return {id,data};}));
       if(disposed)return;
@@ -140,7 +159,7 @@ function PdfSheet(props:SheetProps) {
       setOcr([...ocrCache.current.values()].filter(o=>o.data.page===page));setReady(true);
     }catch(e){if(!disposed){setError(errorText(e));setReady(false);}}})();
     return()=>{disposed=true;render?.cancel();text?.cancel();};
-  },[pdf,page,near,width]);
+  },[pdf,page,near,renderWidth]);
   useEffect(()=>{
     const t=props.target;if(!t)return;
     const key=`${t.id}:${t.nonce}`;
@@ -161,7 +180,7 @@ function PdfSheet(props:SheetProps) {
     });
     return()=>cancelAnimationFrame(frame);
   },[props.target,page,ready,error,props.document.pdf.resourceId]);
-  useEffect(()=>{if(!viewport)return;for(const el of ocrLayer.current?.querySelectorAll<HTMLElement>('[data-line]')??[]){el.style.transform='none';const desired=Number(el.dataset.width),actual=el.getBoundingClientRect().width;if(actual)el.style.transform=`scaleX(${desired/actual})`; }},[ocr,viewport]);
+  useEffect(()=>{if(!viewport)return;for(const el of ocrLayer.current?.querySelectorAll<HTMLElement>('[data-line]')??[]){el.style.transform='none';const desired=Number(el.dataset.width),actual=el.getBoundingClientRect().width/(width/viewport.width);if(actual)el.style.transform=`scaleX(${desired/actual})`; }},[ocr,viewport]);
   const point=(event:{clientX:number;clientY:number}):[number,number]=>{const r=surface.current!.getBoundingClientRect();return [Math.max(0,Math.min(r.width,event.clientX-r.left)),Math.max(0,Math.min(r.height,event.clientY-r.top))];};
   function crop(r:PdfRect):HTMLCanvasElement {
     const c=canvas.current!,v=viewport!,s=screenRect(v,r),ratio=c.width/v.width;
@@ -188,7 +207,7 @@ function PdfSheet(props:SheetProps) {
     const bounds=surface.current.getBoundingClientRect();const rs=Array.from(range.getClientRects()).filter(r=>r.width>1&&r.height>1);
     if(!rs.length)return;
     if(!selectedOcr&&rs.some((r,i)=>rs.slice(i+1).some(s=>Math.abs(r.top-s.top)<Math.min(r.height,s.height)/2&&Math.max(s.left-r.right,r.left-s.right)>Math.max(24,r.height*2)))){setError('选区跨越独立栏区，请缩小范围。');return;}
-    const rects=rs.slice(0,500).map(r=>originalRect(viewport,[r.left-bounds.left,r.top-bounds.top,r.right-bounds.left,r.bottom-bounds.top]));
+    const rects=rs.slice(0,500).map(r=>originalRect(displayViewport!,[r.left-bounds.left,r.top-bounds.top,r.right-bounds.left,r.bottom-bounds.top]));
     const a:Anchor={documentId:props.document.id,blockId:`pdf-${page}-${selectedOcr?.id??'native'}`,headingPath:[`第 ${page} 页`],quote:text,prefix:'',suffix:'',start:0,end:text.length,matchStatus:'matched',pdf:{kind:'text',source:selectedOcr?'ocr':'native',fileHash:props.document.pdf.resourceId,page,rects,...(selectedOcr?{ocrId:selectedOcr.id,originalText:text}:{}),context:text}};
     const all=normalized([Math.min(...rects.map(r=>r[0])),Math.min(...rects.map(r=>r[1])),Math.max(...rects.map(r=>r[2])),Math.max(...rects.map(r=>r[3]))]);
     props.claim();setBox(null);setPreview('');setQuote(text);setSelection({anchor:a,preview:previewFor(all)});setError('');
@@ -234,19 +253,20 @@ function PdfSheet(props:SheetProps) {
     <div className="pdf-page-wrap"><div data-block-id={`pdf-page-${page}`} ref={surface} className={`pdf-page ${mode!=='text'?'drawing':''}`} style={{width,height:width*ratio}}
       onPointerDown={e=>{if(mode==='text'||props.readOnly||!ready||busy)return;e.preventDefault();drag.current=point(e);setBox(null);setPreview('');e.currentTarget.setPointerCapture(e.pointerId);}}
       onPointerCancel={()=>{drag.current=null;setBox(null);setPreview('');}}
-      onPointerMove={e=>{if(!drag.current||!viewport)return;setBox(originalRect(viewport,normalized([...drag.current,...point(e)])));}}
-      onPointerUp={e=>{if(drag.current&&viewport){const sr=normalized([...drag.current,...point(e)]);drag.current=null;e.currentTarget.releasePointerCapture(e.pointerId);if(sr[2]-sr[0]<8||sr[3]-sr[1]<8){setBox(null);return;}const r=originalRect(viewport,sr);setBox(r);setPreview(previewFor(r));setMode('text');}else requestAnimationFrame(selectedText);}}
-      onClick={e=>{if(mode!=='text'||box||!window.getSelection()?.isCollapsed||!viewport)return;const xy=viewport.convertToPdfPoint(...point(e));const hit=marks.find(i=>i.anchor.pdf!.rects.some(r=>xy[0]>=r[0]&&xy[0]<=r[2]&&xy[1]>=r[1]&&xy[1]<=r[3]));if(hit)props.onActivate?.(hit.id);}}>
+      onPointerMove={e=>{if(!drag.current||!viewport)return;setBox(originalRect(displayViewport!,normalized([...drag.current,...point(e)])));}}
+      onPointerUp={e=>{if(drag.current&&viewport){const sr=normalized([...drag.current,...point(e)]);drag.current=null;e.currentTarget.releasePointerCapture(e.pointerId);if(sr[2]-sr[0]<8||sr[3]-sr[1]<8){setBox(null);return;}const r=originalRect(displayViewport!,sr);setBox(r);setPreview(previewFor(r));setMode('text');}else requestAnimationFrame(selectedText);}}
+      onClick={e=>{if(mode!=='text'||box||!window.getSelection()?.isCollapsed||!viewport)return;const xy=displayViewport!.convertToPdfPoint(...point(e));const hit=marks.find(i=>i.anchor.pdf!.rects.some(r=>xy[0]>=r[0]&&xy[0]<=r[2]&&xy[1]>=r[1]&&xy[1]<=r[3]));if(hit)props.onActivate?.(hit.id);}}>
+      <div className="pdf-page-content" style={{width:viewport?.width??width,height:viewport?.height??width*ratio,transform:`scale(${viewport?width/viewport.width:1})`}}>
       {near?<><canvas ref={canvas} aria-label={`PDF 第 ${page} 页`} /><div ref={native} className="pdf-native textLayer"/></>:<div className="pdf-page-placeholder">第 {page} 页</div>}
       <div ref={ocrLayer} className="pdf-ocr">{near&&viewport?ocr.map(o=><div key={o.id} data-ocr-id={o.id}>{o.data.lines.map((l,n)=>{const r=screenRect(viewport,l.rect);return <span key={n} data-line={n} data-width={r[2]-r[0]} style={{left:r[0],top:r[1],fontSize:r[3]-r[1]}}>{l.text}{'\n'}</span>;})}</div>):null}</div>
       {near&&viewport?marks.flatMap(i=>i.anchor.pdf!.rects.map((r,n)=><div key={i.id+'-'+n} data-pdf-inquiry={i.id} className={`pdf-mark ${i.anchor.pdf!.kind} ${props.activeId===i.id?'active':''}`} style={rectStyle(screenRect(viewport,r))}>{n===0?<button type="button" aria-label={`查看知识贴：${i.anchor.quote}`} onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();props.onActivate?.(i.id);}}>↗</button>:null}</div>)):null}
       {box&&viewport?<div className="pdf-draft-box" style={rectStyle(screenRect(viewport,box))}/>:null}
+      </div>
     </div></div>
-    {(preview&&box)||selection?<div ref={card} className="pdf-selection-card" role="region" aria-label="选区操作" onPointerUp={e=>e.stopPropagation()}>
-      {selection?<p className="pdf-selected-quote">{quote}</p>:<img src={preview} alt="本次选择的原页区域" />}
-      <div className="pdf-card-actions">{(['explain','verify']as const).map((intent,n)=><button key={intent} type="button" disabled={busy||props.readOnly} onClick={()=>{if(selection)create(intent,selection.anchor);else void selectRegion(intent);}}>{['解释一下','查找来源'][n]}</button>)}<QuestionComposer inline disabled={busy||props.readOnly} onSubmit={question=>{if(selection)create("ask",selection.anchor,question);else void selectRegion("ask",question);}}/></div>
+    {(preview&&box)||selection?<div ref={card} className="pdf-selection-card selection-surface" role="region" aria-label="选区操作" onPointerUp={e=>e.stopPropagation()}>
+      {selection?<div className="selection-quote pdf-selected-quote">“{quote}”</div>:<div className="pdf-selection-preview"><img src={preview} alt="本次选择的原页区域" /></div>}
+      <SelectionActions className="pdf-card-actions" disabled={busy||props.readOnly} onClose={cancel} onSelect={(intent,question)=>{if(selection)create(intent,selection.anchor,question);else void selectRegion(intent,question);}}/>
       {busy?<p role="status">{status}</p>:null}
-      <button type="button" onClick={cancel}>取消</button>
     </div>:null}
   </section>;
 }

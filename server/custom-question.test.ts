@@ -24,3 +24,17 @@ it('answers actual questions with bounded tools, checks sources and computes onl
  expect(instructions).toContain('问一个简短的澄清');expect(instructions).toContain('禁止执行命令');expect(instructions).not.toContain('读取本地令牌');expect(JSON.parse(materials).question).toBe(request.question);
  expect(schema.properties.calculation).toBeDefined();expect(result.answer).toContain('20.62855549');expect(result.verification).toBeUndefined();expect(result.evidenceStatus).toBe('not-applicable');
 });
+it('accepts explicit document scope only for bounded text questions',()=>{
+ expect(parseInquiryRequest({...request,readingScope:'document'}).readingScope).toBe('document');
+ expect(parseInquiryRequest(request).readingScope).toBeUndefined();
+ expect(()=>parseInquiryRequest({...request,readingScope:'all'})).toThrow();
+ expect(()=>parseInquiryRequest({...request,readingScope:'document',intent:'explain',operation:'explain'})).toThrow();
+ expect(()=>parseInquiryRequest({...request,readingScope:'document',context:'x'.repeat(16001)})).toThrow();
+});
+it('instructs document answers to respect actual coverage and keeps document data outside instructions',async()=>{
+ let prompt='';
+ const service=new ProviderService({modelCatalog:testModelCatalog,execFileImpl:async()=>({stdout:'Logged in',stderr:''}),codexTurnImpl:async o=>{prompt=o.prompt;return {raw:JSON.stringify({answer:'本文整体定位',sources:[],verification:null,evidenceStatus:'not-applicable'}),trace:''};}});
+ await service.answer({...request,readingScope:'document'},{onEvent(){}});
+ const [instructions,materials]=prompt.split(READING_MATERIALS_HEADER);
+ expect(instructions).toContain('本文提问');expect(instructions).toContain('不得声称读过全部');expect(instructions).not.toContain('回答只处理当前选区');expect(JSON.parse(materials).readingScope).toBe('document');
+});

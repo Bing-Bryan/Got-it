@@ -471,6 +471,7 @@ export function applyInquiryHighlights(
     other.id !== inquiry.id && sameAnchor(other.anchor, inquiry.anchor) &&
     (other.id === activeInquiryId || (inquiry.id !== activeInquiryId && otherIndex < index))));
   for (const inquiry of highlighted) {
+    if (inquiry.anchor.scope === "document") continue;
     const block = findBlock(article, inquiry.anchor.blockId);
     if (!block) {
       onMissing?.(inquiry);

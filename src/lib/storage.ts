@@ -41,7 +41,7 @@ function providerId(value: unknown): value is ProviderId {
 }
 
 function isAnchor(value: unknown): value is Anchor {
-  if (!isRecord(value) || (value.pdf !== undefined && !copyPdfLocation(value.pdf))) return false;
+  if (!isRecord(value) || (value.scope !== undefined && value.scope !== "document") || (value.scope === "document" && (value.pdf !== undefined || value.blockId !== "document" || value.start !== 0 || value.end !== 0)) || (value.pdf !== undefined && !copyPdfLocation(value.pdf))) return false;
   return (
     stringField(value.documentId) &&
     stringField(value.blockId) &&
@@ -116,6 +116,7 @@ function isInquiry(value: unknown): value is Inquiry {
       value.intent === "entity" || value.intent === "ask") &&
     stringField(value.question) &&
     isAnchor(value.anchor) &&
+    (!(value.anchor as Anchor).scope || value.intent === "ask") &&
     (value.status === "pending" ||
       value.status === "answering" ||
       value.status === "ready" ||
@@ -152,6 +153,7 @@ function optionalString(value: string | undefined): string | undefined {
 
 function copyAnchor(anchor: Anchor): Anchor {
   return {
+    ...(anchor.scope === "document" ? {scope: "document" as const} : {}),
     ...(anchor.pdf ? { pdf: copyPdfLocation(anchor.pdf)! } : {}),
     ...(anchor.textVersion === 2 ? { textVersion: 2 as const } : {}),
     documentId: anchor.documentId,
@@ -179,6 +181,7 @@ function copySource(source: Source): Source {
 
 function copyMessage(message: ThreadMessage): ThreadMessage {
   return {
+    ...(typeof message.contextNotice === "string" ? {contextNotice:message.contextNotice.slice(0,300)} : {}),
     ...copyOperation(message),
     ...(copyVerification(message.verification, message.sources) ? { verification: copyVerification(message.verification, message.sources) } : {}),
     ...(copyTimings(message.timings) ? { timings: copyTimings(message.timings) } : {}),
@@ -256,6 +259,7 @@ function getDefaultStorage(): StorageLike | null {
 export function restoreWorkspace(value: unknown): Workspace | null {
   if (!isWorkspace(value)) return null;
   if (value.inquiries.some(i => {
+    if (i.anchor.scope === 'document') return i.anchor.documentId !== value.document.id;
     if (value.document.kind !== 'pdf') return !!i.anchor.pdf;
     const a = i.anchor.pdf, page = a && value.document.pdf.pages[a.page-1];
     return !a || a.fileHash !== value.document.contentHash || !page || !a.rects.every(r=>insidePage(r,page));

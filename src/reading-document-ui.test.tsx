@@ -16,6 +16,11 @@ vi.mock("./lib/export", async original => ({ ...await original<typeof import("./
 let root: Root, host: HTMLDivElement, w: Workspace;
 const stored = (): Workspace => testWorkspace();
 async function click(selector: string) { await act(async () => (host.querySelector(selector) as HTMLElement).click()); }
+async function askQuestion() {
+ await click('.question-toggle');
+ await act(async()=>{const input=host.querySelector<HTMLTextAreaElement>('.question-composer textarea')!;Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(input,'请举个例子');input.dispatchEvent(new Event('input',{bubbles:true}));});
+ await click('.question-composer [type=submit]');
+}
 async function openFile(name: string, text: string | (() => Promise<string>)) {
   const file = new File([], name);
   Object.defineProperty(file, "text", { value: typeof text === "string" ? async () => text : text });
@@ -59,7 +64,7 @@ it("validates before adding and retains earlier reading without requiring an exp
 it("keeps running requests on invalid/cancelled opens and discards late events after a valid replacement", async () => {
   let emit!: (event: InquiryEvent) => void, signal!: AbortSignal, finish!: () => void;
   stream.mockImplementation((_r: InquiryRequest, cb: typeof emit, s: AbortSignal) => { emit = cb; signal = s; return new Promise<void>(resolve => { finish = resolve; }); });
-  await click(".explain-again-action"); const request = stream.mock.calls[0][0];
+  await askQuestion(); const request = stream.mock.calls[0][0];
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   await openFile("bad.json", "{}"); expect(signal.aborted).toBe(false);
   await click(".library-add"); expect(signal.aborted).toBe(false);
@@ -88,21 +93,22 @@ it("keeps only the left add action without file menu or backup actions", () => {
   expect(host.querySelectorAll(".library-add")).toHaveLength(1);
 });
 
-it("can explicitly request another explanation after reopening using saved history", async () => {
+it("can explicitly ask a question after reopening using saved history", async () => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
   await openFile("continue.focus", workspaceToReadingDocument(w));
   expect(stream).not.toHaveBeenCalled(); stream.mockRejectedValue(new Error("受控测试：离线"));
-  await click(".explain-again-action");
+  await askQuestion();
   expect(stream).toHaveBeenCalledOnce();
   expect(stream.mock.calls[0][0].quote).toBe("CAGR");
   expect(stream.mock.calls[0][0].history.some((m: {content: string}) => m.content === "已有解释")).toBe(true);
-  expect(host.textContent).toContain("已有解释"); expect(host.textContent).toContain("受控测试：离线");
+  expect(stored().inquiries[0].messages[0].content).toBe("已有解释"); expect(host.textContent).toContain("受控测试：离线");
 });
 
 it.each(["failure", "stop"])("keeps source lookup visibly unfinished after %s, including after list navigation", async mode => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
   w.inquiries[0].intent = "verify";
   w.inquiries[0].messages[0].operation = "verify";
+  w.inquiries[0].lastError = "先前查找失败";
   await openFile("lookup.focus", workspaceToReadingDocument(w));
   if (mode === "failure") stream.mockRejectedValue(new Error("受控连接失败"));
   else stream.mockImplementation(() => new Promise(() => {}));

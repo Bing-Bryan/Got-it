@@ -46,7 +46,7 @@ it.each(["explain", "entity", "verify"] as const)("keeps all dynamic text in dat
   expect(instructions).not.toContain("边界被替换");
   expect(instructions).not.toContain("本轮应用后续操作");
   expect(data).not.toContain("</选区>");
-  expect(JSON.parse(data)).toEqual({ documentTitle: input.documentTitle, quote: input.quote, context: input.context,
+  expect(JSON.parse(data)).toEqual({ readingScope: "selection", documentTitle: input.documentTitle, quote: input.quote, context: input.context,
     question: input.question, history: input.history.slice(-8), previous: input.previous });
   expect(input).toEqual(original);
 });
@@ -65,4 +65,15 @@ it.each([
   expect(refinementInstruction({ ...request, intent, question })).toContain(question);
   expect(refinementInstruction({ ...request, intent, question: question + attack })).toBe("");
   expect(refinementInstruction({ ...request, intent: "verify", question })).toBe("");
+});
+
+it('keeps concise product-list guidance scoped to custom questions', async()=>{
+ const prompts:string[]=[];
+ const service=new ProviderService({modelCatalog:testModelCatalog,execFileImpl:async()=>({stdout:'Logged in using ChatGPT',stderr:''}),codexTurnImpl:async options=>{
+  prompts.push(options.prompt);return {raw:JSON.stringify({answer:'受控回答',verification:null,evidenceStatus:'not-applicable',sources:[]}),trace:''};
+ }});
+ await service.answer({...request,intent:'ask',operation:'ask',explanationMode:'auto',question:'有哪些类似产品？'},{onEvent(){}});
+ expect(prompts[0]).toContain('3–5 个代表项');expect(prompts[0]).toContain('不默认使用表格');expect(prompts[0]).toContain('必须由实际资料确认网址与归属');
+ await service.answer({...request,intent:'explain',explanationMode:'auto'},{onEvent(){}});
+ expect(prompts[1]).not.toContain('3–5 个代表项');expect(prompts[1]).toContain('最多两条');
 });

@@ -1,10 +1,18 @@
+import { documentAnchor, documentQuestionContext, markdownSections } from "./lib/document-question";
+import { MarkdownWidthControls } from "./MarkdownWidthControls";
+import { useMarkdownWidth } from "./useMarkdownWidth";
+import { renderedReadingMinutes } from "./lib/reading-time";
+import { SelectionActions } from "./SelectionActions";
 import { QuestionComposer } from "./QuestionComposer";
 import PdfOutline from "./PdfOutline";
 import type { PdfOutlineItem } from "./lib/pdf-outline";
 import { revealReadingTarget, focusReadingTarget } from "./lib/reading-navigation";
 import { useSidebar } from "./useSidebar";
-import { SourceCard } from "./SourceCard";
+import { useResultPanel } from "./useResultPanel";
+import { CompactSources } from "./CompactSources";
+import { PanelResizeHandle } from "./PanelResizeHandle";
 import { CodexLogin } from "./CodexLogin";
+import { useSaveStatus } from "./useSaveStatus";
 import { useReadingLibrary } from "./useReadingLibrary";
 import { ReadingLibraryNavigation, ReadingLibraryStatus } from "./ReadingLibraryView";
 import { readDocumentFile } from "./lib/reading-document";
@@ -33,6 +41,7 @@ import {
   LoaderCircle,
   Menu,
   PanelRightOpen,
+  PanelRightClose,
   PanelLeftOpen,
   Pin,
   RefreshCw,
@@ -72,7 +81,7 @@ import {
   type Workspace,
 } from "./types";
 import { createInitialWorkspace } from "./sample";
-import { REFINEMENTS, canCompleteInquiry, isVerificationUnfinished, type Refinement } from "./lib/learning";
+import { REFINEMENTS, canCompleteInquiry, type Refinement } from "./lib/learning";
 import { renderMarkdown } from "./lib/markdown";
 import {
   applyInquiryHighlights,
@@ -163,14 +172,18 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [pdfTarget,setPdfTarget] = useState<{id:string;nonce:number;returnToSource?:boolean}|null>(null);
   const sidebar = useSidebar();
+  const resultPanel = useResultPanel();
+  const openResultPanel = resultPanel.openReading;
   const listScrollRef = useRef<HTMLDivElement>(null);
   const listPositions = useRef(new Map<string, {top:number;id?:string}>());
   const restoreListFocus = useRef(false);
   const navigationSequence = useRef(0);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [documentQuestionOpen, setDocumentQuestionOpen] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const articleRef = useRef<HTMLElement>(null);
+  const markdownWidth = useMarkdownWidth(articleRef);
   const pendingCreations = useRef(new Map<string, SelectionDraft["anchor"]>());
   const requests = useRef(new Map<string, { id: string; controller: AbortController }>());
   const [progress, setProgress] = useState<Record<string, string>>({});
@@ -181,7 +194,7 @@ function App() {
     navigationSequence.current++;
     setPdfDirectoryTarget(null);
     workspaceRef.current = next; setWorkspace(next); setDocumentLoadId(v => v + 1);
-    setPdfTarget(null); setProgress({}); setSearchQuery(""); setSelectionDraft(null); setFocusedInquiryId(null); setMobileSidebarOpen(false); setMobilePanelOpen(false); setProviderOpen(false);
+    setDocumentQuestionOpen(false); setPdfTarget(null); setProgress({}); setSearchQuery(""); setSelectionDraft(null); setFocusedInquiryId(null); setMobileSidebarOpen(false); setMobilePanelOpen(false); setProviderOpen(false);
     window.getSelection()?.removeAllRanges();
   }, []);
   const interruptForSwitch = useCallback(() => {
@@ -191,11 +204,19 @@ function App() {
     workspaceRef.current = next; setWorkspace(next); return next;
   }, []);
   const library = useReadingLibrary({ workspace, install: installLibraryWorkspace, interrupt: interruptForSwitch });
+  const saveStatus = useSaveStatus(library.status, workspace.document.id + ":" + documentLoadId);
 
   const rendered = useMemo(
     () => workspace.document.kind === "pdf" ? {html:"",outline:[]} : renderMarkdown(workspace.document.markdown),
     [workspace.document.kind,workspace.document.markdown],
   );
+
+  const markdownMinutes = useMemo(() => renderedReadingMinutes(rendered.html), [rendered.html]);
+  const [pdfMinutes, setPdfMinutes] = useState<{ hash: string; minutes: number | null } | null>(null);
+  const receivePdfMinutes = useCallback((hash: string, minutes: number | null) => setPdfMinutes({ hash, minutes }), []);
+  const readingMinutes = workspace.document.kind === "pdf"
+    ? (pdfMinutes?.hash === workspace.document.pdf.resourceId ? pdfMinutes.minutes : null)
+    : markdownMinutes;
 
   const selectedInquiry = useMemo(
     () =>
@@ -210,6 +231,7 @@ function App() {
   const history = intentHistory(group, tabIntent);
   const activeInquiry = selectedInquiry && categoryIntent(selectedInquiry.intent) === tabIntent ? selectedInquiry : null;
   const categoryItems = intentHistory(workspace.inquiries, tabIntent);
+  const documentQuestionBusy = workspace.inquiries.some(i => i.anchor.scope === "document" && i.status === "answering");
   const listKey = `${workspace.document.id}:${library.entry?.revisionId ?? workspace.document.contentHash}:${tabIntent}`;
   const rememberList = () => {
     if (!activeInquiry && listScrollRef.current) {
@@ -365,7 +387,7 @@ function App() {
     if (!id) return;
     const frame = window.requestAnimationFrame(() => {
       const target = [...(articleRef.current?.querySelectorAll<HTMLElement>("mark[data-inquiry-id]") ?? [])].find(mark => mark.dataset.inquiryId === id);
-      target?.scrollIntoView({ block: "center", behavior: "instant" });
+      if (target) revealReadingTarget(target);
     });
     return () => window.cancelAnimationFrame(frame);
     // Intentionally only restore on document load; request updates must not move reading position.
@@ -405,14 +427,31 @@ function App() {
       const scoped = { ...request, ...(image?{image}:{}), modelConfig: request.providerId === "codex" ? request.modelConfig ?? resolveModelConfig(operation, workspace.modelPreferences, codexModels) : undefined, requestId, operation, scope: request.scope ?? "initial" as const, round: request.round ?? 1 };
       requests.current.set(inquiryId, { id: requestId, controller });
       updateInquiry(inquiryId, inquiry => ({ ...inquiry, messages: [...inquiry.messages, { id: messageId, role: "assistant", content: "", createdAt: now(), modelConfig: scoped.modelConfig, requestId, completion: "provisional", operation: scoped.operation, explanationMode: scoped.explanationMode, scope: scoped.scope, round: scoped.round, parentMessageId: scoped.parentMessageId }] }));
+      let contextNotice = "";
       try {
+        if (scoped.readingScope === "document") {
+          setProgress(current => ({ ...current, [inquiryId]: "正在读取本文文字" }));
+          const document = workspaceRef.current.document;
+          let sections = markdownSections(articleRef.current), notice = "";
+          if (document.kind === "pdf") {
+            if (!library.entry) throw new Error("请先将文档加入阅读库。");
+            const { readDocumentPdfText } = await import("./lib/document-pdf-text");
+            controller.signal.throwIfAborted();
+            const result = await readDocumentPdfText(library.entry.id, document.pdf.resourceId, controller.signal);
+            sections = result.sections; notice = result.notice;
+          }
+          controller.signal.throwIfAborted();
+          const prepared = documentQuestionContext(sections, scoped.question, notice);
+          scoped.context = prepared.context; contextNotice = prepared.notice;
+          updateInquiry(inquiryId, inquiry => ({ ...inquiry, messages: inquiry.messages.map(message => message.id === messageId ? { ...message, contextNotice } : message) }));
+        }
         await readInquiryStream(scoped, event => {
           if (requests.current.get(inquiryId)?.id !== requestId) return;
           if (event.type === "answer-delta" && event.delta?.trim()) setProgress(current => ({ ...current, [inquiryId]: "正在生成正文" }));
           if (event.progress) setProgress(current => ({ ...current, [inquiryId]: PROGRESS_LABELS[event.progress!] }));
           updateInquiry(inquiryId, inquiry => ({ ...inquiry,
             messages: inquiry.messages.map(message => message.id !== messageId ? message : event.response
-              ? { ...responseMessage(messageId, scoped, event.response, event.type === "complete"), timings: event.timings }
+              ? { ...responseMessage(messageId, scoped, event.response, event.type === "complete"), timings: event.timings, contextNotice }
               : event.type === "answer-delta" ? { ...message, content: message.content + event.delta, timings: event.timings }
               : event.source ? { ...message, sources: message.sources?.map(source => source.id === event.source!.id ? event.source! : source) } : message),
             status: event.type === "complete" ? scoped.operation === "verify" && event.response?.evidenceStatus !== "supported" ? "needs-verification" : "ready" : "answering",
@@ -431,7 +470,7 @@ function App() {
         }
       }
     },
-    [updateInquiry, workspace.modelPreferences, codexModels, library.readOnly, library.busy, library.ready],
+    [updateInquiry, workspace.modelPreferences, codexModels, library.readOnly, library.busy, library.ready, library.entry?.id],
   );
 
   const handleArticleMouseUp = useCallback(() => {
@@ -468,7 +507,7 @@ function App() {
       const existing = intentHistory(matches, intent).find(i => intent !== "ask" || i.question === customQuestion?.trim());
       if (existing) {
         updateWorkspace(current => ({ ...current, activeInquiryId: existing.id, visitedInquiryIds: rememberInquiry(current, existing.id), activeTab: { anchorInquiryId: existing.id, intent: categoryIntent(intent) } }));
-        setSelectionDraft(null); setMobilePanelOpen(true); window.getSelection()?.removeAllRanges(); return;
+        setSelectionDraft(null); setMobilePanelOpen(true); openResultPanel(); window.getSelection()?.removeAllRanges(); return;
       }
       if (matches.some(i => i.status === "answering") || [...pendingCreations.current.values()].some(a => sameAnchor(a, draft.anchor))) return;
       const createdAt = now();
@@ -505,6 +544,7 @@ function App() {
         ...(draft.anchor.pdf?.kind === "region" && library.entry ? {image:{entryId:library.entry.id,fileHash:draft.anchor.pdf.fileHash,cropId:draft.anchor.pdf.cropId!}} : {}),
         intent,
         ...(["explain", "ask"].includes(intent) ? {explanationMode:"auto" as const} : {}),
+        ...(draft.anchor.scope === "document" ? { readingScope: "document" as const } : {}),
         quote: draft.anchor.quote,
         context: intent === "ask" ? questionContext(articleRef.current, draft.anchor, question) : readingContext(articleRef.current, draft.anchor),
         documentTitle: workspace.document.filename,
@@ -512,12 +552,12 @@ function App() {
         history: copyContextHistory(contextHistory),
       };
       setSelectionDraft(null);
-      setMobilePanelOpen(true);
+      setMobilePanelOpen(true); openResultPanel();
       window.getSelection()?.removeAllRanges();
       pendingCreations.current.set(id, draft.anchor);
       void askProvider(id, request).finally(() => pendingCreations.current.delete(id));
     },
-    [askProvider, workspace.inquiries, selectionDraft, updateWorkspace, workspace.activeProviderId, workspace.document.filename, modelsLoading, modelsError, codexModels, showToast],
+    [askProvider, workspace.inquiries, selectionDraft, updateWorkspace, workspace.activeProviderId, workspace.document.filename, modelsLoading, modelsError, codexModels, showToast, openResultPanel],
   );
 
   const submitFollowUp = useCallback(
@@ -567,7 +607,7 @@ function App() {
     if (!question.trim() || question.length > 2000 || requests.current.has(activeInquiry.id)) return;
     const history = [...(activeInquiry.contextHistory ?? []), ...activeInquiry.messages].filter(m => m.content.trim()).slice(-8).map(({role,content}) => ({role,content:content.slice(0,3000)}));
     updateInquiry(activeInquiry.id, i => ({...i,status:'answering',lastError:undefined,messages:[...i.messages,{id:newId('message'),role:'user',content:question.trim(),createdAt:now()}]}));
-    void askProvider(activeInquiry.id, {providerId:workspace.activeProviderId,intent:'ask',operation:'ask',explanationMode:'auto',quote:activeInquiry.anchor.quote,context:questionContext(articleRef.current,activeInquiry.anchor,question),documentTitle:workspace.document.filename,question:question.trim(),history});
+    void askProvider(activeInquiry.id, {providerId:workspace.activeProviderId,intent:'ask',operation:'ask',explanationMode:'auto',readingScope:activeInquiry.anchor.scope,quote:activeInquiry.anchor.quote,context:questionContext(articleRef.current,activeInquiry.anchor,question),documentTitle:workspace.document.filename,question:question.trim(),history});
   };
 
   const retryInquiry = useCallback(() => {
@@ -586,6 +626,7 @@ function App() {
     void askProvider(activeInquiry.id, {
       providerId: workspace.activeProviderId,
       intent: activeInquiry.intent,
+      readingScope: activeInquiry.anchor.scope,
       quote: activeInquiry.anchor.quote,
       context: activeInquiry.intent === "ask" ? questionContext(articleRef.current, activeInquiry.anchor, lastUserMessage?.content ?? activeInquiry.question) : readingContext(articleRef.current, activeInquiry.anchor),
       documentTitle: workspace.document.filename,
@@ -598,19 +639,6 @@ function App() {
       history: [...(activeInquiry.contextHistory ?? []), ...activeInquiry.messages.slice(0, lastUserMessage ? activeInquiry.messages.lastIndexOf(lastUserMessage) : 0)].filter(m => m.content.trim()).slice(-12).map(({ role, content }) => ({ role, content })),
     });
   }, [activeInquiry, groupBusy, askProvider, updateInquiry, workspace.activeProviderId, workspace.document.filename]);
-
-  const continueVerification = useCallback(() => {
-    if (!activeInquiry || activeInquiry.intent !== "verify" || groupBusy || !canCompleteInquiry(activeInquiry) || !activeProvider.supportsWebSearch || requests.current.has(activeInquiry.id)) return;
-    const previous = [...activeInquiry.messages].reverse().find(m => m.verification?.completion === "complete");
-    if (previous?.verification?.verdict === "incomplete") return;
-    const round = (previous?.verification?.round ?? 1) + 1;
-    const question = "继续查找来源：针对前轮缺口寻找其他原始出处或研究，标明范围差异和本轮变化。";
-    updateInquiry(activeInquiry.id, inquiry => ({ ...inquiry, status: "answering", lastError: undefined, messages: [...inquiry.messages, { id: newId("message"), role: "user", content: question, createdAt: now() }] }));
-    void askProvider(activeInquiry.id, { providerId: workspace.activeProviderId, intent: "verify", operation: "verify", scope: "expanded", round, parentMessageId: previous?.id,
-      previous: previous?.verification ? { verification: previous.verification, sources: previous.sources ?? [] } : undefined,
-      quote: activeInquiry.anchor.quote, context: readingContext(articleRef.current, activeInquiry.anchor),
-      documentTitle: workspace.document.filename, question, history: activeInquiry.messages.filter(m => m.content).slice(-12).map(({ role, content }) => ({ role, content })) });
-  }, [activeInquiry, groupBusy, activeProvider.supportsWebSearch, askProvider, updateInquiry, workspace.activeProviderId, workspace.document.filename]);
 
   const cancelInquiry = () => {
     if (!activeInquiry) return;
@@ -708,6 +736,7 @@ function App() {
   const locateInquiry = useCallback((inquiryId: string, returnToSource = false) => {
     const current = workspaceRef.current;
     const inquiry = current.inquiries.find(i => i.id === inquiryId);
+    if (inquiry?.anchor.scope === "document") return;
     const sequence = ++navigationSequence.current;
     if (!inquiry || inquiry.anchor.matchStatus !== 'matched') { finishSourceNavigation(inquiryId, false); return; }
     if (current.document.kind === 'pdf') {
@@ -731,7 +760,7 @@ function App() {
     }
     setFocusedInquiryId(null);
     updateWorkspace(current => ({ ...current, activeInquiryId: inquiryId, visitedInquiryIds: rememberInquiry(current, inquiryId), activeTab: undefined }));
-    setMobilePanelOpen(true);
+    setMobilePanelOpen(true); openResultPanel();
     setMobileSidebarOpen(false);
     locateInquiry(inquiryId);
   };
@@ -757,7 +786,7 @@ function App() {
 
   return (
     <div
-      className={`app-frame ${!sidebar.pinned ? "sidebar-collapsed" : ""} ${sidebar.peek ? "sidebar-peek" : ""} ${mobileSidebarOpen ? "sidebar-open" : ""} ${mobilePanelOpen ? "panel-open" : ""}`}
+      className={`app-frame ${!sidebar.pinned ? "sidebar-collapsed" : ""} ${sidebar.peek ? "sidebar-peek" : ""} ${!resultPanel.expanded ? "result-collapsed" : ""} ${mobileSidebarOpen ? "sidebar-open" : ""} ${mobilePanelOpen ? "panel-open" : ""}`}
       onDragEnter={(event) => {
         event.preventDefault();
         setIsDragging(true);
@@ -767,9 +796,10 @@ function App() {
         if (event.currentTarget === event.target) setIsDragging(false);
       }}
       onDrop={handleDrop}
-      onKeyDown={event => { if (event.key === "Escape") {
+      onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) {
+        if (providerOpen || selectionDraft) return;
         if (deleteMode) { setDeleteMode(false); setPendingDeleteId(null); document.getElementById("inquiry-delete-toggle")?.focus(); return; }
-        sidebar.close(); setMobileSidebarOpen(false); setMobilePanelOpen(false); } }}
+        sidebar.close(); resultPanel.close(); setMobileSidebarOpen(false); setMobilePanelOpen(false); } }}
     >
       <input
         ref={fileInputRef}
@@ -785,8 +815,7 @@ function App() {
         <div className="brand-row">
           <BrandMark />
           <div>
-            <strong>Got-it</strong>
-            <span>knowledge-gap reader</span>
+            <strong>Got it</strong>
           </div>
           <div className="desktop-sidebar-controls">
             {<button className="icon-button" type="button" aria-label={sidebar.pinned ? "解除固定导航" : "固定导航"} aria-pressed={sidebar.pinned} title={sidebar.pinned ? "解除固定，移开后收起" : "固定导航"} onClick={e => { sidebar.pin(!sidebar.pinned); if(sidebar.pinned && e.detail>0)e.currentTarget.blur(); }}><Pin size={15} fill={sidebar.pinned ? "currentColor" : "none"} /></button>}
@@ -833,7 +862,8 @@ function App() {
                   type="button"
                   className={`outline-item level-${item.level}`}
                   onClick={() => {
-                    document.getElementById(item.id)?.scrollIntoView({ behavior: "smooth" });
+                    const target = document.getElementById(item.id);
+                    if (target) revealReadingTarget(target, { align: "start" });
                     setMobileSidebarOpen(false);
                   }}
                 >
@@ -861,7 +891,7 @@ function App() {
             <FileText size={15} />
             <div>
               <strong>{workspace.document.filename}</strong>
-              <span>{workspace.document.isDemo ? "示例文档" : "本地文档"} · {workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页 PDF` : `${Math.max(1, Math.round(workspace.document.markdown.length / 1000))}k 字符`}</span>
+              <span className="document-metadata">{workspace.document.isDemo ? "示例文档" : "本地文档"} · {workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页 PDF` : `${Math.max(1, Math.round(workspace.document.markdown.length / 1000))}k 字符`}{readingMinutes !== null ? <span className="reading-time"> · 预计阅读 {readingMinutes} 分钟</span> : null}</span>
             </div>
           </div>
 
@@ -916,16 +946,17 @@ function App() {
               className="icon-button mobile-only"
               type="button"
               aria-label="打开知识贴"
-              onClick={() => setMobilePanelOpen(true)}
+              onClick={() => { setMobilePanelOpen(true); openResultPanel(); }}
             >
               <PanelRightOpen size={18} />
             </button>
           </div>
         </header>
 
-        {workspace.document.kind !== "pdf" ? <div className="library-save-status" role="status">{library.status}{library.busy ? " · 正在处理…" : ""}</div> : null}
+        {workspace.document.kind !== "pdf" ? <div className="markdown-toolbar"><div className="markdown-toolbar-row"><div className="library-save-status" role="status">{saveStatus}{library.busy ? " · 正在处理…" : ""}</div></div></div> : null}
         <ReadingLibraryStatus library={library} />
-        <div className="reader-scroll" onScroll={library.scrolled}>
+        <div key={workspace.document.id+":"+documentLoadId} className={`reader-scroll${workspace.document.kind === "pdf" ? " reader-scroll--pdf" : ""}`} onScroll={() => { if (!markdownWidth.adjusting.current) library.scrolled(); }}>
+          {workspace.document.kind !== "pdf" ? <div className="reading-adjustment-dock"><MarkdownWidthControls width={markdownWidth.width} onChange={markdownWidth.change}/></div> : null}
           {workspace.document.isDemo ? (
             <div className="demo-document-note">
               <Sparkles size={15} />
@@ -933,9 +964,10 @@ function App() {
               <button type="button" onClick={() => void library.choose()}>换成我的文档</button>
             </div>
           ) : null}
-          {workspace.document.kind === "pdf" && library.entry ? <Suspense fallback={<p className="pdf-status">正在加载 PDF 阅读器…</p>}><PdfReader outlineTarget={pdfDirectoryTarget?.documentId===workspace.document.id?pdfDirectoryTarget:null} onCurrentPage={setPdfCurrentPage} key={workspace.document.id+documentLoadId} document={workspace.document} entryId={library.entry.id} inquiries={workspace.inquiries} activeId={workspace.activeInquiryId} target={pdfTarget} onLocated={finishSourceNavigation} initialPosition={library.initialPosition} readOnly={library.readOnly} saveStatus={library.status} saveBusy={library.busy} saveError={library.blocked||library.status==="阅读进度暂未保存"} onCreate={createInquiry} onActivate={openAnchor} onReady={library.rendered} onView={library.scrolled}/></Suspense> : <article
+          {workspace.document.kind === "pdf" && library.entry ? <Suspense fallback={<p className="pdf-status">正在加载 PDF 阅读器…</p>}><PdfReader onReadingTime={receivePdfMinutes} outlineTarget={pdfDirectoryTarget?.documentId===workspace.document.id?pdfDirectoryTarget:null} onCurrentPage={setPdfCurrentPage} key={workspace.document.id+documentLoadId} document={workspace.document} entryId={library.entry.id} inquiries={workspace.inquiries} activeId={workspace.activeInquiryId} target={pdfTarget} onLocated={finishSourceNavigation} initialPosition={library.initialPosition} readOnly={library.readOnly} saveStatus={saveStatus} saveBusy={library.busy} saveError={library.blocked||library.status==="阅读进度暂未保存"} onCreate={createInquiry} onActivate={openAnchor} onReady={library.rendered} onView={library.scrolled}/></Suspense> : <article
             ref={articleRef}
             className="markdown-article"
+            style={{ width: `min(100%, max(360px, ${markdownWidth.width}%))` }}
             onMouseUp={handleArticleMouseUp}
             onClick={handleArticleClick}
             dangerouslySetInnerHTML={{ __html: rendered.html }}
@@ -947,29 +979,38 @@ function App() {
         </div>
       </main>
 
-      <aside className="right-panel" aria-label="活动知识贴">
+      <div className="result-rail" onMouseEnter={resultPanel.hoverReveal} onMouseLeave={resultPanel.leave}>
+        <button ref={resultPanel.triggerRef} type="button" className="icon-button" aria-label="展开知识贴" aria-controls="knowledge-panel" aria-expanded={resultPanel.expanded} onClick={resultPanel.reveal}><PanelRightOpen size={17} /></button>
+      </div>
+      <aside id="knowledge-panel" ref={resultPanel.ref} className="right-panel" aria-label="活动知识贴" inert={resultPanel.narrow ? !mobilePanelOpen : !resultPanel.expanded} onMouseEnter={resultPanel.enter} onMouseLeave={resultPanel.leave} onFocus={resultPanel.cancel} onBlur={resultPanel.deferClose}>
+        <PanelResizeHandle panel={resultPanel.ref} onStart={resultPanel.openReading} onCollapse={resultPanel.collapseFromDrag} />
+
         <div className="panel-mobile-head">
           <span>活动知识贴</span>
           <button className="icon-button" type="button" aria-label="关闭知识贴" onClick={() => setMobilePanelOpen(false)}>
             <X size={17} />
           </button>
         </div>
-        <>
+        <div className="panel-desktop-head">
+          <div className="desktop-panel-controls">
+            <button className="icon-button" type="button" aria-label={resultPanel.pinned ? "解除固定知识贴" : "固定知识贴"} aria-pressed={resultPanel.pinned} title={resultPanel.pinned ? "解除固定，移开后收起" : "固定知识贴"} onClick={event => { resultPanel.pin(!resultPanel.pinned); if (resultPanel.pinned && event.detail > 0) event.currentTarget.blur(); }}><Pin size={15} fill={resultPanel.pinned ? "currentColor" : "none"} /></button>
+          </div>
           <div className="inquiry-tabs" role="tablist" aria-label="本文知识贴分类">
             {NEW_INQUIRY_INTENTS.map((intent, index) => {
               const items = intentHistory(workspace.inquiries, intent);
               const Icon = INTENT_ICONS[intent];
               const busy = items.some(i => i.status === "answering");
-              return <button key={intent} id={`intent-tab-${intent}`} data-intent={intent} type="button" role="tab" aria-selected={tabIntent === intent} aria-busy={busy} aria-controls="intent-result" tabIndex={tabIntent === intent || (tabIntent === "why" && index === 0) ? 0 : -1}
+              return <button key={intent} id={`intent-tab-${intent}`} data-intent={intent} aria-label={`${INTENT_META[intent].label}${items.length ? `(${items.length})` : ""}`} title={`${INTENT_META[intent].label} · ${items.length} 条${busy ? " · 处理中" : ""}`} type="button" role="tab" aria-selected={tabIntent === intent} aria-busy={busy} aria-controls="intent-result" tabIndex={tabIntent === intent || (tabIntent === "why" && index === 0) ? 0 : -1}
                 onClick={() => switchTab(intent)} onKeyDown={event => {
                   const next = event.key === "ArrowRight" ? (index + 1) % 3 : event.key === "ArrowLeft" ? (index + 2) % 3 : event.key === "Home" ? 0 : event.key === "End" ? 2 : -1;
                   if (next < 0) return; event.preventDefault(); switchTab(NEW_INQUIRY_INTENTS[next]); document.getElementById(`intent-tab-${NEW_INQUIRY_INTENTS[next]}`)?.focus();
-                }}><Icon size={14} aria-hidden="true" /><span>{INTENT_META[intent].label}{items.length > 0 ? <span className="tab-count">({items.length > 99 ? "99+" : items.length})</span> : null}</span>{busy ? <i className="tab-busy" aria-label="处理中" /> : null}</button>;
+                }}><Icon size={14} aria-hidden="true" /><span className="tab-label">{INTENT_META[intent].label}</span>{items.length > 0 ? <span className="tab-count">({items.length > 99 ? "99+" : items.length})</span> : null}{busy ? <i className="tab-busy" aria-label="处理中" /> : null}</button>;
             })}
           </div>
-        </>
+        </div>
+        {!resultPanel.pinned ? <button className="result-collapse-action icon-button" type="button" aria-label="收起知识贴" title="收起知识贴（Esc）" onClick={resultPanel.close}><PanelRightClose size={15} /></button> : null}
         <div ref={listScrollRef} onScroll={rememberList} className={`intent-result${activeInquiry ? "" : " category-view"}`} id="intent-result" role="tabpanel" aria-labelledby={tabIntent !== "why" ? `intent-tab-${tabIntent}` : undefined}>
-        {activeInquiry ? <div className="result-navigation"><button className="return-to-list" type="button" onClick={() => switchTab(tabIntent, true)}><ChevronLeft size={16} aria-hidden="true" />返回</button><button className="source-excerpt" type="button" title={activeInquiry.anchor.quote} aria-label={`定位原文：${activeInquiry.anchor.pdf?.kind === 'region' ? `第 ${activeInquiry.anchor.pdf.page} 页 · 所选区域` : activeInquiry.anchor.quote}`} onClick={() => locateInquiry(activeInquiry.id, true)}>{activeInquiry.anchor.pdf ? <span className="source-page">第 {activeInquiry.anchor.pdf.page} 页{activeInquiry.anchor.pdf.kind === 'region' ? ' · 所选区域' : ''}</span> : null}{activeInquiry.anchor.pdf?.kind !== 'region' ? <span>{activeInquiry.anchor.quote}</span> : null}</button></div> : null}
+        {activeInquiry ? <div className="result-navigation"><button className="return-to-list" type="button" onClick={() => switchTab(tabIntent, true)}><ChevronLeft size={16} aria-hidden="true" />返回</button>{activeInquiry.anchor.scope === "document" ? <span className="source-excerpt">全文</span> : <button className="source-excerpt" type="button" title={activeInquiry.anchor.quote} aria-label={`定位原文：${activeInquiry.anchor.pdf?.kind === 'region' ? `第 ${activeInquiry.anchor.pdf.page} 页 · 所选区域` : activeInquiry.anchor.quote}`} onClick={() => locateInquiry(activeInquiry.id, true)}>{activeInquiry.anchor.pdf ? <span className="source-page">第 {activeInquiry.anchor.pdf.page} 页{activeInquiry.anchor.pdf.kind === 'region' ? ' · 所选区域' : ''}</span> : null}{activeInquiry.anchor.pdf?.kind !== 'region' ? <span>{activeInquiry.anchor.quote}</span> : null}</button>}</div> : null}
         <nav hidden={!!activeInquiry} className="category-items" aria-label={`${INTENT_META[tabIntent].label}条目`}>
           <div className="category-heading"><strong>本文的{tabIntent === "ask" ? "问题" : INTENT_META[tabIntent].shortLabel}</strong><div className="category-heading-actions"><span>{categoryItems.length} 条</span>
             <button id="inquiry-delete-toggle" className="category-delete-toggle" type="button" aria-label={deleteMode ? "退出删除模式" : "删除知识贴"} title={deleteMode ? "退出删除模式（Esc）" : "删除知识贴"} aria-pressed={deleteMode}
@@ -984,9 +1025,12 @@ function App() {
               aria-label={`${pendingDeleteId === item.id ? "确认删除知识贴" : "删除知识贴"}：${item.anchor.quote}`}
               title={pendingDeleteId === item.id ? "再次点击，删除此知识贴及全部回答" : "删除此知识贴"}
               onClick={() => deleteInquiry(item.id)}>{pendingDeleteId === item.id ? <Check size={16} aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}</button> : null}
-          </div>) : <p>还没有{tabIntent === "ask" ? "提问" : INTENT_META[tabIntent].label}条目。在原文选中文字，再选择“{tabIntent === "ask" ? "问一问" : INTENT_META[tabIntent].label}”即可创建。</p>}
+          </div>) : <p>{tabIntent === "ask" ? "可以向全文提问，也可以选中原文问一问。" : <>还没有{INTENT_META[tabIntent].label}条目。在原文选中文字，再选择“{INTENT_META[tabIntent].label}”即可创建。</>}</p>}
+          {tabIntent === "ask" ? <div className="document-question-entry">
+            {documentQuestionOpen ? <QuestionComposer initialOpen disabled={documentQuestionBusy || library.readOnly || library.busy || !library.ready || !modelReady} onClose={() => setDocumentQuestionOpen(false)} onSubmit={question => createInquiry("ask", { anchor: documentAnchor(workspace.document), context: "", rect: { top: 0, left: 0, width: 0, height: 0 } }, question)} /> : <button className="document-question-trigger" type="button" disabled={documentQuestionBusy || library.readOnly || library.busy || !library.ready || !modelReady} onClick={() => setDocumentQuestionOpen(true)}><span aria-hidden="true">＋</span>向全文提问</button>}
+          </div> : null}
         </nav>
-        {activeInquiry && group.length > 1 ? <nav className="anchor-requests" aria-label="这处原文的已有结果"><small>这处原文</small>{(['explain','verify','ask','why'] as InquiryIntent[]).flatMap(intent => {
+        {activeInquiry && activeInquiry.anchor.scope !== "document" && group.length > 1 ? <nav className="anchor-requests" aria-label="这处原文的已有结果">{(['explain','verify','ask','why'] as InquiryIntent[]).flatMap(intent => {
           const items = intentHistory(group, intent);
           const remembered = intent === 'ask' ? [...(workspace.visitedInquiryIds ?? [])].reverse().map(id => items.find(i => i.id === id)).find(Boolean) : undefined;
           const visible = (remembered ? [remembered] : items).slice(0, 1);
@@ -1003,9 +1047,8 @@ function App() {
             onFollowUp={submitFollowUp}
             onQuestion={submitCustomQuestion}
             onRetry={retryInquiry}
-            onContinue={continueVerification}
             progress={progress[activeInquiry.id]}
-            relatedHistory={history.length > 1 && tabIntent !== "ask" ? <details className="answer-history related-history"><summary>同处原文的历史记录</summary><label className="history-picker">历史记录<select aria-label="历史记录" value={activeInquiry.id} onChange={e => jumpToInquiry(e.target.value)}>{history.map(i => <option key={i.id} value={i.id}>{new Date(i.updatedAt).toLocaleString()} · {i.question}</option>)}</select></label></details> : null}
+            relatedHistory={history.length > 1 && tabIntent !== "ask" && tabIntent !== "verify" ? <details className="answer-history related-history"><summary>同处原文的历史记录</summary><label className="history-picker">历史记录<select aria-label="历史记录" value={activeInquiry.id} onChange={e => jumpToInquiry(e.target.value)}>{history.map(i => <option key={i.id} value={i.id}>{new Date(i.updatedAt).toLocaleString()} · {i.question}</option>)}</select></label></details> : null}
           />
         ) : (
           categoryItems.length ? <div className="empty-intent"><p>选择上方条目查看结果。</p></div> : null
@@ -1035,7 +1078,7 @@ function App() {
         </div>
       ) : null}
 
-      {mobileSidebarOpen || mobilePanelOpen ? (
+      {mobileSidebarOpen || (resultPanel.narrow && mobilePanelOpen) ? (
         <button
           className="mobile-scrim"
           type="button"
@@ -1086,7 +1129,6 @@ function ProviderPopover({
       <div className="popover-head">
         <div>
           <strong>AI 设置</strong>
-          <span>只影响之后的回答</span>
         </div>
         <button className="icon-button" type="button" onClick={onClose}><X size={14} /></button>
       </div>
@@ -1136,26 +1178,12 @@ function SelectionToolbar({
   const top = Math.min(draft.rect.top + draft.rect.height + 12, Math.max(12, window.innerHeight - 320));
   return (
     <div
-      className="selection-toolbar"
+      className="selection-toolbar selection-surface"
       style={{ left, top }}
       onMouseDown={(event) => { if (!(event.target instanceof HTMLTextAreaElement)) event.preventDefault(); }}
     >
       <div className="selection-quote">“{draft.anchor.quote}”</div>
-      <div className="selection-actions">
-        {NEW_INQUIRY_INTENTS.filter(intent => intent !== "ask").map((intent) => {
-          const Icon = INTENT_ICONS[intent];
-          return (
-            <button key={intent} type="button" data-intent={intent} disabled={disabled} onClick={() => onSelect(intent)}>
-              <Icon size={14} />
-              {INTENT_META[intent].label}
-            </button>
-          );
-        })}
-        <QuestionComposer inline disabled={disabled} onSubmit={question => onSelect("ask", question)} />
-        <button className="selection-close" type="button" aria-label="关闭" onClick={onClose}>
-          <X size={14} />
-        </button>
-      </div>
+      <SelectionActions onSelect={onSelect} onClose={onClose} disabled={disabled}/>
     </div>
   );
 }
@@ -1168,7 +1196,6 @@ interface InquiryPanelProps {
   provider: ProviderStatus;
   onFollowUp: (action: Refinement) => void;
   onRetry: () => void;
-  onContinue: () => void;
   onQuestion: (question: string) => void;
   progress?: string;
   relatedHistory?: ReactNode;
@@ -1182,7 +1209,6 @@ function InquiryPanel({
   provider,
   onFollowUp,
   onRetry,
-  onContinue,
   onQuestion,
   progress,
   relatedHistory,
@@ -1192,7 +1218,7 @@ function InquiryPanel({
     .find((message) => message.role === "assistant");
 
   const actionsEnabled = !groupBusy && canCompleteInquiry(inquiry);
-  const verificationUnfinished = isVerificationUnfinished(inquiry);
+  const verificationRetryVisible = inquiry.intent === "verify" && inquiry.status !== "answering" && !!(inquiry.lastError || latestAssistant?.completion === "interrupted" || latestAssistant?.verification?.completion === "interrupted" || latestAssistant?.search?.status === "failed");
   const recheckDisabledReason = groupBusy ? "当前请求正在进行，请等待完成或先停止" : !modelReady ? "请先连接可用模型" : !provider.supportsWebSearch ? "当前提供方不支持联网查找来源，请切换支持搜索的提供方" : undefined;
   const followUpDisabledReason = groupBusy ? "当前请求正在进行，请等待完成或先停止" : !modelReady ? "请先连接可用模型" : !actionsEnabled ? "需要完整回答后才能继续；失败或中断时请重试" : undefined;
   const threadRef = useRef<HTMLDivElement>(null);
@@ -1203,7 +1229,7 @@ function InquiryPanel({
     <div className="inquiry-panel-content">
       <div className="thread-scroll" ref={threadRef}>
         {inquiry.anchor.matchStatus === "needs-relink" ? <p className="anchor-warning">原文位置需要重新确认</p> : null}
-        {inquiry.intent === "ask" ? <div className="current-question"><small>我的问题</small><h2>{[...inquiry.messages].reverse().find(m => m.role === "user")?.content ?? inquiry.question}</h2></div> : null}
+        {inquiry.intent === "ask" ? <div className="current-question"><small>我的问题{inquiry.anchor.scope === "document" ? " · 全文" : ""}</small><h2>{[...inquiry.messages].reverse().find(m => m.role === "user")?.content ?? inquiry.question}</h2></div> : null}
         <div className="thread-messages">
           {latestAssistant ? <AssistantMessage message={latestAssistant} failure={inquiry.lastError} verification={inquiry.intent === "verify"} entity={inquiry.intent === "entity"} /> : null}
           {inquiry.status === "answering" && latestAssistant ? <RequestStatus key={latestAssistant.requestId ?? latestAssistant.id} startedAt={latestAssistant.createdAt} hasText={!!latestAssistant.content.trim()} progress={progress} /> : null}
@@ -1219,22 +1245,22 @@ function InquiryPanel({
         </div>
 
       <footer className="inquiry-actions compact-actions">
-        {inquiry.intent === "verify" ? (
-          <button className="secondary-action verify-again-action" type="button" disabled={!!recheckDisabledReason} title={recheckDisabledReason} aria-describedby={recheckDisabledReason ? "recheck-unavailable" : undefined} onClick={verificationUnfinished ? onRetry : onContinue}>再找一下</button>
-        ) : inquiry.intent !== "ask" ? (
-          <button type="button" className={`secondary-action ${inquiry.intent === "entity" ? "detail-introduction-action" : "explain-again-action"}`} disabled={!!followUpDisabledReason} title={followUpDisabledReason} aria-describedby={followUpDisabledReason ? "followup-unavailable" : undefined} onClick={() => onFollowUp(inquiry.intent === "entity" ? "detail" : "simplify")}>
-            {inquiry.intent === "entity" ? "详细介绍" : "再解释下"}
+        {verificationRetryVisible ? (
+          <button className="secondary-action verify-again-action" type="button" disabled={!!recheckDisabledReason} title={recheckDisabledReason} aria-describedby={recheckDisabledReason ? "recheck-unavailable" : undefined} onClick={onRetry}>重试</button>
+        ) : inquiry.intent === "entity" ? (
+          <button type="button" className="secondary-action detail-introduction-action" disabled={!!followUpDisabledReason} title={followUpDisabledReason} aria-describedby={followUpDisabledReason ? "followup-unavailable" : undefined} onClick={() => onFollowUp("detail")}>
+            详细介绍
           </button>
         ) : null}
         {inquiry.intent !== "verify" && inquiry.status !== "answering" && (inquiry.lastError || latestAssistant?.completion === "interrupted" || latestAssistant?.verification?.completion === "interrupted" || latestAssistant?.search?.status === "failed") ? (
           <button className="secondary-action regenerate-action" type="button" disabled={groupBusy} onClick={onRetry}><RefreshCw size={14} aria-hidden="true" />重新生成</button>
         ) : null}
         {inquiry.status === "answering" ? <button className="secondary-action stop-action" type="button" onClick={onCancel}>停止本次请求</button> : null}
+      <QuestionComposer prompt={inquiry.intent === "explain" || inquiry.intent === "why" || inquiry.intent === "verify" ? "还是不懂？" : undefined} disabled={groupBusy || !modelReady} followUp={inquiry.intent === "ask"} onSubmit={onQuestion} />
       </footer>
-      {inquiry.intent !== "verify" && inquiry.intent !== "ask" && followUpDisabledReason ? <p className="recheck-unavailable" id="followup-unavailable">{followUpDisabledReason}</p> : null}
-      {(inquiry.intent === "verify" || (!followUpDisabledReason && (inquiry.intent === "explain" || inquiry.intent === "why"))) && recheckDisabledReason ? <p className="recheck-unavailable" id="recheck-unavailable">{recheckDisabledReason}</p> : null}
-          {inquiry.messages.filter(message => message.role === "assistant" && message.id !== latestAssistant?.id).length ? <details className="answer-history"><summary>历史回答</summary>{inquiry.messages.filter(message => message.role === "assistant" && message.id !== latestAssistant?.id).map(message => <AssistantMessage key={message.id} message={message} history verification={inquiry.intent === "verify"} entity={inquiry.intent === "entity"} />)}</details> : null}
-      <QuestionComposer disabled={groupBusy || !modelReady} followUp={inquiry.intent === "ask"} onSubmit={onQuestion} />
+      {inquiry.intent === "entity" && followUpDisabledReason ? <p className="recheck-unavailable" id="followup-unavailable">{followUpDisabledReason}</p> : null}
+      {verificationRetryVisible && recheckDisabledReason ? <p className="recheck-unavailable" id="recheck-unavailable">{recheckDisabledReason}</p> : null}
+          {inquiry.intent !== "verify" && inquiry.messages.filter(message => message.role === "assistant" && message.id !== latestAssistant?.id).length ? <details className="answer-history"><summary>历史回答</summary>{inquiry.messages.filter(message => message.role === "assistant" && message.id !== latestAssistant?.id).map(message => <AssistantMessage key={message.id} message={message} history verification={inquiry.intent === "verify"} entity={inquiry.intent === "entity"} />)}</details> : null}
       {relatedHistory}
       </div>
     </div>
@@ -1255,11 +1281,9 @@ export function AssistantMessage({ message, verification = false, entity = false
       ) : null}
       {message.completion === "provisional" && !message.verification ? <p className="provisional-note" role="status">正在生成，内容尚未完成{message.operation === "verify" || message.operation === "entity" || isWebExplanation ? "；来源与结论尚未核对" : ""}。</p> : null}
       {message.completion === "interrupted" ? <p className="no-source-note">本轮中断，未收到最终结果。</p> : null}
+      {message.contextNotice ? <p className="document-context-note">{message.contextNotice}</p> : null}
       <div className="answer-markdown" dangerouslySetInnerHTML={{ __html: renderedAnswer.html }} />
-      {isWebExplanation ? <div className="explanation-sources">
-        <p className="no-source-note">{message.search?.status === "executed" ? "本轮已搜索；引用核对情况见来源详情。" : message.search?.status === "failed" ? "本轮资料查找失败；现有解释可能缺少必要依据。" : message.completion === "provisional" ? "正在处理资料，来源尚未核对。" : message.search?.status === "not-executed" ? (message.explanationMode === "auto" ? "本轮未执行搜索；相关链接的核对情况见详情。" : "本轮没有执行搜索，未完成联网补充。") : "本轮无法确认搜索成功，请留意外部信息的限制。"}</p>
-        {(message.sources ?? []).map(source => <SourceCard key={source.id} source={source} sourceFirst explanation />)}
-      </div> : null}
+      {isWebExplanation ? <CompactSources message={message} answerHtml={renderedAnswer.html} /> : null}
       {isIntroduction && websites.length > 0 ? <nav className="website-links" aria-label="相关网站"><small>相关网站</small>{websites.map(source => <a key={source.id} href={safeSourceUrl(source.url)} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} aria-hidden="true" /><span>{source.title}<small>{new URL(source.url).hostname}</small></span>{source.websiteRole === "official" ? <em>官网</em> : null}</a>)}</nav> : null}
       </>}
     </article>

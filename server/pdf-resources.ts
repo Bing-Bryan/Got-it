@@ -80,7 +80,7 @@ export class PdfResources {
     if(w.document.kind!=='pdf')return;
     const {meta}=await this.read(owner,w.document.pdf.resourceId);
     if(JSON.stringify(meta.pdf)!==JSON.stringify(w.document.pdf))fail();
-    for(const i of w.inquiries){const a=i.anchor.pdf;if(!a)fail();await this.location(owner,a);}
+    for(const i of w.inquiries){if(i.anchor.scope==='document')continue;const a=i.anchor.pdf;if(!a)fail();await this.location(owner,a);}
   }
   async location(owner:string,a:PdfLocation) {
     const page=await this.page(owner,a.fileHash,a.page);if(a.rects.some(r=>!insidePage(r,page)))fail();

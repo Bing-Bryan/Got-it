@@ -46,6 +46,7 @@ export type DocumentSnapshot = (DocumentBase & { kind?: 'markdown'; markdown: st
   | (DocumentBase & { kind: 'pdf'; pdf: PdfDocumentData; markdown?: never });
 
 export interface Anchor {
+  scope?: "document";
   pdf?: PdfLocation;
   textVersion?: 2;
   documentId: string;
@@ -132,6 +133,7 @@ export interface InquiryEvent {
   timings?: InquiryTimings;
 }
 export interface ThreadMessage extends InquiryOperation {
+  contextNotice?: string;
   requestId?: string;
   completion?: "provisional" | "complete" | "interrupted";
   verification?: Verification;
@@ -201,6 +203,7 @@ export interface SelectionDraft {
 }
 
 export interface InquiryRequest extends InquiryOperation {
+  readingScope?: "document";
   image?: { entryId: string; fileHash: string; cropId: string };
   requestId?: string;
   providerId: ProviderId;

@@ -28,7 +28,7 @@ Got it is an AI reading tool for Markdown articles and original-layout PDFs.
 | An explanation that still feels difficult | Ask for a shorter explanation or a simple example. |
 | An explanation worth keeping | Keep it as a knowledge card linked to the passage, saved with your reading progress. |
 
-Concept explanations and simplification search when necessary background or current information is missing; sufficient source material is explained directly. Follow-ups retain earlier answers, with actual search and citation-check status shown separately. Model calls still require a network connection. Timeouts and cancellation preserve partial content; retries retain the original mode.
+Concept explanations and specific questions search when necessary background or current information is missing; sufficient source material is explained directly. Explanations and source results offer a noninteractive “Still unclear?” prompt beside an Ask button. Opening it does not call a model; submitting creates a separate question. Source results no longer show a search-again or answer-history entry; failed or interrupted searches can still be retried. Stored history is preserved. Model calls still require a network connection. Timeouts and cancellation preserve partial content; retries retain the original mode.
 
 Web-based verification requires an AI connection that supports search. When evidence is insufficient, Got it makes that uncertainty visible rather than treating an AI answer as an established fact.
 
@@ -36,11 +36,17 @@ All functions default to **GPT-6.1 SOL / Medium**. The model menu reads the inst
 
 Explain covers concepts, people, organizations and products. Each selected passage can retain separate explanation, source and custom-question results. First opening prefers an existing explanation; later visits remember the last result viewed. The custom-question switch shows only “我的问题” (My questions); individual questions remain accessible from their list.
 
+The right panel resizes from 220–720px. Its header progressively switches from full labels to icons with counts, then icons only. Full labels remain down to 380px and counts down to 240px, with a small buffer when expanding. Drag another 48px beyond the minimum and release to collapse; reopening restores the previous width and draft. Narrow screens use a drawer.
+
+Markdown has a horizontal-arrow icon in the upper-right reading corner for content width (50–100%, default 80%), without changing font size. Code blocks use a light background and the body text size. Markdown and PDF save status stays at the far right, with delayed success feedback to avoid flickering during continuous changes.
+
+The document header estimates reading time locally. PDFs use native text only when coverage is sufficient; this estimate never triggers OCR or an AI request. “向全文提问” (Ask about the whole document) sits below the right-hand My questions list. It uses complete short texts or up to 16,000 characters of structure and relevant excerpts for long documents; PDFs require sufficient native text. Selection-based questions remain scoped to their passage. Enter sends; Shift+Enter adds a line, with input-method composition protected.
+
 ## From a question back to the text
 
 1. **Open an article.** Import a Markdown or PDF document and start reading.
 2. **Select what stops you.** Choose Explain or Find sources, or open Ask to enter a specific question.
-3. **Make sense of it beside the text.** Read the answer, request a simpler explanation or example, or inspect the sources.
+3. **Make sense of it beside the text.** Read the answer, ask a specific question, or inspect the sources.
 4. **Keep reading.** Return to the article or the previous list position without confirming understanding. Answers are saved with their original passages.
 
 Notes remain linked to their original passages and are saved in a local on-disk reading library. Browser storage retains preferences and an emergency recovery cache. Original files are not modified. PDF copies, OCR data and selected image crops are stored alongside the reading records. Legacy `.focus` and complete JSON backups can still be imported; the current UI does not offer an export/download button.
@@ -51,13 +57,13 @@ Use the trash icon beside the category count to enter deletion mode. Each card s
 
 ## PDF reading
 
-Select native text directly, or use “框选内容” for images and scanned or complex passages. Choose Explain, Find sources, or submit a specific question; only then does local OCR start. The original crop and auxiliary text go to the model together. Cancel, Escape or a blank-area click clears the draft. The compact excerpt locates the original page; narrow screens close the answer panel after successful positioning. The separate preview and OCR correction controls have been removed; existing crops, original recognition text and corrections remain saved and are reused for retries. The sidebar occupies space when revealed on hover, with one pin toggle to keep it open. A single 36px sticky toolbar holds the current page, region selection, inline instructions and save state; controls are not repeated on every page.
+Select native text directly, or use “框选内容” for images and scanned or complex passages. Choose Explain, Find sources, or submit a specific question; only then does local OCR start. The original crop and auxiliary text go to the model together. Cancel, Escape or a blank-area click clears the draft. The compact excerpt locates the original page; narrow screens close the answer panel after successful positioning. The separate preview and OCR correction controls have been removed; existing crops, original recognition text and corrections remain saved and are reused for retries. The app fills the window without outer gutters. Both sidebars can be collapsed or pinned independently using mirrored pin controls beside the reading area; pin preferences are saved locally. Edge buttons or hover reveal collapsed sidebars and let automatically fitted PDFs follow the remaining width. Intentionally opened answers stay visible. An unpinned answer panel can be closed with Escape or its bottom-right collapse button, retaining answers and unsent drafts. Narrow screens retain the drawer controls. A single 36px sticky toolbar holds the current page, region selection, inline instructions and right-aligned save state; controls are not repeated on every page.
 
 The left navigation can collapse, open temporarily on hover at the left edge, or remain pinned. Pages, highlights, answers and learning states survive reopening; cards return to their original page regions.
 
-PDF pages scroll continuously from top to bottom and automatically fit the reading area as the window or sidebar changes. Limits: 50 MiB, 200 pages, no encrypted files; OCR is limited to 60 seconds per region and can contain recognition errors. Crop uploads are PNG, at most 8 MiB and 4096 pixels per side. Image explanations require an image-capable Codex model and are not fact verification. PDF/OCR assets are prepared locally during installation; AI requests still need network access.
+PDF pages scroll continuously and fit the reading area by default. A diagonal-arrow icon in the upper-right corner of the reading area opens a slider and percentage field for continuous zoom from 25% to 400%; manual scale persists through window and sidebar changes and is remembered locally per PDF. The reset icon restores automatic fitting. The same compact icon opens the controls at every screen size; Escape or an outside click closes them. Desktop trackpad zoom events and Ctrl/Command + wheel zoom the original content; ordinary wheel scrolling remains unchanged. Limits: 50 MiB, 200 pages, no encrypted files; OCR is limited to 60 seconds per region and can contain recognition errors. Crop uploads are PNG, at most 8 MiB and 4096 pixels per side. Image explanations require an image-capable Codex model and are not fact verification. PDF/OCR assets are prepared locally during installation; AI requests still need network access.
 
-PDF records are not portable `.focus`/JSON exports. Back up the complete application data directory with the service stopped. Legacy Markdown backups remain supported; importing Markdown with local relative image files is still a separate gap. See the [latest update and validation](docs/updates/2026-10-09.md).
+PDF records are not portable `.focus`/JSON exports. Back up the complete application data directory with the service stopped. Legacy Markdown backups remain supported; importing Markdown with local relative image files is still a separate gap. See the [latest update and validation](docs/updates/2026-10-09-reading-controls.md).
 
 ## Run locally
 

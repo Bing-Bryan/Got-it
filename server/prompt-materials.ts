@@ -26,6 +26,7 @@ export function refinementInstruction(request: InquiryRequest & { intent: Active
 /** Serialization preserves text; it is not a guarantee of model injection resistance. */
 export function readingMaterials(request: InquiryRequest): string {
   const data = {
+    readingScope: request.readingScope ?? "selection",
     documentTitle: request.documentTitle,
     quote: request.quote,
     context: request.context,
