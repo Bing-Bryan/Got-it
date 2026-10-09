@@ -803,8 +803,8 @@
     },
     {
       "path": "docs/images/explain.png",
-      "bytes": 341842,
-      "sha256": "b8c53f8db21db9a081e88f54ea7d1cff479e482def933b74f2b0514901df4b46"
+      "bytes": 407016,
+      "sha256": "1a4f68dc6174841f2558b298bcc1f4ad28fe218b1c869231f9621a38c6584be5"
     },
     {
       "path": "docs/images/introduction.png",
@@ -813,23 +813,28 @@
     },
     {
       "path": "docs/images/pdf-reading.png",
-      "bytes": 143919,
-      "sha256": "9c711bca98d681d67439ecaaa3fd76aebb6737925df5e007d825b2306ca4664d"
+      "bytes": 1028328,
+      "sha256": "000f7e1254fc658e367e723842a5d9d68cee7d08047301ae5d0d9339c7ecabf9"
     },
     {
       "path": "docs/images/pdf-selection.png",
-      "bytes": 103410,
-      "sha256": "2bc0171c4c22aed1ef91af825198ef5e8cd1c395efa4ad2b594b2a0124611b34"
+      "bytes": 967449,
+      "sha256": "938d5449409c2bebe0440de922e7fa3b1e87a6f4e5bdcace14cfe8cd1605323b"
+    },
+    {
+      "path": "docs/images/question.png",
+      "bytes": 362038,
+      "sha256": "a6501f01e533504cbab33e159008b2f87331e9c601dbf1b901e3c8acf4a5473c"
     },
     {
       "path": "docs/images/reading.png",
-      "bytes": 260219,
-      "sha256": "ee051ebf4181b48834cb9293257d13e99605d74e788f1669df626260a30d99c8"
+      "bytes": 346889,
+      "sha256": "7836af6d1d587a45421269098d60e628a8547532e821634f0b5e66caf0879cd3"
     },
     {
       "path": "docs/images/sources.png",
-      "bytes": 293986,
-      "sha256": "0b6b44eaed4cbf2d9ea2b754a26950a63726273595eeb9e1b191a29161f0cbab"
+      "bytes": 320826,
+      "sha256": "47a1a52cbfb73f7379a9037a9b4608ce854ee1de903c655ef1ab0d4b61c074b5"
     },
     {
       "path": "docs/updates/2026-09-30.md",
@@ -868,13 +873,13 @@
     },
     {
       "path": "README.md",
-      "bytes": 16683,
-      "sha256": "1d6a34ddbc4945ee6b3484e16f45f2834f6c268f49954f2f47eb61ae40aca8f8"
+      "bytes": 11841,
+      "sha256": "58e7a9a0b13822fbf6c553695396a8cdaae479741ec6c9442a667bbe26307521"
     },
     {
       "path": "README.en.md",
-      "bytes": 9800,
-      "sha256": "8a2e364d46ca80f932956c3dff2c1fa4244b86aa077ea2cd4d709f1230a378dd"
+      "bytes": 10182,
+      "sha256": "e51160b961240820757679c4fa7dfa8e6081ace8a38e1f066e101b1eab916f1e"
     },
     {
       "path": "package.json",
