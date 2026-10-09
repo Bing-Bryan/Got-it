@@ -1,0 +1,26 @@
+// Disposable, controlled recovery fixture; no model calls or user records.
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createApp} from '../server/index.ts';
+import {ReadingLibrary} from '../server/reading-library.ts';
+import {stableHash} from '../src/sample.ts';
+import {readingFixture,draftFixture} from '../src/test-support/recovery-fixture.ts';
+if(!process.argv.includes('--run'))process.exit(0);
+const dir=await mkdtemp(join(tmpdir(),'got-it-review-')),library=new ReadingLibrary(dir);
+const workspace=readingFixture('受控验收文章.md');
+workspace.inquiries[0].anchor.blockId=`block-1-${stableHash('p:阅读内容').slice(0,7)}`;
+const e=await library.add(workspace,'review');
+await library.activate(e.id);
+const base=await library.get(e.id);
+const draft=draftFixture(base);draft.workspace=base.workspace;
+const w=structuredClone(base.workspace);w.inquiries.push({...structuredClone(w.inquiries[0]),id:'new',question:'新增问题',anchor:{...w.inquiries[0].anchor}});
+const disk=await library.save(e.id,base.version,base.revisionId,w,base.position);
+const result=await library.recover(e.id,draft);
+if(result.kind!=='review')throw new Error('Missing conflict');
+if(!process.argv.includes('--pending'))await library.resolveRecovery(result.record.id,'disk',disk.version);
+const server=createApp({library}).listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
+const {createServer}=await import('vite');
+const web=await createServer({server:{host:"127.0.0.1",port:5179,strictPort:true,open:false,proxy:{'/api':{target:`http://127.0.0.1:${server.address().port}`,changeOrigin:false}}}});await web.listen();
+console.log('CONTROLLED_REVIEW http://127.0.0.1:5179');
+process.on('SIGINT',async()=>{await web.close();server.close();await rm(dir,{recursive:true,force:true});process.exit(0);});

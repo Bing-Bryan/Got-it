@@ -29,9 +29,9 @@ describe('same passage intent navigation and safe preferences', () => {
   expect(all.length).toBe(3);
  });
  it('uses requested defaults and keeps independent user choices', () => {
-  expect(modelConfig('explain')).toEqual({model:'gpt-6-luna',reasoningEffort:'low'});
-  expect(modelConfig('verify')).toEqual({model:'gpt-6-astra',reasoningEffort:'medium'});
-  expect(modelConfig('entity')).toEqual({model:'gpt-6-luna',reasoningEffort:'low'});
+  expect(modelConfig('explain')).toEqual({model:'gpt-6.1-sol',reasoningEffort:'medium'});
+  expect(modelConfig('verify')).toEqual({model:'gpt-6.1-sol',reasoningEffort:'medium'});
+  expect(modelConfig('entity')).toEqual({model:'gpt-6.1-sol',reasoningEffort:'medium'});
   expect(modelConfig('entity',{entity:{model:'gpt-5.6-terra',reasoningEffort:'low'}}).model).toBe('gpt-5.6-terra');
   expect(copyModelConfig({model:'--unsafe',reasoningEffort:'max'})).toBeUndefined();
  });
@@ -54,16 +54,16 @@ describe('same passage intent navigation and safe preferences', () => {
   const raw=workspaceToJson(workspace);
   const loaded=loadWorkspace({getItem:()=>raw,setItem(){},removeItem(){}})!;
   expect(loaded.inquiries[0].messages.at(-1)).toMatchObject({completion:'interrupted',modelConfig:config,operation:'entity'});
-  expect(workspaceToMarkdown(loaded)).toContain('gpt-6-luna · low');
+  expect(workspaceToMarkdown(loaded)).toContain('gpt-6.1-sol · medium');
  });
 });
 
 it('repairs unavailable future preferences, preserves valid choices and uses official defaults for incompatible efforts',()=>{
- const models=TEST_MODELS.filter(m=>m.model!=='gpt-6-luna');
- expect(resolveModelConfig('explain',undefined,models)).toEqual({model:'gpt-5.6-sol',reasoningEffort:'medium'});
+ const models=TEST_MODELS.filter(m=>m.model!=='gpt-6.1-sol');
+ expect(resolveModelConfig('explain',undefined,models)).toEqual({model:'gpt-6.1-sol',reasoningEffort:'medium'});
  const chosen={model:'gpt-5.5',reasoningEffort:'high'};
  expect(resolveModelConfig('explain',{explain:chosen},models)).toEqual(chosen);
  expect(resolveModelConfig('explain',{explain:{...chosen,reasoningEffort:'max'}},models)).toEqual({...chosen,reasoningEffort:'medium'});
- expect(resolveModelConfig('explain',undefined,models.filter(m=>m.model!=='gpt-5.6-sol'))).toEqual({model:'gpt-6-astra',reasoningEffort:'medium'});
+ expect(resolveModelConfig('explain',undefined,models.filter(m=>m.model!=='gpt-5.6-sol'))).toEqual({model:'gpt-6.1-sol',reasoningEffort:'medium'});
  expect(resolveModelConfig('explain',undefined,[])).toEqual(modelConfig('explain'));
 });

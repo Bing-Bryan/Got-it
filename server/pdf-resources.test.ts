@@ -91,3 +91,19 @@ it('validates both crop and auxiliary OCR ownership, page and file when reopenin
  await expect(s.library.resources.location(s.entry.id,{...a,ocrId:cropId})).rejects.toThrow();
  const {copyPdfLocation}=await import('../src/lib/pdf-data');expect(copyPdfLocation(a)).toEqual(a);
 });
+
+
+it('reopens old learning and corrected OCR records without dropping original resources',async()=>{
+ const {library,entry}=await setup();const fileHash=entry.workspace.document.contentHash;
+ const rect:[number,number,number,number]=[70,60,300,200];
+ const cropId=(await library.resources.crop(entry.id,fileHash,1,rect,crop())).id;
+ const ocr=await library.resources.ocr(entry.id,{version:1,fileHash,page:1,lines:[{text:'Alpha 1O',rect:[80,80,120,100],block:'r'}]});
+ const workspace=structuredClone(entry.workspace);
+ workspace.inquiries=[{id:'legacy',intent:'explain',question:'chart',status:'distilled',understanding:'旧理解',completedAt:'2026-01-01',createdAt:'2026',updatedAt:'2026',messages:[{id:'answer',role:'assistant',content:'旧回答',createdAt:'2026',completion:'complete'}],anchor:{documentId:workspace.document.id,blockId:'pdf-1',headingPath:[],quote:'图表',prefix:'',suffix:'',start:0,end:0,matchStatus:'matched',pdf:{kind:'region',source:'image',fileHash,page:1,rects:[rect],cropId,ocrId:ocr.id,originalText:'Alpha 1O',context:'Alpha 10'}}}];
+ await library.save(entry.id,entry.version,entry.revisionId,workspace,{});
+ const restart=new ReadingLibrary(library.dir),restored=await restart.get(entry.id);
+ expect(restored.workspace.inquiries).toEqual(workspace.inquiries);
+ expect((await restart.resources.read(entry.id,cropId)).bytes).toEqual(crop());
+ expect((await restart.resources.read(entry.id,ocr.id)).meta.kind).toBe('ocr');
+ expect((await restart.resources.read(entry.id,fileHash)).bytes).toEqual(pdfFixture(3));
+});

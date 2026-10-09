@@ -2,9 +2,9 @@ import type { ModelConfig, ModelPreferences } from "./lib/model-routing";
 export const SCHEMA_VERSION = 2 as const;
 import type { PdfDocumentData, PdfLocation } from "./lib/pdf-data";
 
-export const NEW_INQUIRY_INTENTS = ["explain", "verify", "entity"] as const;
+export const NEW_INQUIRY_INTENTS = ["explain", "verify", "ask"] as const;
 
-export type ActiveInquiryIntent = typeof NEW_INQUIRY_INTENTS[number];
+export type ActiveInquiryIntent = typeof NEW_INQUIRY_INTENTS[number] | "entity";
 // `why` is a stored legacy identity, not a separate generation operation.
 export type InquiryIntent = ActiveInquiryIntent | "why";
 
@@ -105,7 +105,7 @@ export interface Verification {
 export interface InquiryOperation {
   explanationMode?: "local" | "web" | "auto";
   modelConfig?: ModelConfig;
-  operation?: "explain" | "verify" | "entity";
+  operation?: "explain" | "verify" | "entity" | "ask";
   scope?: "initial" | "expanded";
   round?: number;
   parentMessageId?: string;
@@ -150,6 +150,7 @@ export interface ThreadMessage extends InquiryOperation {
 }
 
 export interface Inquiry {
+  contextHistory?: Array<Pick<ThreadMessage, "role" | "content">>;
   id: string;
   intent: InquiryIntent;
   question: string;
@@ -164,7 +165,8 @@ export interface Inquiry {
 }
 
 export interface Workspace {
-  modelDefaultsVersion?: 2 | 3;
+  visitedInquiryIds?: string[];
+  modelDefaultsVersion?: 2 | 3 | 4;
   activeTab?: { anchorInquiryId?: string; intent: InquiryIntent };
   modelPreferences?: ModelPreferences;
   schemaVersion: 1 | typeof SCHEMA_VERSION;
@@ -232,9 +234,14 @@ export interface ProvidersResponse {
 export const INTENT_META: Record<InquiryIntent, { label: string; shortLabel: string }>
   & Record<ActiveInquiryIntent, { prompt: (quote: string) => string }> = {
   explain: {
-    label: "解释概念",
+    label: "解释一下",
     shortLabel: "解释",
-    prompt: (quote) => `请用不预设背景知识的方式解释「${quote}」，并说明它在这段原文中的作用。`,
+    prompt: (quote) => `请结合原文帮我理解「${quote}」：术语说明含义，人物、公司或产品说明是什么、做什么；句子或图表用通俗语言解释，并说明与上下文的关系。`,
+  },
+  ask: {
+    label: "我的问题",
+    shortLabel: "提问",
+    prompt: (quote) => `关于「${quote}」的问题`,
   },
   why: {
     label: "为什么",

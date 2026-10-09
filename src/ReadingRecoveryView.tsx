@@ -1,8 +1,9 @@
+import { recoveryDiff, describeRecoveryDifference, type RecoveryDifference } from './lib/recovery-diff';
 import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
 import type { useReadingLibrary } from './useReadingLibrary';
 import { inquiryContent, sameOriginal } from './lib/reading-recovery';
 import { renderMarkdown } from './lib/markdown';
-import { STATUS_META, INTENT_META, type Inquiry, type Workspace } from './types';
+import { STATUS_META, INTENT_META, type Inquiry } from './types';
 
 const PdfReader=lazy(()=>import("./PdfReader"));
 type Library = ReturnType<typeof useReadingLibrary>;
@@ -39,17 +40,15 @@ function InquiryPreview({inquiry,other}:{inquiry:Inquiry;other?:Inquiry}) {
     {inquiry.lastError ? <p>{inquiry.lastError}</p> : null}
   </details>;
 }
-function Snapshot({workspace,other,entryId}:{workspace:Workspace;other?:Workspace;entryId:string}) {
-  const others = new Map(other?.inquiries.map(i=>[i.id,i]));
-  return <>
-    <details className="recovery-original"><summary>查看原文 · {workspace.document.filename}</summary>{workspace.document.kind === "pdf" ? <Suspense fallback={<p>正在加载原页…</p>}><PdfReader document={workspace.document} entryId={entryId} inquiries={workspace.inquiries} readOnly/></Suspense> : <Markdown text={workspace.document.markdown} />}</details>
-    <p>{workspace.inquiries.length} 张知识贴</p>
-    {workspace.inquiries.map(i=><InquiryPreview key={i.id} inquiry={i} other={others.get(i.id)} />)}
-    {!workspace.inquiries.length ? <p>这份记录没有知识贴。</p> : null}
-  </>;
+function Difference({row}:{row:RecoveryDifference}) {
+  const item=row.after ?? row.before!;
+  return <details className={`recovery-difference ${row.kind}`}>
+    <summary><span className="difference-title">{item.anchor.quote || item.question} · {INTENT_META[item.intent].shortLabel}</span><span className="difference-kind">{row.kind==='added'?'仅已保存记录有':row.kind==='removed'?'仅保留记录有':row.kind==='same'?'内容相同':row.fields.join(' · ')}</span></summary>
+    <div className="recovery-columns">{row.before?<section><h4>保留记录</h4><InquiryPreview inquiry={row.before} other={row.after}/></section>:<p>保留记录中没有这一条。</p>}{row.after?<section><h4>已保存记录</h4><InquiryPreview inquiry={row.after} other={row.before}/></section>:<p>已保存记录中没有这一条。</p>}</div>
+  </details>;
 }
 export function ReadingRecoveryView({library}:{library:Library}) {
-  const dialog=useRef<HTMLDialogElement>(null);
+  const dialog=useRef<HTMLDialogElement>(null), outsideDown=useRef(false);
   const record=library.recovery;
   useEffect(()=>{
     if (!record) return;
@@ -58,21 +57,24 @@ export function ReadingRecoveryView({library}:{library:Library}) {
     return ()=>{dialog.current?.close();previous?.focus();};
   },[record?.id]);
   if (!record) return null;
+  const pending=record.state==='pending';
+  const saved=pending ? record.disk : record.current === undefined ? record.disk : record.current;
+  const diff=saved ? recoveryDiff(record.draft.workspace,saved.workspace) : null;
   const separate=!record.disk || !sameOriginal(record.disk,record.draft);
-  const pending=record.state === 'pending';
-  return <dialog ref={dialog} className="recovery-dialog" aria-labelledby="recovery-title" onCancel={e=>{if(library.busy)e.preventDefault();else library.closeRecovery();}}>
-    <header><div><h2 id="recovery-title">{pending ? '两份阅读记录需要核对' : '保留的阅读记录 · 只读'}</h2><p>{pending ? (record.reason === 'unreadable' ? '原来的记录暂时无法读取。可读的阅读内容已单独保留。' : record.reason === 'unknown' ? '无法确认哪份包含全部修改，请查看具体内容再选择。' : '阅读内容存在差异，请查看后选择继续哪份。') : '选择后保留的快照，不会改变当前阅读内容。'}</p></div><button type="button" disabled={library.busy} onClick={library.closeRecovery} aria-label="关闭恢复记录">关闭</button></header>
-    {library.error ? <p role="alert">{library.error}</p> : null}
-    {pending ? <p className="recovery-assurance">可读记录已保存到本机。可以稍后处理；选择后另一份仍可回看。</p> : null}
-    <div className="recovery-columns">
-      <section><h3>上次未保存的阅读记录</h3><p>记录时间：未知（不以时间判断新旧）</p>
-        {pending ? <><p>{separate ? '继续后将另存为未关联原文件的阅读条目，原条目保持。' : '继续后用于当前材料；另一份保留可回看。'}</p><button type="button" disabled={library.busy || (!!record.intent && record.intent.choice !== 'draft')} onClick={()=>void library.resolveRecovery('draft')}>继续这份阅读记录</button></> : null}
-        <Snapshot entryId={record.entryId} workspace={record.draft.workspace} other={record.disk?.workspace} />
-      </section>
-      <section><h3>已保存的阅读记录</h3>
-        {record.disk ? <>{pending ? <><p>继续后保留上次未保存的那份，可随时回看。</p><button type="button" disabled={library.busy || (!!record.intent && record.intent.choice !== 'disk')} onClick={()=>void library.resolveRecovery('disk')}>继续已保存的记录</button></> : null}<Snapshot entryId={record.entryId} workspace={record.disk.workspace} other={record.draft.workspace} /></> : <p>这份记录暂时无法读取，未用空白内容代替。</p>}
-      </section>
+  const outside=(event:React.PointerEvent<HTMLDialogElement>)=>{const r=event.currentTarget.getBoundingClientRect();return event.target===event.currentTarget&&(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom);};
+  return <dialog ref={dialog} className="recovery-dialog" aria-labelledby="recovery-title"
+    onPointerDown={e=>{outsideDown.current=outside(e);}}
+    onPointerUp={e=>{if(outsideDown.current&&outside(e)&&!library.busy)library.closeRecovery();outsideDown.current=false;}}
+    onCancel={e=>{e.preventDefault();if(!library.busy)library.closeRecovery();}}>
+    <header><div><h2 id="recovery-title">{!pending?'已使用所选阅读记录':saved?'请选择要继续使用的阅读记录':'找回保留的阅读记录'}</h2><p>{record.draft.workspace.document.filename}</p></div><button type="button" disabled={library.busy} onClick={library.closeRecovery} aria-label="关闭恢复记录">关闭</button></header>
+    <div className="recovery-body">
+      {library.error?<p role="alert" className="library-warning">{library.error}</p>:null}
+      <p className="recovery-description">{saved?describeRecoveryDifference(record.draft.workspace,saved.workspace):'当前保存记录暂时无法读取。之前的阅读内容已保留，可另存为未关联原文件的条目。'}</p>
+      {diff && (diff.counts.changed || diff.counts.removed)?<details className="recovery-needed-details"><summary>查看这 {diff.counts.changed+diff.counts.removed} 处差异</summary>{diff.rows.filter(r=>r.kind==='changed'||r.kind==='removed').map(row=><Difference key={row.id} row={row}/>)}</details>:null}
+      {diff?.originalChanged?<details className="recovery-needed-details"><summary>查看不同的原文</summary><div className="recovery-columns">{[{workspace:record.draft.workspace,label:'之前保留的原文'},{workspace:saved!.workspace,label:'当前保存的原文'}].map(({workspace,label})=><section key={label}><h3>{label}</h3>{workspace.document.kind==='pdf'?<Suspense fallback={<p>正在加载原页…</p>}><PdfReader document={workspace.document} entryId={record.entryId} inquiries={workspace.inquiries} readOnly/></Suspense>:<Markdown text={workspace.document.markdown}/>}</section>)}</div></details>:null}
     </div>
-    {record.previous.length ? <details><summary>核对期间保留的其他记录（{record.previous.length}）</summary>{record.previous.map((s,i)=><section key={i}><h3>核对时的记录 {i+1} · 只读</h3><Snapshot entryId={record.entryId} workspace={s.workspace} /></section>)}</details> : null}
+    <footer className="recovery-footer"><p>{separate?'选择之前记录会另存一份，原文件保持不变。':'选择后继续阅读，另一份记录会安全保留。'}</p><div>
+      {pending?<><button type="button" disabled={library.busy || (!!record.intent&&record.intent.choice!=='draft')} onClick={()=>void library.resolveRecovery('draft')}>使用之前记录（{record.draft.workspace.inquiries.length} 条）</button>{record.disk?<button className="recovery-primary" type="button" disabled={library.busy || (!!record.intent&&record.intent.choice!=='disk')} onClick={()=>void library.resolveRecovery('disk')}>使用当前记录（{record.disk.workspace.inquiries.length} 条）</button>:null}</>:<button className="recovery-primary" type="button" disabled={library.busy||!saved} onClick={()=>void library.acknowledgeRecovery()}>继续当前阅读</button>}
+    </div></footer>
   </dialog>;
 }

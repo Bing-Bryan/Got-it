@@ -57,7 +57,7 @@ it('rejects invalid model or effort and does not accept raw CLI configuration',(
 it('model rejection is visible and never triggers a second model or demo answer',async()=>{
  let calls=0;
  const service=new ProviderService({modelCatalog: testModelCatalog,execFileImpl:async(_f,args)=>{if(args[0]==='login')return {stdout:'Logged in using ChatGPT',stderr:''};calls++;throw new Error('unsupported model');}});
- await expect(service.answer(request)).rejects.toThrow('gpt-6-luna / low');expect(calls).toBe(1);
+ await expect(service.answer(request)).rejects.toThrow('gpt-6.1-sol / medium');expect(calls).toBe(1);
 });
 it('entity search is observable, remains outside verification, and cannot expand its source budget',async()=>{
  let reads=0;

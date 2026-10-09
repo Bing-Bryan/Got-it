@@ -1,3 +1,4 @@
+import { hasRecoveryDifference } from "./lib/recovery-diff";
 import { useEffect, useRef, useState } from "react";
 import type { Workspace } from "./types";
 import { migrateHighlightAnchors } from "./lib/anchor-migration";
@@ -47,6 +48,7 @@ export function useReadingLibrary(options: Options) {
   const [check, setCheck] = useState<SourceCheck | null>(null);
   const [recovery, setRecovery] = useState<RecoveryRecord | null>(null);
   const recoveryRef = useRef<RecoveryRecord | null>(null);
+  const dismissedRecoveries = useRef(new Set<string>());
   const [recoveries, setRecoveries] = useState<RecoverySummary[]>([]);
   const [draftWarning, setDraftWarning] = useState("");
   const [blocked, setBlocked] = useState(false);
@@ -128,7 +130,7 @@ export function useReadingLibrary(options: Options) {
             try {
               const result=await api<RecoveryResult>(`/entries/${e.id}/recover`,latestDraft.draft);
               store().remove(latestDraft);blockedDraft.current=null;setBlocked(false);
-              if(result.kind === "review") { install(await api<LibraryEntry>(`/entries/${e.id}`)); preview(result.record); readonlyRef.current=true; setStatus("两份阅读记录需要核对"); }
+              if(result.kind === "review") { install(await api<LibraryEntry>(`/entries/${e.id}`)); if(result.record.state === "pending" && result.record.disk && hasRecoveryDifference(result.record.draft.workspace,result.record.disk.workspace)) { preview(result.record); readonlyRef.current=true; } setStatus("已保存到本机"); }
               else install(result.entry);
               await refreshRecoveries();setError("");return;
             } catch (failure) { error=failure; }
@@ -156,7 +158,8 @@ export function useReadingLibrary(options: Options) {
       await api<LibraryEntry>(`/entries/${id}`); // Read before interrupting the current request.
       await preserve();
       const e = await api<LibraryEntry>(`/entries/${id}/activate`, {});
-      install(e); await refresh(); await checkSource();
+      install(e); for (const r of recoveries) if (r.entryId===id || r.resultEntryId===id) dismissedRecoveries.current.delete(r.id);
+      await refresh(); await refreshRecoveries(); await checkSource();
     });
   }
   async function addWorkspace(w: Workspace, selectionId?: string) {
@@ -194,22 +197,46 @@ export function useReadingLibrary(options: Options) {
   async function showRecovery(id: string) {
     await transition(async()=>{
       const record=await api<RecoveryRecord>(`/recoveries/${id}`);
-      await preserve(); preview(record); // Comparison lives in a dialog; the article remains unchanged.
+      await preserve(); await refreshRecoveries(); if (record.state === "pending" && (!record.disk || hasRecoveryDifference(record.draft.workspace,record.disk.workspace))) preview(record);
     });
   }
-  function closeRecovery() { preview(null); readonlyRef.current=!!historyId; }
+  function closeRecovery() {
+    const closing = recoveryRef.current;
+    if (closing) {
+      dismissedRecoveries.current.add(closing.id);
+      // Closing means continue this reading visit, not immediately inspect the next known copy.
+      for (const record of recoveries) if (record.entryId === closing.entryId) dismissedRecoveries.current.add(record.id);
+    }
+    preview(null); readonlyRef.current=!!historyId;
+  }
   async function resolveRecovery(choice: "draft" | "disk") {
     const r = recoveryRef.current; if (!r) return;
     await transition(async()=>{
       try {
         const result=await api<{record:RecoveryRecord;entry:LibraryEntry}>(`/recoveries/${r.id}/resolve`,{choice,expectedVersion:r.disk?.version ?? null});
+        await api(`/recoveries/${r.id}/acknowledge`, {});
         install(await api<LibraryEntry>(`/entries/${result.entry.id}/activate`,{}));await refresh();await refreshRecoveries();await checkSource();
       } catch(e) {
-        if ((e as {status?:number}).status === 409) preview(await api<RecoveryRecord>(`/recoveries/${r.id}`));
+        preview(await api<RecoveryRecord>(`/recoveries/${r.id}`));
         throw e;
       }
     });
   }
+  async function acknowledgeRecovery() {
+    const r = recoveryRef.current; if (!r || r.state !== 'resolved') return;
+    await transition(async () => {
+      await api(`/recoveries/${r.id}/acknowledge`, {});
+      install(await api<LibraryEntry>(`/entries/${r.resultEntryId ?? r.entryId}/activate`, {}));
+      await refreshRecoveries(); await refresh(); await checkSource();
+    });
+  }
+  useEffect(() => {
+    if (!ready || busy || recovery || historyId || blocked) return;
+    const record = recoveries.find(r => r.state === 'pending' && r.hasDifferences !== false && r.entryId === entry?.id && !dismissedRecoveries.current.has(r.id));
+    if (!record) return;
+    dismissedRecoveries.current.add(record.id);
+    void showRecovery(record.id);
+  }, [ready,busy,recovery,historyId,blocked,recoveries,entry?.id]);
   async function initialize() {
     if (busyRef.current) return;
     busyRef.current=true;setBusy(true);
@@ -246,7 +273,7 @@ export function useReadingLibrary(options: Options) {
       const id = result.activeId ?? result.entries[0]?.id;
       if (id) { install(restored.get(id) ?? await api<LibraryEntry>(`/entries/${id}`)); await checkSource(); }
       else setStatus("示例文档");
-      if (records.some(r=>r.state === "pending")) setStatus("有阅读记录待核对 · 已安全保留");
+      if (records.some(r=>r.state === "pending" && r.hasDifferences !== false)) setStatus("有阅读记录待核对 · 已安全保留");
       if (recovered) setNotice("已恢复上次阅读进度");
       setReady(true);
     } catch (e) { setStatus("本机阅读库未连接"); setError(message(e)); }
@@ -287,7 +314,7 @@ export function useReadingLibrary(options: Options) {
   useEffect(()=> { if (!notice) return; const id=setTimeout(()=>setNotice(""),4500); return ()=>clearTimeout(id); },[notice]);
   return { initialPosition: desiredPosition.current, entry, list, ready, busy, error, status, check, recovery, recoveries, blocked, draftWarning, notice, historyId,
     readOnly: !!historyId || !!recovery || blocked || busy,
-    open, choose, importFile, checkSource: () => transition(checkSource), acceptUpdate, viewRevision, resolveRecovery, showRecovery, closeRecovery,
+    open, choose, importFile, checkSource: () => transition(checkSource), acceptUpdate, viewRevision, resolveRecovery, acknowledgeRecovery, showRecovery, closeRecovery,
     retry: () => ready && !blockedDraft.current ? transition(() => flush()) : initialize(),
     rendered, scrolled };
 }

@@ -1,5 +1,5 @@
 import { copyPdfDocument, copyPdfLocation, insidePage } from "./pdf-data";
-import { copyActiveTab } from "./inquiry-tabs";
+import { copyActiveTab, copyVisitedIds } from "./inquiry-tabs";
 import { copyModelPreferences } from "./model-routing";
 import { copyOperation, copyVerification, copyTimings } from "./verification";
 import { interruptMessage } from "./inquiry-stream";
@@ -113,7 +113,7 @@ function isInquiry(value: unknown): value is Inquiry {
     (value.intent === "explain" ||
       value.intent === "why" ||
       value.intent === "verify" ||
-      value.intent === "entity") &&
+      value.intent === "entity" || value.intent === "ask") &&
     stringField(value.question) &&
     isAnchor(value.anchor) &&
     (value.status === "pending" ||
@@ -203,6 +203,7 @@ function copyInquiry(inquiry: Inquiry): Inquiry {
     id: inquiry.id,
     intent: inquiry.intent,
     question: inquiry.question,
+    ...(inquiry.contextHistory ? {contextHistory: copyContextHistory(inquiry.contextHistory)} : {}),
     anchor: copyAnchor(inquiry.anchor),
     status: inquiry.status,
     messages: inquiry.messages.map(copyMessage),
@@ -224,7 +225,7 @@ function copyInquiry(inquiry: Inquiry): Inquiry {
 export function sanitizeWorkspace(workspace: Workspace): Workspace {
   return {
     schemaVersion: SCHEMA_VERSION,
-    ...(workspace.modelDefaultsVersion === 2 || workspace.modelDefaultsVersion === 3 ? { modelDefaultsVersion: workspace.modelDefaultsVersion } : {}),
+    ...(workspace.modelDefaultsVersion === 2 || workspace.modelDefaultsVersion === 3 || workspace.modelDefaultsVersion === 4 ? { modelDefaultsVersion: workspace.modelDefaultsVersion } : {}),
     document: {
       id: workspace.document.id, filename: workspace.document.filename,
       importedAt: workspace.document.importedAt, contentHash: workspace.document.contentHash, isDemo: workspace.document.isDemo,
@@ -232,6 +233,7 @@ export function sanitizeWorkspace(workspace: Workspace): Workspace {
     },
     inquiries: workspace.inquiries.map(copyInquiry),
     activeInquiryId: workspace.activeInquiryId,
+    ...(workspace.visitedInquiryIds ? {visitedInquiryIds: copyVisitedIds(workspace.visitedInquiryIds, workspace.inquiries)} : {}),
     ...(copyActiveTab(workspace.activeTab, workspace.inquiries) ? { activeTab: copyActiveTab(workspace.activeTab, workspace.inquiries) } : {}),
     ...(workspace.modelPreferences ? { modelPreferences: copyModelPreferences(workspace.modelPreferences) } : {}),
     activeProviderId: workspace.activeProviderId,
@@ -304,3 +306,8 @@ export function clearWorkspace(storage: StorageLike | null = getDefaultStorage()
   }
 }
 
+
+export function copyContextHistory(value: unknown): Array<Pick<ThreadMessage, 'role' | 'content'>> {
+  if (!Array.isArray(value)) return [];
+  return value.filter((m): m is ThreadMessage => isRecord(m) && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string').slice(-4).map(({role, content}) => ({role, content:content.slice(0, 3000)}));
+}

@@ -83,7 +83,7 @@ export function createInitialWorkspace(): Workspace {
   const now = new Date().toISOString();
   return {
     schemaVersion: SCHEMA_VERSION,
-    modelDefaultsVersion: 3,
+    modelDefaultsVersion: 4,
     document: createDemoDocument(),
     inquiries: [],
     activeInquiryId: null,

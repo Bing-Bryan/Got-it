@@ -35,7 +35,7 @@ beforeEach(async () => {
   const p = [...div.querySelectorAll("p")].find(p => p.textContent?.includes("CAGR"))!; const start = p.textContent!.indexOf("CAGR");
   w.inquiries = [{ id: "explain", intent: "explain", question: "解释CAGR", anchor: { documentId: w.document.id, blockId: p.dataset.blockId!, headingPath: [], quote: "CAGR", prefix: "", suffix: "", start, end: start + 4, textVersion: 2, matchStatus: "matched" }, status: "ready", messages: [{ id: "old", role: "assistant", content: "已有解释", createdAt: "2026", completion: "complete" }], understanding: "", createdAt: "2026", updatedAt: "2026" }];
   w.activeInquiryId = "explain"; w.activeProviderId = "codex"; w.hasUnexportedChanges = true;
-  w.modelPreferences = { explain: { model: "gpt-5.5", reasoningEffort: "high" } }; w.modelDefaultsVersion = 3;
+  w.modelPreferences = { explain: { model: "gpt-5.5", reasoningEffort: "high" } }; w.modelDefaultsVersion = 4;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(w));
   host = document.createElement("div"); document.body.append(host); root = createRoot(host); stream.mockReset(); download.mockClear(); download.mockReturnValue(true);
   await act(async () => root.render(<App />));
@@ -99,7 +99,7 @@ it("can explicitly request another explanation after reopening using saved histo
   expect(host.textContent).toContain("已有解释"); expect(host.textContent).toContain("受控测试：离线");
 });
 
-it.each(["failure", "stop"])("keeps source lookup visibly unfinished after %s, including after acknowledgement", async mode => {
+it.each(["failure", "stop"])("keeps source lookup visibly unfinished after %s, including after list navigation", async mode => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
   w.inquiries[0].intent = "verify";
   w.inquiries[0].messages[0].operation = "verify";
@@ -110,12 +110,12 @@ it.each(["failure", "stop"])("keeps source lookup visibly unfinished after %s, i
   if (mode === "stop") await click('.stop-action');
   expect(host.querySelector('.thread-messages > .assistant-message .verification-conclusion')?.textContent).toBe('本次查找已中断');
   expect(host.querySelector('.empty-sources')).toBeNull();
-  expect(host.querySelector('.inquiry-actions .primary-action')?.textContent).toBe('暂时先这样');
+  expect(host.querySelector('.inquiry-actions .primary-action')).toBeNull();
   expect((host.querySelector('.verify-again-action') as HTMLButtonElement).disabled).toBe(false);
-  await click('.inquiry-actions .primary-action');
-  expect(stored().inquiries[0].status).toBe('understood');
+  await click('.return-to-list');
+  expect(stored().inquiries[0].status).not.toBe('understood');
   expect(stored().inquiries[0].messages.at(-1)?.completion).toBe('interrupted');
   await click('.category-open');
   expect(host.querySelector('.thread-messages > .assistant-message .verification-conclusion')?.textContent).toBe('本次查找已中断');
-  expect((host.querySelector('.inquiry-actions .primary-action') as HTMLButtonElement).disabled).toBe(true);
+  expect(host.querySelector('.inquiry-actions .primary-action')).toBeNull();
 });

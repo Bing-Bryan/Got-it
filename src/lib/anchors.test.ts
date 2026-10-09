@@ -178,7 +178,7 @@ describe("anchors", () => {
     expect(first.dataset.intents).toBe("explain verify entity");
     expect(first.getAttribute("style")).toBeNull();
     expect(first.dataset.multiIntent).toBeUndefined();
-    expect(first.getAttribute("aria-label")).toContain("解释概念、查找来源、介绍一下");
+    expect(first.getAttribute("aria-label")).toContain("解释一下、查找来源、介绍一下");
     for (const id of ["verify", "entity"]) {
       applyInquiryHighlights(article, items, id);
       first = article.querySelector("mark")!;

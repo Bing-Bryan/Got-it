@@ -35,8 +35,10 @@ export function ReadingLibraryNavigation({ library, importCopy }: { library: Lib
         </button>
         {open ? <div className="library-popup" id={popupId} aria-label="切换阅读文件">
           <div className="library-items">{entries.length ? entries.map(e => <div className={`library-item ${library.entry?.id === e.id ? "current" : ""}`} key={e.id}>
-            <button className="library-open" type="button" disabled={disabled} aria-current={library.entry?.id === e.id ? "page" : undefined} onClick={() => { setOpen(false); void library.open(e.id); }}>{e.filename}</button>
-            {library.recoveries.filter(r=>r.entryId === e.id || r.resultEntryId === e.id).map(r=><button key={r.id} type="button" className="library-recovery-link" disabled={library.busy} onClick={()=>{setOpen(false);void library.showRecovery(r.id);}}>{r.state === "pending" ? "阅读记录待核对" : "恢复记录 · 可回看"}</button>)}
+            <div className="library-title"><button className="library-open" type="button" disabled={disabled} aria-current={library.entry?.id === e.id ? "page" : undefined} onClick={() => { setOpen(false); void library.open(e.id); }}>{e.filename}</button>
+            {library.recoveries.filter(r=>(r.entryId === e.id || r.resultEntryId === e.id) && r.state === "pending" && r.hasDifferences !== false).map(r=><button key={r.id} type="button" className="library-recovery-link" disabled={library.busy} onClick={()=>{setOpen(false);void library.showRecovery(r.id);}}>{r.state === "pending" ? "查看待核对差异" : "查看记录差异"}</button>)}
+
+            </div>
             {e.path ? <div className="library-path">
               <button className="library-copy-path" type="button" aria-label={`复制路径：${e.filename}`} onClick={() => void copyPath(e.id, e.path!)}><span>{e.path}</span>{copyStatus?.id === e.id && copyStatus.ok ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}</button>
               {copyStatus?.id === e.id ? <small role="status">{copyStatus.ok ? "路径已复制" : "复制失败，请选中路径手动复制"}</small> : null}
@@ -57,10 +59,7 @@ export function ReadingLibraryStatus({ library }: { library: Library }) {
     {library.blocked || library.status === "阅读进度暂未保存" ? <p className="library-warning">须先保存阅读记录才能离开，当前内容仍保留。</p> : null}
     {library.draftWarning ? <p role="alert" className="library-warning">{library.draftWarning}</p> : null}
     {library.notice ? <p role="status" className="library-recovered">{library.notice}</p> : null}
-    {library.recoveries.filter(r=>r.state === "pending" || r.entryId === library.entry?.id || r.resultEntryId === library.entry?.id || !library.list.entries.some(e=>e.id === r.entryId)).map(r=><div className="library-recovery-state" key={r.id}>
-      <span>{r.filename} · {r.state === "pending" ? "阅读记录待核对，已安全保留" : "保留的恢复记录"}</span>
-      <button type="button" disabled={library.busy} onClick={()=>void library.showRecovery(r.id)}>{r.state === "pending" ? "查看差异" : "回看记录"}</button>
-    </div>)}
+    {library.recoveries.filter(r=>r.state === 'pending' && r.savedRecordUnavailable).map(r=><div key={r.id} className="library-warning" role="alert"><span>{r.filename}：当前保存记录无法读取，之前的记录已保留。</span><button type="button" disabled={library.busy} onClick={()=>void library.showRecovery(r.id)}>找回阅读记录</button></div>)}
     <ReadingRecoveryView library={library} />
     {library.entry && (sourceProblem || library.entry.history.length > 0) ? <div className="library-source-state">
       {sourceProblem ? <span>{library.check?.message}</span> : null}

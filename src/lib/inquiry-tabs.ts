@@ -9,20 +9,47 @@ export function anchorGroup(inquiries: Inquiry[], representative: Inquiry): Inqu
   return inquiries.filter(i => i.id === representative.id || sameAnchor(i.anchor, representative.anchor));
 }
 export function intentHistory(group: Inquiry[], intent: InquiryIntent): Inquiry[] {
-  return group.filter(i => i.intent === intent).sort((a,b) => b.updatedAt.localeCompare(a.updatedAt));
+  return group.filter(i => categoryIntent(i.intent) === categoryIntent(intent)).sort((a,b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 export function copyActiveTab(value: unknown, inquiries: Inquiry[]): Workspace["activeTab"] {
   if (!value || typeof value !== "object") return;
   const v = value as NonNullable<Workspace["activeTab"]>;
-  if (["explain", "verify", "entity", "why"].includes(v.intent) && (v.anchorInquiryId === undefined || inquiries.some(i => i.id === v.anchorInquiryId))) return { anchorInquiryId: v.anchorInquiryId, intent: v.intent };
+  if (["explain", "verify", "entity", "why", "ask"].includes(v.intent) && (v.anchorInquiryId === undefined || inquiries.some(i => i.id === v.anchorInquiryId))) return { anchorInquiryId: v.anchorInquiryId, intent: v.intent };
 }
 
-/** Category labels describe the existing user-confirmed progress, not evidence strength. */
+/** Presentation only: learning fields never determine whether a reply completed. */
 export function inquiryCategoryStatus(inquiry: Inquiry): string {
-  if (inquiry.intent === "verify" && (inquiry.status === "understood" || inquiry.status === "distilled")) return "已查找";
-  if (inquiry.lastError) return "未完成";
-  const action = inquiry.intent === "verify" ? "查找" : inquiry.intent === "entity" ? "介绍" : "解释";
-  if (inquiry.status === "answering") return `${action}中`;
-  if (isVerificationUnfinished(inquiry)) return "待查找";
-  return `${inquiry.status === "understood" || inquiry.status === "distilled" ? "已" : "待"}${action}`;
+  const action = inquiry.intent === "verify" ? "查找" : inquiry.intent === "ask" ? "回答" : "解释";
+  const latest = [...inquiry.messages].reverse().find(m => m.role === 'assistant');
+  if (inquiry.status === 'answering') return `${action}中`;
+  if (inquiry.lastError || latest?.search?.status === 'failed' || latest?.completion === 'interrupted' || latest?.completion === 'provisional') return '未完成';
+  if (!latest?.content.trim()) return `待${action}`;
+  if (latest.mode === 'demo') return '示例回答';
+  if (inquiry.intent === 'verify') {
+    if (latest.search?.status !== 'executed' || isVerificationUnfinished(inquiry)) return '未完成';
+    return '已有结果';
+  }
+  if (latest.completion !== 'complete') return '历史回答';
+  return `已有${action}`;
+}
+
+/** Keep legacy identities intact while presenting introductions with explanations. */
+export function categoryIntent(intent: InquiryIntent): InquiryIntent { return intent === 'entity' ? 'explain' : intent; }
+export function copyVisitedIds(value: unknown, inquiries: Inquiry[]): string[] {
+  if (!Array.isArray(value)) return [];
+  const ids = new Set(inquiries.map(i => i.id));
+  return [...new Set(value.filter((id): id is string => typeof id === 'string' && ids.has(id)))];
+}
+export function rememberInquiry(workspace: Workspace, id: string): string[] {
+  return [...copyVisitedIds(workspace.visitedInquiryIds, workspace.inquiries).filter(v => v !== id), id];
+}
+export function preferredInquiry(workspace: Workspace, id: string): Inquiry | undefined {
+  const representative = workspace.inquiries.find(i => i.id === id);
+  if (!representative) return;
+  const group = anchorGroup(workspace.inquiries, representative);
+  for (const visited of [...(workspace.visitedInquiryIds ?? [])].reverse()) {
+    const match = group.find(i => i.id === visited);
+    if (match) return match;
+  }
+  return group.find(i => i.intent === 'explain') ?? group.find(i => i.intent === 'entity') ?? representative;
 }

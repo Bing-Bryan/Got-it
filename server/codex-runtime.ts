@@ -10,8 +10,10 @@ export function resolveCodexBinary(configured?: string, platform = process.platf
   if (platform === 'darwin') {
     for (const root of ['/Applications', join(homedir(), 'Applications')]) {
       for (const app of ['Codex.app', 'ChatGPT.app']) {
-        const binary = join(root, app, 'Contents/Resources/codex');
-        if (executable(binary)) return binary;
+        for (const relative of ['Contents/Resources/codex-cli/bin/codex', 'Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex', 'Contents/Resources/codex']) {
+          const binary = join(root, app, relative);
+          if (executable(binary)) return binary;
+        }
       }
     }
   }

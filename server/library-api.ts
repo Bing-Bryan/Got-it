@@ -1,3 +1,4 @@
+import { PdfOutlineStore } from "./pdf-outline";
 import { randomBytes } from "node:crypto";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { ReadingLibrary, libraryFailure } from "./reading-library";
@@ -19,6 +20,7 @@ export function localOriginGuard(request: Request, response: Response, next: Nex
 
 export function libraryRouter(library: ReadingLibrary, token = randomBytes(32).toString("hex")) {
   const router = express.Router();
+  const outlines = new PdfOutlineStore(library);
   router.use((_req, res, next) => { res.setHeader("Cache-Control", "no-store"); next(); });
   router.post("/session", (req, res) => {
     // JSON is required even for bootstrap: cross-site simple forms cannot obtain a session.
@@ -42,9 +44,12 @@ export function libraryRouter(library: ReadingLibrary, token = randomBytes(32).t
     try { const {meta,bytes}=await library.resources.read(id(req),String(req.params.resource));res.type(meta.kind==="pdf"?"application/pdf":meta.kind==="crop"?"image/png":"application/json").send(bytes); }
     catch(error){const e=libraryFailure(error);res.status(e.status).json({error:e.message,code:e.code});}
   });
+  router.get("/entries/:id/outline/:hash", action(req => outlines.get(id(req), String(req.params.hash))));
+  router.post("/entries/:id/outline/:hash", action(req => outlines.save(id(req), String(req.params.hash), req.body)));
   router.get("/", action(() => library.list()));
   router.get("/recoveries", action(() => library.listRecoveries()));
-  router.get("/recoveries/:id", action(req => library.getRecovery(id(req))));
+  router.get("/recoveries/:id", action(req => library.reviewRecovery(id(req))));
+  router.post("/recoveries/:id/acknowledge", action(req => library.acknowledgeRecovery(id(req))));
   router.post("/recoveries/:id/resolve", action(req => library.resolveRecovery(id(req), req.body?.choice, req.body?.expectedVersion)));
   router.post("/entries/:id/recover", action(req => library.recover(id(req), req.body)));
   router.post("/choose", action(() => library.choose()));

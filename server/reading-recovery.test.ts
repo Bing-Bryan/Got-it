@@ -13,18 +13,18 @@ afterEach(async()=>{vi.restoreAllMocks();await Promise.all(dirs.splice(0).map(p=
 async function setup(){const dir=await mkdtemp(join(tmpdir(),'recovery-test-'));dirs.push(dir);const l=new ReadingLibrary(dir);const e=await l.add(readingFixture(),'fixture');return {l,e,dir};}
 function review(result:RecoveryResult):RecoveryRecord {if(result.kind!=='review')throw new Error('expected review');return result.record;}
 describe('durable reading recovery',()=>{
- it('cleans equal data, restores view, and restores safe edits after metadata version changes',async()=>{
+ it('cleans equal data, restores view, and asks about edits after metadata version changes',async()=>{
   const {l,e}=await setup();const d=draftFixture(e);await l.activate(e.id);
-  const restored=await l.recover(e.id,d);expect(restored.kind).toBe('restored');
-  const replay=await l.recover(e.id,d);expect(replay.kind).toBe('same');expect(await l.listRecoveries()).toEqual([]);
+  const restored=review(await l.recover(e.id,d));expect(restored.state).toBe('pending');
+  expect(review(await l.recover(e.id,d)).id).toBe(restored.id);expect(await l.listRecoveries()).toHaveLength(1);
   const latest=await l.get(e.id);const view={...draftFixture(latest),workspace:latest.workspace,position:{ratio:.8}};
   expect((await l.recover(e.id,view)).kind).toBe('same');expect((await l.get(e.id)).position.ratio).toBe(.8);
  });
  it('supports legacy matching versions and conservatively preserves legacy unknown baselines',async()=>{
   const {l,e}=await setup();const d=draftFixture(e);delete d.id;delete d.baseDigest;
-  expect((await l.recover(e.id,d)).kind).toBe('restored');
+  expect((await l.recover(e.id,d)).kind).toBe('review');
   const other={...d,workspace:editReading(d.workspace,'另一个旧缓存')};const r=review(await l.recover(e.id,other));expect(r.reason).toBe('unknown');
-  expect(review(await l.recover(e.id,other)).id).toBe(r.id);expect(await l.listRecoveries()).toHaveLength(1);
+  expect(review(await l.recover(e.id,other)).id).toBe(r.id);expect(await l.listRecoveries()).toHaveLength(2);
  });
  it.each(['draft','disk'] as const)('preserves both sides when choosing %s; reads them after restart and ordinary saves',async(choice)=>{
   const {l,e,dir}=await setup();const d=draftFixture(e);const disk=await l.save(e.id,e.version,e.revisionId,editReading(e.workspace,'磁盘新回答'),e.position);
@@ -79,4 +79,34 @@ describe('durable reading recovery',()=>{
    expect((await fetch(base+'/recoveries/'+r.id,{headers})).ok).toBe(true);
   }finally{server.close();await once(server,'close');}
  });
+});
+it('acknowledges only resolved events durably without replacing current content or snapshots',async()=>{
+ const {l,e,dir}=await setup();const d=draftFixture(e);
+ const disk=await l.save(e.id,e.version,e.revisionId,editReading(e.workspace,'磁盘回答'),e.position);
+ const r=review(await l.recover(e.id,d));await expect(l.acknowledgeRecovery(r.id)).rejects.toMatchObject({status:409});
+ const selected=await l.resolveRecovery(r.id,'disk',disk.version);
+ const current=await l.save(e.id,selected.entry.version,e.revisionId,editReading(e.workspace,'后续新回答'),e.position);
+ expect((await l.reviewRecovery(r.id)).current!.workspace.inquiries[0].messages[0].content).toBe('后续新回答');
+ const ack=await l.acknowledgeRecovery(r.id);expect(ack.acknowledgedAt).toBeTruthy();
+ expect((await l.acknowledgeRecovery(r.id)).acknowledgedAt).toBe(ack.acknowledgedAt);
+ const restart=new ReadingLibrary(dir);expect((await restart.listRecoveries())[0].acknowledgedAt).toBe(ack.acknowledgedAt);
+ expect((await restart.get(e.id)).workspace).toEqual(current.workspace);
+ expect((await restart.getRecovery(r.id)).disk).toEqual(r.disk);
+ expect((await restart.getRecovery(r.id)).current).toBeUndefined();
+ const next=review(await restart.recover(e.id,{...d,id:crypto.randomUUID(),workspace:editReading(d.workspace,'新的冲突')}));expect(next.acknowledgedAt).toBeUndefined();
+});
+it('keeps reminders after acknowledgement write failure and supports retry',async()=>{
+ const {l,e}=await setup();const d=draftFixture(e);d.revisionId=crypto.randomUUID();
+ const r=review(await l.recover(e.id,d));await l.resolveRecovery(r.id,'disk',e.version);
+ const internals=l as unknown as {saveRecovery:(r:RecoveryRecord)=>Promise<void>};
+ const spy=vi.spyOn(internals,'saveRecovery').mockRejectedValueOnce(new Error('disk failure'));
+ await expect(l.acknowledgeRecovery(r.id)).rejects.toThrow('disk failure');
+ expect((await l.getRecovery(r.id)).acknowledgedAt).toBeUndefined();spy.mockRestore();
+ expect((await l.acknowledgeRecovery(r.id)).acknowledgedAt).toBeTruthy();
+});
+it('refreshes pending review after navigation metadata changes without inventing content changes',async()=>{
+ const {l,e}=await setup();const r=review(await l.recover(e.id,draftFixture(e)));
+ const active=await l.activate(e.id);const fresh=await l.reviewRecovery(r.id);
+ expect(fresh.disk!.version).toBe(active.version);expect(fresh.previous).toHaveLength(0);
+ expect((await l.resolveRecovery(r.id,'disk',fresh.disk!.version)).record.state).toBe('resolved');
 });

@@ -1,3 +1,4 @@
+import { hasRecoveryDifference } from "../src/lib/recovery-diff";
 import { PdfResources } from "./pdf-resources";
 import { MAX_PDF_BYTES } from "../src/lib/pdf-data";
 import { createInitialWorkspace } from "../src/sample";
@@ -213,9 +214,31 @@ export class ReadingLibrary {
     const result: RecoverySummary[] = [];
     for (const name of names.filter(n => /^[a-f0-9]{64}\.json$/.test(n))) {
       const r = await this.getRecovery(name.slice(0,-5));
-      result.push({id:r.id,entryId:r.entryId,createdAt:r.createdAt,state:r.state,resultEntryId:r.resultEntryId,filename:r.draft.workspace.document.filename});
+      result.push({id:r.id,entryId:r.entryId,createdAt:r.createdAt,state:r.state,resultEntryId:r.resultEntryId,acknowledgedAt:r.acknowledgedAt,savedRecordUnavailable:!r.disk,hasDifferences:!!r.disk && hasRecoveryDifference(r.draft.workspace,r.disk.workspace),filename:r.draft.workspace.document.filename});
     }
     return result.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  }
+  async reviewRecovery(id: string): Promise<RecoveryRecord> {
+    return this.serialize(async () => {
+      const r = await this.getRecovery(id);
+      const current = await this.maybeEntry(r.resultEntryId ?? r.entryId);
+      if (r.state === 'resolved') return {...r, current: current ? this.snapshot(current) : null};
+      if (!r.intent && (current?.version ?? null) !== (r.disk?.version ?? null)) {
+        if (r.disk && (!current || hasRecoveryDifference(r.disk.workspace,current.workspace))) r.previous.push(r.disk);
+        r.disk=current ? this.snapshot(current) : null;
+        await this.saveRecovery(r);
+      }
+      return r;
+    });
+  }
+  async acknowledgeRecovery(id: string): Promise<RecoveryRecord> {
+    return this.serialize(async () => {
+      const r = await this.getRecovery(id);
+      if (r.state !== 'resolved') return fail('请先选择要继续使用的记录。', 409, 'recovery_pending');
+      if (!await this.maybeEntry(r.resultEntryId ?? r.entryId)) return fail('当前已保存记录暂时无法读取，未结束提醒。', 409, 'recovery_unavailable');
+      if (!r.acknowledgedAt) { r.acknowledgedAt = now(); await this.saveRecovery(r); }
+      return r;
+    });
   }
   private snapshot(e: LibraryEntry): RecoverySnapshot {
     return {workspace:e.workspace,position:e.position,revisionId:e.revisionId,version:e.version};
@@ -242,12 +265,11 @@ export class ReadingLibrary {
       const e = await this.maybeEntry(id);
       if (e && sameOriginal(e,draft)) {
         const same = readingContent(e.workspace) === readingContent(draft.workspace);
-        const safe = draft.baseDigest ? draft.baseDigest === e.contentDigest : draft.version === e.version;
-        if (same || safe) {
+        if (same) {
           if (same && viewKey(e.workspace,e.position) === viewKey(draft.workspace,draft.position)) return {kind:"same",entry:e};
           e.workspace = withPreferences(same ? {...e.workspace,activeInquiryId:draft.workspace.activeInquiryId,activeTab:draft.workspace.activeTab} : draft.workspace,e.workspace);
           e.position = draft.position; e.version++; e.updatedAt = now();
-          return {kind:same ? "same" : "restored",entry:await this.commit(e)};
+          return {kind:"same",entry:await this.commit(e)};
         }
       }
       const record: RecoveryRecord = {id:recoveryId,entryId:id,createdAt:now(),state:"pending",draft,disk:e ? this.snapshot(e) : null,previous:[],reason:!e ? "unreadable" : draft.baseDigest ? "changed" : "unknown"};

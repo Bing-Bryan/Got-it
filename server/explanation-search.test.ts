@@ -2,7 +2,7 @@
 import { expect, it } from 'vitest';
 import { writeFile } from 'node:fs/promises';
 import { ProviderService, parseInquiryRequest, normalizeCodexResponse } from './providers';
-import { testModelCatalog } from './test-support/model-catalog';
+import { testModelCatalog, TEST_MODELS } from './test-support/model-catalog';
 import { ReadError } from './source-reader';
 import type { InquiryEvent } from '../src/types';
 const request = parseInquiryRequest({providerId:'codex',intent:'explain',quote:'晴刻率',question:'解释',context:'本文定义晴刻率为亮灯秒数/60。',history:[]});
@@ -42,7 +42,7 @@ it.each(['catalog','login','model','source'] as const)('whole request expires du
 });
 it('one timed-out caller does not cancel the shared model catalogue',async()=>{
  let release!:(v:Awaited<ReturnType<typeof testModelCatalog>>)=>void;const catalog=new Promise<Awaited<ReturnType<typeof testModelCatalog>>>(r=>release=r);
- const service=new ProviderService({codexTimeoutMs:30,modelCatalog:()=>catalog});const other=service.getModels();await expect(service.answer(request)).rejects.toMatchObject({code:'codex_timeout'});release(await testModelCatalog());expect(await other).toHaveLength(7);
+ const service=new ProviderService({codexTimeoutMs:30,modelCatalog:()=>catalog});const other=service.getModels();await expect(service.answer(request)).rejects.toMatchObject({code:'codex_timeout'});release(await testModelCatalog());expect(await other).toHaveLength(TEST_MODELS.length);
 });
 it('ignores late progress callbacks after the deadline without throwing from a process event',async()=>{
  let late:(delta:string)=>void=()=>{};

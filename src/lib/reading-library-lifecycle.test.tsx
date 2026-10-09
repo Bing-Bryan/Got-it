@@ -25,7 +25,9 @@ async function settle(){await act(async()=>{await new Promise(r=>setTimeout(r,25
 async function mount(initial=createInitialWorkspace()){
  const div=document.createElement('div');document.body.append(div);root=createRoot(div);
  await act(async()=>root.render(<Harness initial={initial}/>));
- for(let n=0;n<30&&!control.ready;n++)await settle();
+ for(let n=0;n<30&&(!control.ready||control.busy);n++)await settle();
+ await settle();
+ for(let n=0;n<30&&control.busy;n++)await settle();
 }
 async function change(text:string){await act(async()=>update(editReading(current,text)));}
 async function dispatch(path='',body?:Record<string,unknown>):Promise<unknown>{
@@ -33,7 +35,7 @@ async function dispatch(path='',body?:Record<string,unknown>):Promise<unknown>{
  if(path==='/recoveries')return l.listRecoveries();
  if(path==='/entries')return l.add(body!.workspace,body!.creationKey as string);
  const [,area,id,op]=path.split('/');
- if(area==='recoveries')return op==='resolve'?l.resolveRecovery(id,body!.choice,body!.expectedVersion):l.getRecovery(id);
+ if(area==='recoveries')return op==='resolve'?l.resolveRecovery(id,body!.choice,body!.expectedVersion):op==='acknowledge'?l.acknowledgeRecovery(id):l.reviewRecovery(id);
  if(!op)return l.get(id);
  if(op==='check')return l.check(id);
  if(op==='activate')return l.activate(id);
@@ -77,9 +79,9 @@ describe('reading library lifecycle',()=>{
   await mount();expect(control.recovery).toBeNull();expect(control.recoveries).toHaveLength(0);expect(localStorage.getItem(LEGACY_DRAFT_KEY)).toBeNull();
   await act(async()=>{control.rendered();control.scrolled();await control.retry();});expect(new DraftStore(localStorage).read().drafts).toHaveLength(0);
  });
- it('automatically restores safe legacy content and preserves current machine preferences',async()=>{
+ it('asks about different legacy content even with a matching baseline and preserves preferences',async()=>{
   localStorage.setItem(LEGACY_DRAFT_KEY,JSON.stringify(draftFixture(a)));
-  await mount();expect(control.recovery).toBeNull();expect(current.inquiries[0].messages[0].content).toBe('尚未保存的回答');expect(control.notice).toContain('已恢复');expect(current.activeProviderId).toBe('codex');
+  await mount();expect(control.recovery?.state).toBe('pending');expect(current.inquiries[0].messages[0].content).toBe('原来的回答');expect(current.activeProviderId).toBe('codex');
  });
  it('preserves conflicting records before switching and provides durable return/review',async()=>{
   localStorage.setItem(LEGACY_DRAFT_KEY,JSON.stringify(draftFixture(a)));await l.save(a.id,a.version,a.revisionId,editReading(a.workspace,'磁盘回答'),a.position);
@@ -91,7 +93,7 @@ describe('reading library lifecycle',()=>{
  it('blocks leaving when a startup draft cannot be persisted, then resumes recovery',async()=>{
   localStorage.setItem(LEGACY_DRAFT_KEY,JSON.stringify(draftFixture(a)));failedSave=true;await mount();expect(control.blocked).toBe(true);
   await act(async()=>{await control.open(b.id);});expect(current.document.filename).toBe('a.md');expect(control.error).toContain('先保存');expect(localStorage.getItem(LEGACY_DRAFT_KEY)).not.toBeNull();
-  failedSave=false;await act(async()=>{await control.retry();});expect(control.blocked).toBe(false);expect(control.notice).toContain('已恢复');
+  failedSave=false;await act(async()=>{await control.retry();});expect(control.blocked).toBe(false);await settle();expect(control.recoveries.some(r=>r.state==='pending')).toBe(true);
  });
  it('keeps corrupted data and separately protects readable orphan drafts',async()=>{
   localStorage.setItem(LEGACY_DRAFT_KEY,'broken');const d=draftFixture(a);d.entryId=crypto.randomUUID();localStorage.setItem('got-it.library.draft.v2.orphan',JSON.stringify(d));
@@ -126,4 +128,40 @@ describe('reading library lifecycle',()=>{
   await act(async()=>{await control.retry();});expect(control.blocked).toBe(false);expect(await l.listRecoveries()).toHaveLength(1);
  });
 
+});
+it('keeps a resolved review open on acknowledgement failure, then confirms current content',async()=>{
+ const d=draftFixture(a);const disk=await l.save(a.id,a.version,a.revisionId,editReading(a.workspace,'磁盘回答'),a.position);
+ const r=await l.recover(a.id,d);if(r.kind!=='review')throw new Error('review expected');
+ await mount();await act(async()=>control.showRecovery(r.record.id));
+ request.mockImplementation(async(path='',body)=>{if(path.endsWith('/acknowledge'))throw new Error('确认保存失败');return dispatch(path,body);});
+ await act(async()=>control.resolveRecovery('disk'));
+ expect(control.error).toContain('确认保存失败');expect(control.recovery?.state).toBe('resolved');expect(control.recovery?.acknowledgedAt).toBeUndefined();
+ const latest=await l.get(a.id);await l.save(a.id,latest.version,latest.revisionId,editReading(latest.workspace,'后续回答'),latest.position);
+ request.mockImplementation(dispatch);await act(async()=>control.acknowledgeRecovery());
+ expect(control.recovery).toBeNull();expect(current.inquiries[0].messages[0].content).toBe('后续回答');expect(control.recoveries[0].acknowledgedAt).toBeTruthy();
+});
+it('prompts once per visit, reminds after reopening, and never reminds after choosing',async()=>{
+ localStorage.setItem(LEGACY_DRAFT_KEY,JSON.stringify(draftFixture(a)));
+ await mount();expect(control.recovery?.state).toBe('pending');
+ const id=control.recovery!.id;
+ await act(async()=>control.closeRecovery());await settle();expect(control.recovery).toBeNull();
+ await act(async()=>control.open(b.id));await settle();expect(control.recovery).toBeNull();
+ await act(async()=>control.open(a.id));await settle();for(let i=0;i<20&&control.busy;i++)await settle();expect(control.recovery?.id).toBe(id);
+ await act(async()=>control.resolveRecovery('disk'));await settle();expect(control.recovery).toBeNull();
+ await act(async()=>control.open(b.id));await act(async()=>control.open(a.id));await settle();expect(control.recovery).toBeNull();
+ expect((await l.getRecovery(id)).draft.workspace.inquiries[0].messages[0].content).toBe('尚未保存的回答');
+});
+it('does not prompt already chosen legacy events without acknowledgement metadata',async()=>{
+ const d=draftFixture(a),r=await l.recover(a.id,d);if(r.kind!=='review')throw new Error('review expected');
+ await l.resolveRecovery(r.record.id,'disk',a.version);
+ await mount();expect(control.recoveries[0].acknowledgedAt).toBeUndefined();expect(control.recovery).toBeNull();
+});
+it('does not immediately replace a dismissed dialog with another already-known recovery for the same article',async()=>{
+ await l.recover(a.id,draftFixture(a,'保留记录甲'));
+ await l.recover(a.id,draftFixture(a,'保留记录乙'));
+ await mount();expect(control.recovery).not.toBeNull();
+ await act(async()=>control.closeRecovery());await settle();await settle();
+ expect(control.recovery).toBeNull();
+ await act(async()=>control.open(b.id));await act(async()=>control.open(a.id));await settle();
+ expect(control.recovery).not.toBeNull();
 });

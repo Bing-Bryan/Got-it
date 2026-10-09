@@ -1,3 +1,6 @@
+import { QuestionComposer } from "./QuestionComposer";
+import { revealReadingTarget } from "./lib/reading-navigation";
+import type { PdfOutlineItem } from "./lib/pdf-outline";
 import {normalized,screenRect,originalRect} from "./lib/pdf-geometry";
 import {abortable} from "./lib/abortable";
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -12,7 +15,7 @@ import './pdf-reader.css';
 GlobalWorkerOptions.workerSrc = workerUrl;
 type PdfDocument = Extract<DocumentSnapshot, {kind:'pdf'}>;
 type Viewport = ReturnType<PDFPageProxy['getViewport']>;
-interface Props { document:PdfDocument; entryId:string; inquiries:Inquiry[]; activeId?:string|null; target?:{id:string;nonce:number}|null; initialPosition?:ReadingPosition; readOnly?:boolean; saveStatus?:string; saveBusy?:boolean; saveError?:boolean; onCreate?:(intent:ActiveInquiryIntent,draft:SelectionDraft)=>void; onActivate?:(id:string)=>void; onReady?:()=>void; onView?:()=>void }
+interface Props { outlineTarget?:{item:PdfOutlineItem;nonce:number}|null; onCurrentPage?:(page:number)=>void; document:PdfDocument; entryId:string; inquiries:Inquiry[]; activeId?:string|null; target?:{id:string;nonce:number;returnToSource?:boolean}|null; onLocated?:(id:string,success:boolean,returnToSource?:boolean,target?:HTMLElement)=>void; initialPosition?:ReadingPosition; readOnly?:boolean; saveStatus?:string; saveBusy?:boolean; saveError?:boolean; onCreate?:(intent:ActiveInquiryIntent,draft:SelectionDraft,question?:string)=>void; onActivate?:(id:string)=>void; onReady?:()=>void; onView?:()=>void }
 interface SheetToolbar {page:number;ready:boolean;mode:'text'|'region';busy:boolean;start:()=>void;cancel:()=>void}
 const rectStyle=(r:PdfRect)=>({left:r[0],top:r[1],width:r[2]-r[0],height:r[3]-r[1]});
 const errorText=(e:unknown)=>e instanceof Error?e.message:'PDF 操作未完成，请重试。';
@@ -25,10 +28,19 @@ export default function PdfReader(props:Props) {
   useEffect(()=>{if(!pdf||restored.current)return;const frame=requestAnimationFrame(()=>{restored.current=true;props.onReady?.();});return()=>cancelAnimationFrame(frame);},[pdf,width]);
   useEffect(()=>{
     const scroll=root.current?.closest<HTMLElement>('.reader-scroll,.recovery-original');if(!scroll||!pdf)return;
-    const update=()=>{const bounds=scroll.getBoundingClientRect(),top=bounds.top+36;let visible=0,page=0;for(const sheet of root.current!.querySelectorAll<HTMLElement>('[data-pdf-page]')){const r=sheet.getBoundingClientRect(),height=Math.max(0,Math.min(r.bottom,bounds.bottom)-Math.max(r.top,top));if(height>visible){visible=height;page=Number(sheet.dataset.pdfPage);}}if(page)setCurrentPage(page);};
+    const update=()=>{const reader=root.current;if(!reader)return;const bounds=scroll.getBoundingClientRect(),top=bounds.top+36;let visible=0,page=0;for(const sheet of reader.querySelectorAll<HTMLElement>('[data-pdf-page]')){const r=sheet.getBoundingClientRect(),height=Math.max(0,Math.min(r.bottom,bounds.bottom)-Math.max(r.top,top));if(height>visible){visible=height;page=Number(sheet.dataset.pdfPage);}}if(page)setCurrentPage(page);};
     update();scroll.addEventListener('scroll',update,{passive:true});window.addEventListener('resize',update);
     return()=>{scroll.removeEventListener('scroll',update);window.removeEventListener('resize',update);};
   },[pdf,width]);
+  useEffect(()=>{props.onCurrentPage?.(currentPage);},[currentPage,props.onCurrentPage]);
+  useEffect(()=>{
+    if(!pdf||!props.outlineTarget)return;
+    const {item}=props.outlineTarget;
+    const frame=requestAnimationFrame(()=>{
+      const sheet=root.current?.querySelector<HTMLElement>(`[data-pdf-page="${item.page}"] .pdf-page`),scroll=root.current?.closest<HTMLElement>('.reader-scroll');
+      if(sheet&&scroll){scroll.scrollTo({top:scroll.scrollTop+sheet.getBoundingClientRect().top-scroll.getBoundingClientRect().top+item.top*sheet.clientHeight-44,behavior:'instant'});setCurrentPage(item.page);props.onView?.();}
+    });return()=>cancelAnimationFrame(frame);
+  },[pdf,props.outlineTarget]);
   const resizeAnchor=useRef<{node:HTMLElement;fraction:number}|null>(null);
   useLayoutEffect(()=>{const a=resizeAnchor.current,scroll=root.current?.closest<HTMLElement>('.reader-scroll');if(!a||!scroll)return;resizeAnchor.current=null;const top=scroll.scrollTop+a.node.getBoundingClientRect().top-scroll.getBoundingClientRect().top+a.fraction*a.node.clientHeight;if(typeof scroll.scrollTo==='function')scroll.scrollTo({top,behavior:'instant'});else scroll.scrollTop=top;},[width]);
   useEffect(()=>{const el=root.current;if(!el)return;const resize=()=>{const next=Math.max(120,el.clientWidth-40);const scroll=el.closest<HTMLElement>('.reader-scroll');if(scroll&&restored.current){const top=scroll.getBoundingClientRect().top;const node=[...el.querySelectorAll<HTMLElement>('.pdf-page')].find(p=>p.getBoundingClientRect().bottom>top+55);if(node)resizeAnchor.current={node,fraction:(top-node.getBoundingClientRect().top)/Math.max(1,node.clientHeight)};}setWidth(next);};const observer=new ResizeObserver(resize);observer.observe(el);resize();return()=>observer.disconnect();},[]);
@@ -37,6 +49,7 @@ export default function PdfReader(props:Props) {
     void(async()=>{try{const response=await libraryBinary(`/entries/${props.entryId}/resources/${props.document.pdf.resourceId}`);if(disposed)return;task=getDocument({data:new Uint8Array(await response.arrayBuffer()),cMapUrl:'/pdf-assets/cmaps/',cMapPacked:true,standardFontDataUrl:'/pdf-assets/standard_fonts/',wasmUrl:'/pdf-assets/wasm/',enableXfa:false});const doc=await task.promise;if(!disposed)setPdf(doc);}catch(e){if(!disposed)setError(errorText(e));}})();
     return()=>{disposed=true;void task?.destroy();};
   },[props.entryId,props.document.pdf.resourceId]);
+  useEffect(()=>{if(error&&props.target)props.onLocated?.(props.target.id,false,props.target.returnToSource);},[error,props.target]);
   const activeToolbar=toolbar?.page===currentPage?toolbar:null;
   const saved=props.saveStatus==='已保存到本机';
   const saveLabel=props.saveError?'未保存':props.saveBusy?'处理中':saved?'✓ 已保存':props.saveStatus==='保存中…'?'保存中…':props.saveStatus??'';
@@ -129,12 +142,25 @@ function PdfSheet(props:SheetProps) {
     return()=>{disposed=true;render?.cancel();text?.cancel();};
   },[pdf,page,near,width]);
   useEffect(()=>{
-    const t=props.target;if(!t)return;const key=`${t.id}:${t.nonce}`;if(appliedTarget.current===key)return;const a=props.inquiries.find(i=>i.id===t.id)?.anchor.pdf;
-    if(!a||a.fileHash!==props.document.pdf.resourceId){setError('此知识贴无法定位到当前文件。');return;}
-    if(a.page!==page)return;
-    if(!ready){root.current?.scrollIntoView({block:'start'});setNear(true);return;}
-    if(ready&&pageProxy.current?.pageNumber===page){appliedTarget.current=key;requestAnimationFrame(()=>root.current?.querySelector(`[data-pdf-inquiry="${CSS.escape(t.id)}"]`)?.scrollIntoView({block:'center',inline:'nearest'}));}
-  },[props.target,page,ready,props.document.pdf.resourceId]);
+    const t=props.target;if(!t)return;
+    const key=`${t.id}:${t.nonce}`;
+    if(appliedTarget.current===key)return;
+    const inquiry=props.inquiries.find(i=>i.id===t.id),a=inquiry?.anchor.pdf;
+    if(!a||a.page!==page)return;
+    if(a.fileHash!==props.document.pdf.resourceId||inquiry?.anchor.matchStatus!=='matched') {
+      appliedTarget.current=key;props.onLocated?.(t.id,false,t.returnToSource);return;
+    }
+    if(error&&!ready){appliedTarget.current=key;props.onLocated?.(t.id,false,t.returnToSource);return;}
+    if(!ready){if(root.current)revealReadingTarget(root.current);setNear(true);return;}
+    const frame=requestAnimationFrame(()=>{
+      if(latest.current.target?.nonce!==t.nonce||latest.current.target?.id!==t.id||pageProxy.current?.pageNumber!==page)return;
+      const target=root.current?.querySelector<HTMLElement>(`[data-pdf-inquiry="${CSS.escape(t.id)}"]`);
+      appliedTarget.current=key;
+      const located=!!target&&revealReadingTarget(target);
+      props.onLocated?.(t.id,located,t.returnToSource,target??undefined);
+    });
+    return()=>cancelAnimationFrame(frame);
+  },[props.target,page,ready,error,props.document.pdf.resourceId]);
   useEffect(()=>{if(!viewport)return;for(const el of ocrLayer.current?.querySelectorAll<HTMLElement>('[data-line]')??[]){el.style.transform='none';const desired=Number(el.dataset.width),actual=el.getBoundingClientRect().width;if(actual)el.style.transform=`scaleX(${desired/actual})`; }},[ocr,viewport]);
   const point=(event:{clientX:number;clientY:number}):[number,number]=>{const r=surface.current!.getBoundingClientRect();return [Math.max(0,Math.min(r.width,event.clientX-r.left)),Math.max(0,Math.min(r.height,event.clientY-r.top))];};
   function crop(r:PdfRect):HTMLCanvasElement {
@@ -167,8 +193,8 @@ function PdfSheet(props:SheetProps) {
     const all=normalized([Math.min(...rects.map(r=>r[0])),Math.min(...rects.map(r=>r[1])),Math.max(...rects.map(r=>r[2])),Math.max(...rects.map(r=>r[3]))]);
     props.claim();setBox(null);setPreview('');setQuote(text);setSelection({anchor:a,preview:previewFor(all)});setError('');
   }
-  function create(intent:ActiveInquiryIntent,a:Anchor){latest.current.onCreate?.(intent,{anchor:a,context:a.pdf?.context??a.quote,rect:{top:0,left:0,width:0,height:0}});setSelection(null);setBox(null);setPreview('');setStatus('');}
-  async function selectRegion(intent:ActiveInquiryIntent){
+  function create(intent:ActiveInquiryIntent,a:Anchor,question?:string){latest.current.onCreate?.(intent,{anchor:a,context:a.pdf?.context??a.quote,rect:{top:0,left:0,width:0,height:0}},question);setSelection(null);setBox(null);setPreview('');setStatus('');}
+  async function selectRegion(intent:ActiveInquiryIntent,question?:string){
     if(!box||!preview||!pageProxy.current||!viewport||busy)return;const rect=box,selectedPreview=preview,controller=new AbortController();operation.current=controller;setBusy(true);setError('');setStatus('正在识别所选内容，随后开始处理…');
     let recognized:{id:string;text:string}|undefined;
     let worker:Awaited<ReturnType<typeof createWorker>>|undefined;const timer=setTimeout(()=>controller.abort(new Error('文字识别超过 60 秒，请缩小范围后重试。')),60000);
@@ -196,7 +222,7 @@ function PdfSheet(props:SheetProps) {
       const query=new URLSearchParams({fileHash:props.document.pdf.resourceId,page:String(page),rect:JSON.stringify(rect)});
       const {id}=await(await libraryBinary(`/entries/${props.entryId}/crops?${query}`,bytes)).json();controller.signal.throwIfAborted();
       const location:PdfLocation={kind:'region',source:'image',fileHash:props.document.pdf.resourceId,page,rects:[rect],cropId:id,...(recognized?{ocrId:recognized.id,originalText:recognized.text,context:recognized.text}:{context:'未提取到辅助文字，请依据所选原图处理。'})};
-      create(intent,{documentId:props.document.id,blockId:`pdf-${page}-${id}`,headingPath:[`第 ${page} 页`],quote:`第 ${page} 页 · 所选区域`,prefix:'',suffix:'',start:0,end:0,matchStatus:'matched',pdf:location});
+      create(intent,{documentId:props.document.id,blockId:`pdf-${page}-${id}`,headingPath:[`第 ${page} 页`],quote:`第 ${page} 页 · 所选区域`,prefix:'',suffix:'',start:0,end:0,matchStatus:'matched',pdf:location},question);
     }catch(e){if(operation.current===controller)setError(errorText(e));}
     finally{if(operation.current===controller){operation.current=null;setBusy(false);}}
   }
@@ -218,7 +244,7 @@ function PdfSheet(props:SheetProps) {
     </div></div>
     {(preview&&box)||selection?<div ref={card} className="pdf-selection-card" role="region" aria-label="选区操作" onPointerUp={e=>e.stopPropagation()}>
       {selection?<p className="pdf-selected-quote">{quote}</p>:<img src={preview} alt="本次选择的原页区域" />}
-      <div className="pdf-card-actions">{(['explain','verify','entity']as const).map((intent,n)=><button key={intent} type="button" disabled={busy||props.readOnly} onClick={()=>{if(selection)create(intent,selection.anchor);else void selectRegion(intent);}}>{['解释概念','查找来源','介绍一下'][n]}</button>)}</div>
+      <div className="pdf-card-actions">{(['explain','verify']as const).map((intent,n)=><button key={intent} type="button" disabled={busy||props.readOnly} onClick={()=>{if(selection)create(intent,selection.anchor);else void selectRegion(intent);}}>{['解释一下','查找来源'][n]}</button>)}<QuestionComposer inline disabled={busy||props.readOnly} onSubmit={question=>{if(selection)create("ask",selection.anchor,question);else void selectRegion("ask",question);}}/></div>
       {busy?<p role="status">{status}</p>:null}
       <button type="button" onClick={cancel}>取消</button>
     </div>:null}

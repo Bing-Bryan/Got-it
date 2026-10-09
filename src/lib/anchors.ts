@@ -502,7 +502,7 @@ export function applyInquiryHighlights(
     mark.dataset.inquiryId = inquiry.id;
     mark.dataset.intent = inquiry.intent;
     const intents = new Set(inquiries.filter(other => other.id === inquiry.id || sameAnchor(other.anchor, inquiry.anchor)).map(other => other.intent));
-    const orderedIntents = [...NEW_INQUIRY_INTENTS, "why" as const].filter(intent => intents.has(intent));
+    const orderedIntents = [...NEW_INQUIRY_INTENTS, "entity" as const, "why" as const].filter(intent => intents.has(intent));
     mark.dataset.intents = orderedIntents.join(" ");
     mark.className = inquiry.id === activeInquiryId ? "focus-stickies-highlight is-active is-emphasized" : "focus-stickies-highlight";
     mark.setAttribute("aria-label", `知识贴（${orderedIntents.map(intent => INTENT_META[intent].label).join("、")}）：${inquiry.question}`);

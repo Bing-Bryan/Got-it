@@ -25,24 +25,26 @@ beforeEach(()=>{
 });
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
 it('renders ordered continuous pages without navigation or zoom and consumes each jump once',async()=>{
- const props={document:pdf as Extract<DocumentSnapshot,{kind:'pdf'}>,entryId:'entry',inquiries:[inquiry]};
+ const onLocated=vi.fn();const props={onLocated,document:pdf as Extract<DocumentSnapshot,{kind:'pdf'}>,entryId:'entry',inquiries:[inquiry]};
  await act(async()=>root.render(<PdfReader {...props} target={{id:'i',nonce:1}}/>));
  expect([...host.querySelectorAll('[data-pdf-page]')].map(n=>n.getAttribute('data-pdf-page'))).toEqual(['1','2']);
  expect(host.querySelector('select')).toBeNull();expect(host.textContent).not.toContain('下一页');
- const calls=vi.mocked(HTMLElement.prototype.scrollIntoView).mock.calls.length;
+ const calls=onLocated.mock.calls.length;
  await act(async()=>root.render(<PdfReader {...props} target={{id:'i',nonce:1}}/>));
- expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledTimes(calls);
+ expect(onLocated).toHaveBeenCalledTimes(calls);
  await act(async()=>root.render(<PdfReader {...props} target={{id:'i',nonce:2}}/>));
- expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledTimes(calls+1);
+ expect(onLocated).toHaveBeenCalledTimes(calls+1);
 });
-it.each(['explain','verify','entity'] as const)('uses the selected OCR quote for %s while preserving original geometry and recognition',async intent=>{
+it.each(['explain','verify','ask'] as const)('uses the selected OCR quote for %s while preserving original geometry and recognition',async intent=>{
  const create=vi.fn();await act(async()=>root.render(<PdfReader document={pdf as Extract<DocumentSnapshot,{kind:'pdf'}>} entryId="entry" inquiries={[inquiry]} onCreate={create}/>));
  const text=host.querySelector('[data-line]')!.firstChild!;
  const range={commonAncestorContainer:text,startContainer:text,endContainer:text,getClientRects:()=>[{left:12,top:48,right:48,bottom:60,width:36,height:12}]} as unknown as Range;
  vi.spyOn(window,'getSelection').mockReturnValue({isCollapsed:false,rangeCount:1,getRangeAt:()=>range,toString:()=> '2096',removeAllRanges:()=>{}} as unknown as Selection);
  await act(async()=>host.querySelector('.pdf-page')!.dispatchEvent(new Event('pointerup',{bubbles:true})));
  expect(host.querySelector('textarea')).toBeNull();expect(host.querySelector('.pdf-selected-quote')?.textContent).toBe('2096');
- await click(`.pdf-card-actions button:nth-child(${['explain','verify','entity'].indexOf(intent)+1})`);
+ await click(`.pdf-card-actions button:nth-child(${['explain','verify','ask'].indexOf(intent)+1})`);
+ if(intent==='ask') await act(async()=>{const input=host.querySelector('textarea')!;Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(input,'这个图里的20%表示什么？');input.dispatchEvent(new Event('input',{bubbles:true}));});
+ if(intent==='ask') await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
  const draft=create.mock.calls[0][1] as SelectionDraft;expect(create.mock.calls[0][0]).toBe(intent);expect(draft.anchor.quote).toBe('2096');expect(draft.context).toBe('2096');expect(draft.anchor.pdf!.originalText).toBe('2096');expect(draft.anchor.pdf!.rects).toEqual([[20,200,80,220]]);
 });
 it('cancels a pointer draft with Escape even when keyboard focus is on the document body',async()=>{
@@ -53,7 +55,7 @@ it('restores horizontal and vertical reading position together without competing
  const {restorePosition}=await import('./useReadingLibrary');const scroll=document.createElement('div');scroll.className='reader-scroll';host.append(scroll);Object.defineProperties(scroll,{scrollHeight:{value:1000},clientHeight:{value:400}});scroll.scrollTo=vi.fn();restorePosition({ratio:.5,pdfPage:1,pdfZoom:2,pdfLeft:80});expect(scroll.scrollTo).toHaveBeenCalledWith({left:80,top:300,behavior:'instant'});
 });
 
-it.each(['explain','verify','entity'] as const)('shows all actions before OCR and starts OCR plus a crop only after choosing %s',async intent=>{
+it.each(['explain','verify','ask'] as const)('shows all actions before OCR and starts OCR plus a crop only after choosing %s',async intent=>{
  const create=vi.fn();
  mocks.worker.mockResolvedValue({setParameters:async()=>{},terminate:async()=>{},recognize:async()=>({data:{blocks:[{paragraphs:[{lines:[{text:'Alpha 20%',bbox:{x0:20,y0:20,x1:200,y1:60}}]}]}]}})});
  mocks.request.mockImplementation(async(_path,data)=>({id:ocrId,data}));
@@ -62,9 +64,11 @@ it.each(['explain','verify','entity'] as const)('shows all actions before OCR an
  const surface=host.querySelector('.pdf-page')as HTMLElement;
  surface.setPointerCapture=vi.fn();surface.releasePointerCapture=vi.fn();
  for(const [type,x,y] of [['pointerdown',10,10],['pointerup',150,70]]as const){await act(async()=>surface.dispatchEvent(new MouseEvent(type,{bubbles:true,clientX:x,clientY:y})));}
- expect([...host.querySelectorAll('.pdf-card-actions button')].map(n=>n.textContent)).toEqual(['解释概念','查找来源','介绍一下']);
+ expect([...host.querySelectorAll('.pdf-card-actions button')].map(n=>n.textContent)).toEqual(['解释一下','查找来源','问一问']);
  expect(mocks.worker).not.toHaveBeenCalled();expect(create).not.toHaveBeenCalled();
- await click(`.pdf-card-actions button:nth-child(${['explain','verify','entity'].indexOf(intent)+1})`);
+ await click(`.pdf-card-actions button:nth-child(${['explain','verify','ask'].indexOf(intent)+1})`);
+ if(intent==='ask') await act(async()=>{const input=host.querySelector('textarea')!;Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(input,'这个图里的20%表示什么？');input.dispatchEvent(new Event('input',{bubbles:true}));});
+ if(intent==='ask') await act(async()=>host.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
  const draft=create.mock.calls[0][1]as SelectionDraft;
  expect(create.mock.calls[0][0]).toBe(intent);
  expect(draft.anchor.pdf).toMatchObject({page:1,source:'image',ocrId,cropId:'c'.repeat(64),originalText:'Alpha 20%'});
@@ -150,4 +154,13 @@ it('keeps truthful save states and shows instructions inline without a help popu
  expect(mocks.worker).not.toHaveBeenCalled();expect(mocks.request).not.toHaveBeenCalled();
  await act(async()=>root.render(<PdfReader {...props} saveStatus="保存失败" saveError/>));
  expect(host.querySelector('.pdf-save-state')?.textContent).toBe('未保存');
+});
+
+it('ignores queued scroll observations after the PDF reader unmounts',async()=>{
+ host.className='reader-scroll';const listen=vi.spyOn(host,'addEventListener');
+ await act(async()=>root.render(<PdfReader document={pdf as Extract<DocumentSnapshot,{kind:'pdf'}>} entryId="entry" inquiries={[inquiry]}/>));
+ const callback=listen.mock.calls.find(([name])=>name==='scroll')?.[1] as EventListener;
+ expect(callback).toBeTypeOf('function');
+ await act(async()=>root.unmount());root=createRoot(host);
+ expect(()=>callback(new Event('scroll'))).not.toThrow();
 });

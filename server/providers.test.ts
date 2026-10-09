@@ -88,7 +88,7 @@ describe("ProviderService", () => {
 
     const execCall = calls.find((call) => call.args.includes("exec"));
     expect(execCall).toBeDefined();
-    expect(execCall?.args.slice(0, 2)).toEqual(["-c", 'model_reasoning_effort="low"']);
+    expect(execCall?.args.slice(0, 2)).toEqual(["-c", 'model_reasoning_effort="medium"']);
     expect(execCall?.args).toEqual(
       expect.arrayContaining([
         "exec",

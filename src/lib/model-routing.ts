@@ -25,11 +25,11 @@ export function copyModelConfig(value: unknown): ModelConfig | undefined {
   if (typeof v.model === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$/.test(v.model) && TRANSPORT_EFFORTS.includes(v.reasoningEffort)) return { model: v.model, reasoningEffort: v.reasoningEffort };
 }
 export function modelConfig(intent: InquiryIntent, preferences?: ModelPreferences): ModelConfig {
-  return copyModelConfig(preferences?.[intent]) ?? { model: intent === "verify" ? "gpt-6-astra" : "gpt-6-luna", reasoningEffort: intent === "verify" ? "medium" : "low" };
+  return copyModelConfig(preferences?.[intent]) ?? { model: "gpt-6.1-sol", reasoningEffort: "medium" };
 }
 export function copyModelPreferences(value: unknown): ModelPreferences {
   const result: ModelPreferences = {};
-  if (value && typeof value === "object") for (const intent of ["explain", "verify", "entity", "why"] as const) {
+  if (value && typeof value === "object") for (const intent of ["explain", "verify", "entity", "why", "ask"] as const) {
     const config = copyModelConfig((value as ModelPreferences)[intent]);
     if (config) result[intent] = config;
   }
@@ -39,7 +39,7 @@ export function copyModelPreferences(value: unknown): ModelPreferences {
 /** Repair future-request preferences only; historical response metadata is never changed. */
 export function resolveModelConfig(intent: InquiryIntent, preferences: ModelPreferences | undefined, models: CodexModel[]): ModelConfig {
   const requested = modelConfig(intent, preferences);
-  if (!models.length || supportsConfig(models, requested)) return requested;
+  if (requested.model === "gpt-6.1-sol" || !models.length || supportsConfig(models, requested)) return requested;
   const sameModel = models.find(m => m.model === requested.model);
   if (sameModel) return { model: sameModel.model, reasoningEffort: sameModel.defaultReasoningEffort };
   // Prefer the user's established SOL route before the account's general default.

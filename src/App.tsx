@@ -1,4 +1,7 @@
-import { PdfSourcePreview } from "./PdfSourcePreview";
+import { QuestionComposer } from "./QuestionComposer";
+import PdfOutline from "./PdfOutline";
+import type { PdfOutlineItem } from "./lib/pdf-outline";
+import { revealReadingTarget, focusReadingTarget } from "./lib/reading-navigation";
 import { useSidebar } from "./useSidebar";
 import { SourceCard } from "./SourceCard";
 import { CodexLogin } from "./CodexLogin";
@@ -6,8 +9,8 @@ import { useReadingLibrary } from "./useReadingLibrary";
 import { ReadingLibraryNavigation, ReadingLibraryStatus } from "./ReadingLibraryView";
 import { readDocumentFile } from "./lib/reading-document";
 import { migrateHighlightAnchors } from "./lib/anchor-migration";
-import { readingContext } from "./lib/reading-context";
-import { anchorGroup, inquiryCategoryStatus, intentHistory, sameAnchor } from "./lib/inquiry-tabs";
+import { readingContext, questionContext } from "./lib/reading-context";
+import { anchorGroup, inquiryCategoryStatus, intentHistory, sameAnchor, categoryIntent, rememberInquiry, preferredInquiry } from "./lib/inquiry-tabs";
 import { modelConfig, resolveModelConfig, supportsConfig, type CodexModel, type ModelConfig } from "./lib/model-routing";
 import { VerificationAnswer } from "./VerificationAnswer";
 import { loadModelCatalog } from "./lib/model-catalog";
@@ -20,8 +23,8 @@ import {
   Bot,
   Check,
   ChevronDown,
+  ChevronLeft,
   CircleAlert,
-  CircleCheck,
   ExternalLink,
   FileText,
   Info,
@@ -45,6 +48,7 @@ import {
 import {
   lazy, Suspense,
   useCallback,
+  useLayoutEffect,
   useEffect,
   useMemo,
   useRef,
@@ -56,7 +60,6 @@ import {
 } from "react";
 import {
   INTENT_META,
-  STATUS_META,
   type Inquiry,
   type InquiryIntent,
   type ActiveInquiryIntent,
@@ -77,7 +80,7 @@ import {
   findInquiryHighlight,
   createAnchorFromSelection,
 } from "./lib/anchors";
-import { loadWorkspace, saveWorkspace, restoreWorkspace } from "./lib/storage";
+import { loadWorkspace, saveWorkspace, restoreWorkspace, copyContextHistory } from "./lib/storage";
 
 const FALLBACK_PROVIDERS: ProviderStatus[] = [
   {
@@ -96,6 +99,7 @@ const INTENT_ICONS: Record<InquiryIntent, typeof Sparkles> = {
   why: Waypoints,
   verify: ShieldCheck,
   entity: BookMarked,
+  ask: BookOpenText,
 };
 
 
@@ -114,10 +118,12 @@ function readError(error: unknown): string {
 }
 
 function App() {
+  const [pdfDirectoryTarget, setPdfDirectoryTarget] = useState<{documentId:string;item:PdfOutlineItem;nonce:number}|null>(null);
+  const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
   const [workspace, setWorkspace] = useState<Workspace>(() => {
     let loaded = migrateHighlightAnchors(loadWorkspace() ?? createInitialWorkspace());
     try { const preferences = JSON.parse(localStorage.getItem("got-it.model-preferences.v1") || "null"); if (preferences) loaded = restoreWorkspace({ ...loaded, ...preferences }) ?? loaded; } catch { /* retain defaults */ }
-    return { ...loaded, modelDefaultsVersion: 3, modelPreferences: loaded.modelDefaultsVersion === 3 ? loaded.modelPreferences : { ...loaded.modelPreferences, explain: modelConfig("explain"), entity: modelConfig("entity") }, activeProviderId: "codex" };
+    return { ...loaded, modelDefaultsVersion: 4, modelPreferences: loaded.modelDefaultsVersion === 4 ? loaded.modelPreferences : Object.fromEntries((["explain", "verify", "entity", "why", "ask"] as const).map(intent => [intent, modelConfig(intent)])), activeProviderId: "codex" };
   });
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
@@ -127,6 +133,18 @@ function App() {
   const [modelsError, setModelsError] = useState("");
   const [providers, setProviders] = useState<ProviderStatus[]>(FALLBACK_PROVIDERS);
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
+  useEffect(() => {
+    if (!selectionDraft) return;
+    const dismissSelection = (event: PointerEvent) => {
+      if (event.button !== 0 || (event.target instanceof Element && event.target.closest('.selection-toolbar'))) return;
+      // Dismiss before focus changes; otherwise the first click only blurs the
+      // textarea and mouseup can reopen the toolbar from the old DOM selection.
+      window.getSelection()?.removeAllRanges();
+      setSelectionDraft(null);
+    };
+    document.addEventListener('pointerdown', dismissSelection, true);
+    return () => document.removeEventListener('pointerdown', dismissSelection, true);
+  }, [selectionDraft]);
   const [deleteMode, setDeleteMode] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [focusedInquiryId, setFocusedInquiryId] = useState<string | null>(null);
@@ -143,18 +161,25 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [pdfTarget,setPdfTarget] = useState<{id:string;nonce:number}|null>(null);
+  const [pdfTarget,setPdfTarget] = useState<{id:string;nonce:number;returnToSource?:boolean}|null>(null);
   const sidebar = useSidebar();
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  const listPositions = useRef(new Map<string, {top:number;id?:string}>());
+  const restoreListFocus = useRef(false);
+  const navigationSequence = useRef(0);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const articleRef = useRef<HTMLElement>(null);
+  const pendingCreations = useRef(new Map<string, SelectionDraft["anchor"]>());
   const requests = useRef(new Map<string, { id: string; controller: AbortController }>());
   const [progress, setProgress] = useState<Record<string, string>>({});
   useEffect(() => () => { for (const request of requests.current.values()) request.controller.abort(); }, []);
   const toastTimerRef = useRef<number | null>(null);
 
   const installLibraryWorkspace = useCallback((next: Workspace) => {
+    navigationSequence.current++;
+    setPdfDirectoryTarget(null);
     workspaceRef.current = next; setWorkspace(next); setDocumentLoadId(v => v + 1);
     setPdfTarget(null); setProgress({}); setSearchQuery(""); setSelectionDraft(null); setFocusedInquiryId(null); setMobileSidebarOpen(false); setMobilePanelOpen(false); setProviderOpen(false);
     window.getSelection()?.removeAllRanges();
@@ -180,11 +205,28 @@ function App() {
   );
 
   const representative = workspace.inquiries.find(i => i.id === workspace.activeTab?.anchorInquiryId) ?? selectedInquiry;
-  const tabIntent = workspace.activeTab?.intent ?? selectedInquiry?.intent ?? "explain";
+  const tabIntent = categoryIntent(workspace.activeTab?.intent ?? selectedInquiry?.intent ?? "explain");
   const group = representative ? anchorGroup(workspace.inquiries, representative) : [];
   const history = intentHistory(group, tabIntent);
-  const activeInquiry = selectedInquiry?.intent === tabIntent ? selectedInquiry : null;
+  const activeInquiry = selectedInquiry && categoryIntent(selectedInquiry.intent) === tabIntent ? selectedInquiry : null;
   const categoryItems = intentHistory(workspace.inquiries, tabIntent);
+  const listKey = `${workspace.document.id}:${library.entry?.revisionId ?? workspace.document.contentHash}:${tabIntent}`;
+  const rememberList = () => {
+    if (!activeInquiry && listScrollRef.current) {
+      const old = listPositions.current.get(listKey);
+      listPositions.current.set(listKey, {top:listScrollRef.current.scrollTop,id:old?.id});
+    }
+  };
+  useLayoutEffect(() => {
+    if (activeInquiry || !listScrollRef.current) return;
+    const list = listScrollRef.current, saved = listPositions.current.get(listKey);
+    list.scrollTop = Math.min(saved?.top ?? 0, Math.max(0, list.scrollHeight - list.clientHeight));
+    if (restoreListFocus.current) {
+      restoreListFocus.current = false;
+      const buttons = [...list.querySelectorAll<HTMLButtonElement>('.category-open')];
+      (buttons.find(b => b.dataset.inquiryId === saved?.id) ?? buttons[0] ?? document.getElementById(`intent-tab-${tabIntent}`))?.focus({preventScroll:true});
+    }
+  }, [listKey, activeInquiry?.id]);
   useEffect(() => {
     setDeleteMode(false); setPendingDeleteId(null);
   }, [documentLoadId, tabIntent, workspace.activeInquiryId]);
@@ -223,8 +265,8 @@ function App() {
 
   useEffect(() => {
     if (modelsLoading || modelsError || !codexModels.length) return;
-    const intents = ["explain", "verify", "entity", "why"] as const;
-    const repaired = intents.filter(intent => !supportsConfig(codexModels, modelConfig(intent, workspace.modelPreferences)));
+    const intents = ["explain", "verify", "entity", "why", "ask"] as const;
+    const repaired = intents.filter(intent => JSON.stringify(resolveModelConfig(intent, workspace.modelPreferences, codexModels)) !== JSON.stringify(modelConfig(intent, workspace.modelPreferences)));
     if (!repaired.length) return;
     setWorkspace(current => ({ ...current, modelPreferences: Object.fromEntries(intents.map(intent => [intent, resolveModelConfig(intent, current.modelPreferences, codexModels)])), updatedAt: now(), hasUnexportedChanges: true }));
     showToast("已更新为可用的模型配置，可直接开始；也可以自行调整。");
@@ -416,21 +458,22 @@ function App() {
   }, [showToast, workspace.document.id, library.readOnly, library.busy, library.ready]);
 
   const createInquiry = useCallback(
-    (intent: ActiveInquiryIntent, draftOverride?: SelectionDraft) => {
+    (intent: ActiveInquiryIntent, draftOverride?: SelectionDraft, customQuestion?: string, contextHistory?: Inquiry["contextHistory"]) => {
       if (library.readOnly || library.busy || !library.ready) return;
       const draft = draftOverride ?? selectionDraft;
       if (!draft) return;
       if (workspace.activeProviderId === "codex" && (modelsLoading || modelsError || !codexModels.length)) { showToast("请先等待模型列表加载完成，或刷新连接后再试。"); return; }
       const matches = workspace.inquiries.filter(i => sameAnchor(i.anchor, draft.anchor));
-      const existing = intentHistory(matches, intent)[0];
+      if (intent === "ask" && (!customQuestion?.trim() || customQuestion.length > 2000)) return;
+      const existing = intentHistory(matches, intent).find(i => intent !== "ask" || i.question === customQuestion?.trim());
       if (existing) {
-        updateWorkspace(current => ({ ...current, activeInquiryId: existing.id, activeTab: { anchorInquiryId: existing.id, intent } }));
+        updateWorkspace(current => ({ ...current, activeInquiryId: existing.id, visitedInquiryIds: rememberInquiry(current, existing.id), activeTab: { anchorInquiryId: existing.id, intent: categoryIntent(intent) } }));
         setSelectionDraft(null); setMobilePanelOpen(true); window.getSelection()?.removeAllRanges(); return;
       }
-      if (matches.some(i => i.status === "answering")) return;
+      if (matches.some(i => i.status === "answering") || [...pendingCreations.current.values()].some(a => sameAnchor(a, draft.anchor))) return;
       const createdAt = now();
       const id = newId("inquiry");
-      const question = INTENT_META[intent].prompt(draft.anchor.quote);
+      const question = intent === "ask" ? customQuestion!.trim() : INTENT_META[intent].prompt(draft.anchor.quote);
       const userMessage: ThreadMessage = {
         id: newId("message"),
         role: "user",
@@ -442,6 +485,7 @@ function App() {
         id,
         intent,
         question,
+        ...(contextHistory?.length ? {contextHistory: copyContextHistory(contextHistory)} : {}),
         anchor: draft.anchor,
         status: "answering",
         messages: [userMessage],
@@ -460,17 +504,18 @@ function App() {
         providerId: workspace.activeProviderId,
         ...(draft.anchor.pdf?.kind === "region" && library.entry ? {image:{entryId:library.entry.id,fileHash:draft.anchor.pdf.fileHash,cropId:draft.anchor.pdf.cropId!}} : {}),
         intent,
-        ...(intent === "explain" ? {explanationMode:"auto" as const} : {}),
+        ...(["explain", "ask"].includes(intent) ? {explanationMode:"auto" as const} : {}),
         quote: draft.anchor.quote,
-        context: readingContext(articleRef.current, draft.anchor),
+        context: intent === "ask" ? questionContext(articleRef.current, draft.anchor, question) : readingContext(articleRef.current, draft.anchor),
         documentTitle: workspace.document.filename,
         question,
-        history: [],
+        history: copyContextHistory(contextHistory),
       };
       setSelectionDraft(null);
       setMobilePanelOpen(true);
       window.getSelection()?.removeAllRanges();
-      void askProvider(id, request);
+      pendingCreations.current.set(id, draft.anchor);
+      void askProvider(id, request).finally(() => pendingCreations.current.delete(id));
     },
     [askProvider, workspace.inquiries, selectionDraft, updateWorkspace, workspace.activeProviderId, workspace.document.filename, modelsLoading, modelsError, codexModels, showToast],
   );
@@ -513,6 +558,18 @@ function App() {
     }, [activeInquiry, groupBusy, askProvider, updateInquiry, workspace.activeProviderId, workspace.document.filename, activeProvider.supportsWebSearch],
   );
 
+  const submitCustomQuestion = (question: string) => {
+    if (!activeInquiry || groupBusy || !modelReady) return;
+    if (activeInquiry.intent !== 'ask') {
+      createInquiry('ask', {anchor:activeInquiry.anchor,context:readingContext(articleRef.current, activeInquiry.anchor),rect:{top:0,left:0,width:0,height:0}}, question, copyContextHistory(activeInquiry.messages));
+      return;
+    }
+    if (!question.trim() || question.length > 2000 || requests.current.has(activeInquiry.id)) return;
+    const history = [...(activeInquiry.contextHistory ?? []), ...activeInquiry.messages].filter(m => m.content.trim()).slice(-8).map(({role,content}) => ({role,content:content.slice(0,3000)}));
+    updateInquiry(activeInquiry.id, i => ({...i,status:'answering',lastError:undefined,messages:[...i.messages,{id:newId('message'),role:'user',content:question.trim(),createdAt:now()}]}));
+    void askProvider(activeInquiry.id, {providerId:workspace.activeProviderId,intent:'ask',operation:'ask',explanationMode:'auto',quote:activeInquiry.anchor.quote,context:questionContext(articleRef.current,activeInquiry.anchor,question),documentTitle:workspace.document.filename,question:question.trim(),history});
+  };
+
   const retryInquiry = useCallback(() => {
     if (!activeInquiry || groupBusy || requests.current.has(activeInquiry.id)) return;
     const failed = activeInquiry.messages.at(-1);
@@ -530,7 +587,7 @@ function App() {
       providerId: workspace.activeProviderId,
       intent: activeInquiry.intent,
       quote: activeInquiry.anchor.quote,
-      context: readingContext(articleRef.current, activeInquiry.anchor),
+      context: activeInquiry.intent === "ask" ? questionContext(articleRef.current, activeInquiry.anchor, lastUserMessage?.content ?? activeInquiry.question) : readingContext(articleRef.current, activeInquiry.anchor),
       documentTitle: workspace.document.filename,
       modelConfig: failed?.modelConfig,
       explanationMode: failed?.explanationMode,
@@ -538,19 +595,9 @@ function App() {
       scope: failed?.scope ?? failed?.verification?.scope ?? "initial", round: failed?.round ?? failed?.verification?.round ?? 1, parentMessageId,
       previous: parent?.verification ? { verification: parent.verification, sources: parent.sources ?? [] } : undefined,
       question: lastUserMessage?.content ?? activeInquiry.question,
-      history: activeInquiry.messages.slice(0, lastUserMessage ? activeInquiry.messages.lastIndexOf(lastUserMessage) : 0).filter(m => m.content.trim()).slice(-12).map(({ role, content }) => ({ role, content })),
+      history: [...(activeInquiry.contextHistory ?? []), ...activeInquiry.messages.slice(0, lastUserMessage ? activeInquiry.messages.lastIndexOf(lastUserMessage) : 0)].filter(m => m.content.trim()).slice(-12).map(({ role, content }) => ({ role, content })),
     });
   }, [activeInquiry, groupBusy, askProvider, updateInquiry, workspace.activeProviderId, workspace.document.filename]);
-
-  const correctPdfText = (text:string) => {
-    if(!activeInquiry?.anchor.pdf||groupBusy||library.readOnly||!library.ready||!text.trim())return;
-    const current=activeInquiry,operation=current.intent==='why'?'explain':current.intent;
-    const anchor={...current.anchor,pdf:{...current.anchor.pdf!,context:text},...(current.anchor.pdf!.kind==='text'?{quote:text,end:current.anchor.start+text.length}:{})};
-    const question=INTENT_META[operation].prompt(anchor.quote);
-    const userMessage:ThreadMessage={id:newId('message'),role:'user',content:`修正识别文字：${text}\n${question}`,createdAt:now(),providerId:workspace.activeProviderId};
-    updateInquiry(current.id,i=>({...i,anchor,status:'answering',lastError:undefined,updatedAt:now(),messages:[...i.messages,userMessage]}));
-    void askProvider(current.id,{providerId:workspace.activeProviderId,intent:current.intent,operation,...(operation==='explain'?{explanationMode:'auto' as const}:{}),quote:anchor.quote,context:text,question,documentTitle:workspace.document.filename,history:current.messages.filter(m=>m.content.trim()).slice(-12).map(({role,content})=>({role,content}))});
-  };
 
   const continueVerification = useCallback(() => {
     if (!activeInquiry || activeInquiry.intent !== "verify" || groupBusy || !canCompleteInquiry(activeInquiry) || !activeProvider.supportsWebSearch || requests.current.has(activeInquiry.id)) return;
@@ -604,7 +651,11 @@ function App() {
     });
   };
 
-  const switchTab = (intent: InquiryIntent) => {
+  const switchTab = (intent: InquiryIntent, restoreFocus = false) => {
+    rememberList();
+    navigationSequence.current++;
+    setPdfTarget(null);
+    restoreListFocus.current = restoreFocus;
     setDeleteMode(false); setPendingDeleteId(null);
     setFocusedInquiryId(null);
     updateWorkspace(current => ({ ...current, activeInquiryId: null, activeTab: { intent } }));
@@ -645,50 +696,58 @@ function App() {
     [importFile],
   );
 
-  const jumpToInquiry = useCallback(
-    (inquiryId: string) => {
-      const documentId = workspaceRef.current.document.id;
-      if(workspaceRef.current.document.kind === "pdf")setPdfTarget({id:inquiryId,nonce:Date.now()});
-      setFocusedInquiryId(null);
-      updateWorkspace((current) => ({ ...current, activeInquiryId: inquiryId, activeTab: undefined }));
-      setMobilePanelOpen(true);
-      setMobileSidebarOpen(false);
-      window.requestAnimationFrame(() => {
-        const article = articleRef.current;
-        // A late animation frame must not scroll a newly opened document/thread.
-        if (!article || workspaceRef.current.document.id !== documentId || workspaceRef.current.activeInquiryId !== inquiryId) return;
-        const target = findInquiryHighlight(article, workspaceRef.current.inquiries, inquiryId);
-        target?.scrollIntoView({ behavior: "smooth", block: "center" });
-      });
-    },
-    [updateWorkspace],
-  );
+  const finishSourceNavigation = useCallback((id: string, success: boolean, returnToSource = false, target?: HTMLElement) => {
+    if (workspaceRef.current.activeInquiryId !== id) return;
+    if (!success) { showToast("原文位置无法恢复，请在原文件中查看；已有回答仍保留。"); return; }
+    if (returnToSource && window.matchMedia('(max-width: 780px)').matches) {
+      setMobilePanelOpen(false);
+      if (target) focusReadingTarget(target);
+    }
+  }, [showToast]);
+
+  const locateInquiry = useCallback((inquiryId: string, returnToSource = false) => {
+    const current = workspaceRef.current;
+    const inquiry = current.inquiries.find(i => i.id === inquiryId);
+    const sequence = ++navigationSequence.current;
+    if (!inquiry || inquiry.anchor.matchStatus !== 'matched') { finishSourceNavigation(inquiryId, false); return; }
+    if (current.document.kind === 'pdf') {
+      const pdf = inquiry.anchor.pdf;
+      if (!pdf || pdf.fileHash !== current.document.pdf.resourceId || pdf.page < 1 || pdf.page > current.document.pdf.pages.length) { finishSourceNavigation(inquiryId, false); return; }
+      setPdfTarget({id:inquiryId,nonce:sequence,returnToSource});
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      if (sequence !== navigationSequence.current || workspaceRef.current.document !== current.document || workspaceRef.current.activeInquiryId !== inquiryId) return;
+      const target = articleRef.current && findInquiryHighlight(articleRef.current, workspaceRef.current.inquiries, inquiryId);
+      finishSourceNavigation(inquiryId, !!target && revealReadingTarget(target), returnToSource, target ?? undefined);
+    });
+  }, [finishSourceNavigation]);
+
+  const jumpToInquiry = (inquiryId: string) => {
+    rememberList();
+    if (!activeInquiry) {
+      const saved = listPositions.current.get(listKey);
+      listPositions.current.set(listKey, {top:saved?.top ?? 0,id:inquiryId});
+    }
+    setFocusedInquiryId(null);
+    updateWorkspace(current => ({ ...current, activeInquiryId: inquiryId, visitedInquiryIds: rememberInquiry(current, inquiryId), activeTab: undefined }));
+    setMobilePanelOpen(true);
+    setMobileSidebarOpen(false);
+    locateInquiry(inquiryId);
+  };
+
+  const openAnchor = (id: string) => {
+    const target = preferredInquiry(workspaceRef.current, id);
+    if (target) jumpToInquiry(target.id);
+  };
 
   const handleArticleClick = useCallback(
     (event: MouseEvent<HTMLElement>) => {
       const target = event.target as HTMLElement;
       const mark = target.closest<HTMLElement>("mark[data-inquiry-id]");
-      if (mark?.dataset.inquiryId) jumpToInquiry(mark.dataset.inquiryId);
+      if (mark?.dataset.inquiryId) openAnchor(mark.dataset.inquiryId);
     },
-    [jumpToInquiry],
-  );
-
-  const setInquiryStatus = useCallback(
-    (status: "understood") => {
-      if (!activeInquiry) return;
-      if (activeInquiry.intent === "verify" ? activeInquiry.status === "answering" : !canCompleteInquiry(activeInquiry)) {
-        showToast("等回答完成后，再标记理解。");
-        return;
-      }
-      updateInquiry(activeInquiry.id, (inquiry) => ({
-        ...inquiry,
-        status,
-        updatedAt: now(),
-        completedAt: now(),
-      }));
-      showToast(activeInquiry.intent === "verify" ? "已查找" : STATUS_META[status].label);
-    },
-    [activeInquiry, showToast, updateInquiry],
+    [openAnchor],
   );
 
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
@@ -761,6 +820,7 @@ function App() {
 
         <nav className="sidebar-scroll">
           <section className="nav-section">
+            {workspace.document.kind === "pdf" && library.entry ? <PdfOutline key={library.entry.id+workspace.document.pdf.resourceId+documentLoadId} entryId={library.entry.id} fileHash={workspace.document.pdf.resourceId} pages={workspace.document.pdf.pages.length} query={searchQuery} currentPage={pdfCurrentPage} readOnly={library.readOnly} onJump={item=>{setPdfDirectoryTarget({documentId:workspace.document.id,item,nonce:Date.now()});setMobileSidebarOpen(false);}}/> : <>
             <div className="section-label">
               <span>{workspace.document.kind === "pdf" ? "PDF 原页" : "文档结构"}</span>
               <span>{workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页` : rendered.outline.length}</span>
@@ -781,6 +841,7 @@ function App() {
                 </button>
               ))}
             </div>
+            </>}
           </section>
 
         </nav>
@@ -827,22 +888,23 @@ function App() {
                   onClose={() => setProviderOpen(false)}
                 >
           <CodexLogin provider={activeProvider} onConnected={onCodexConnected} />
-          <details className="model-settings" open onToggle={event => { if (event.currentTarget.open) void refreshModels(); }}>
+          <details className="model-settings" open onToggle={event => { if (event.currentTarget.open) void refreshModels(true); }}>
           <summary>模型设置</summary><div className="model-controls">
             <label className="settings-purpose">用途<select aria-label="设置用途" value={settingsIntent} onChange={e => setSettingsIntent(e.target.value as InquiryIntent)}>{NEW_INQUIRY_INTENTS.map(intent => <option key={intent} value={intent}>{INTENT_META[intent].label}</option>)}</select></label>
             {workspace.activeProviderId === "codex" ? <>
-              <label>模型<select aria-label="当前用途的模型" disabled={modelsLoading || !!modelsError} value={selectedModelInfo ? currentModel.model : ""} onChange={e => {
+              <label>模型<select aria-label="当前用途的模型" disabled={modelsLoading || !!modelsError} value={currentModel.model} onChange={e => {
                 const model = codexModels.find(m => m.model === e.target.value);
                 if (model) changeModel({ model: model.model, reasoningEffort: model.supportedReasoningEfforts.some(e => e.reasoningEffort === currentModel.reasoningEffort) ? currentModel.reasoningEffort : model.defaultReasoningEffort });
               }}>
-                {!selectedModelInfo ? <option value="" disabled>{modelsLoading ? "正在加载模型…" : "模型列表读取失败"}</option> : null}
+                {!selectedModelInfo ? <option value={currentModel.model} disabled>{currentModel.model}（{modelsLoading ? "加载中" : "目录暂不可用"}）</option> : null}
                 {codexModels.map(model => <option key={model.model} value={model.model}>{model.displayName}</option>)}
               </select></label>
-              <label>推理强度<select aria-label="当前用途的推理强度" disabled={modelsLoading || !!modelsError || !selectedModelInfo} value={selectedModelInfo ? currentModel.reasoningEffort : ""} onChange={e => changeModel({ ...currentModel, reasoningEffort: e.target.value })}>
-                {!selectedModelInfo?.supportedReasoningEfforts.some(e => e.reasoningEffort === currentModel.reasoningEffort) ? <option value="" disabled>—</option> : null}
+              <label>推理强度<select aria-label="当前用途的推理强度" disabled={modelsLoading || !!modelsError || !selectedModelInfo} value={currentModel.reasoningEffort} onChange={e => changeModel({ ...currentModel, reasoningEffort: e.target.value })}>
+                {!selectedModelInfo?.supportedReasoningEfforts.some(e => e.reasoningEffort === currentModel.reasoningEffort) ? <option value={currentModel.reasoningEffort} disabled>{currentModel.reasoningEffort}</option> : null}
                 {selectedModelInfo?.supportedReasoningEfforts.map(effort => <option key={effort.reasoningEffort} value={effort.reasoningEffort} title={effort.description}>{effort.reasoningEffort}</option>)}
               </select></label>
-              {modelsLoading ? <small>正在读取模型列表…</small> : null}
+              {!modelsLoading && !modelsError && !supportsConfig(codexModels, currentModel) ? <small role="status">当前目录不支持 {currentModel.model} / {currentModel.reasoningEffort}；已保留设置，不会自动换模型。</small> : null}
+              <button type="button" className="refresh-models" disabled={modelsLoading} onClick={() => void refreshModels(true)}>{modelsLoading ? "正在刷新…" : "刷新模型列表"}</button>
               {modelsError ? <small role="alert">{modelsError}。<button type="button" onClick={() => void refreshModels(true)}>重试读取模型</button></small> : null}
             </> : <small>当前使用 {activeProvider.name}，模型由该连接配置。</small>}
           </div>
@@ -871,7 +933,7 @@ function App() {
               <button type="button" onClick={() => void library.choose()}>换成我的文档</button>
             </div>
           ) : null}
-          {workspace.document.kind === "pdf" && library.entry ? <Suspense fallback={<p className="pdf-status">正在加载 PDF 阅读器…</p>}><PdfReader key={workspace.document.id+documentLoadId} document={workspace.document} entryId={library.entry.id} inquiries={workspace.inquiries} activeId={workspace.activeInquiryId} target={pdfTarget} initialPosition={library.initialPosition} readOnly={library.readOnly} saveStatus={library.status} saveBusy={library.busy} saveError={library.blocked||library.status==="阅读进度暂未保存"} onCreate={createInquiry} onActivate={jumpToInquiry} onReady={library.rendered} onView={library.scrolled}/></Suspense> : <article
+          {workspace.document.kind === "pdf" && library.entry ? <Suspense fallback={<p className="pdf-status">正在加载 PDF 阅读器…</p>}><PdfReader outlineTarget={pdfDirectoryTarget?.documentId===workspace.document.id?pdfDirectoryTarget:null} onCurrentPage={setPdfCurrentPage} key={workspace.document.id+documentLoadId} document={workspace.document} entryId={library.entry.id} inquiries={workspace.inquiries} activeId={workspace.activeInquiryId} target={pdfTarget} onLocated={finishSourceNavigation} initialPosition={library.initialPosition} readOnly={library.readOnly} saveStatus={library.status} saveBusy={library.busy} saveError={library.blocked||library.status==="阅读进度暂未保存"} onCreate={createInquiry} onActivate={openAnchor} onReady={library.rendered} onView={library.scrolled}/></Suspense> : <article
             ref={articleRef}
             className="markdown-article"
             onMouseUp={handleArticleMouseUp}
@@ -905,28 +967,31 @@ function App() {
                 }}><Icon size={14} aria-hidden="true" /><span>{INTENT_META[intent].label}{items.length > 0 ? <span className="tab-count">({items.length > 99 ? "99+" : items.length})</span> : null}</span>{busy ? <i className="tab-busy" aria-label="处理中" /> : null}</button>;
             })}
           </div>
-          {activeInquiry && history.length > 1 ? <label className="history-picker">历史记录<select aria-label="历史记录" value={activeInquiry?.id} onChange={e => jumpToInquiry(e.target.value)}>{history.map(i => <option key={i.id} value={i.id}>{new Date(i.updatedAt).toLocaleString()} · {i.question}</option>)}</select></label> : null}
         </>
-        <div className={`intent-result${activeInquiry ? "" : " category-view"}`} id="intent-result" role="tabpanel" aria-labelledby={tabIntent !== "why" ? `intent-tab-${tabIntent}` : undefined}>
-        {activeInquiry ? <div className="result-navigation"><button type="button" onClick={() => switchTab(tabIntent)}>‹ 全部{INTENT_META[tabIntent].label}</button><strong title={activeInquiry.anchor.quote}>{activeInquiry.anchor.quote}</strong></div> : null}
+        <div ref={listScrollRef} onScroll={rememberList} className={`intent-result${activeInquiry ? "" : " category-view"}`} id="intent-result" role="tabpanel" aria-labelledby={tabIntent !== "why" ? `intent-tab-${tabIntent}` : undefined}>
+        {activeInquiry ? <div className="result-navigation"><button className="return-to-list" type="button" onClick={() => switchTab(tabIntent, true)}><ChevronLeft size={16} aria-hidden="true" />返回</button><button className="source-excerpt" type="button" title={activeInquiry.anchor.quote} aria-label={`定位原文：${activeInquiry.anchor.pdf?.kind === 'region' ? `第 ${activeInquiry.anchor.pdf.page} 页 · 所选区域` : activeInquiry.anchor.quote}`} onClick={() => locateInquiry(activeInquiry.id, true)}>{activeInquiry.anchor.pdf ? <span className="source-page">第 {activeInquiry.anchor.pdf.page} 页{activeInquiry.anchor.pdf.kind === 'region' ? ' · 所选区域' : ''}</span> : null}{activeInquiry.anchor.pdf?.kind !== 'region' ? <span>{activeInquiry.anchor.quote}</span> : null}</button></div> : null}
         <nav hidden={!!activeInquiry} className="category-items" aria-label={`${INTENT_META[tabIntent].label}条目`}>
-          <div className="category-heading"><strong>本文的{INTENT_META[tabIntent].label}</strong><div className="category-heading-actions"><span>{categoryItems.length} 条</span>
+          <div className="category-heading"><strong>本文的{tabIntent === "ask" ? "问题" : INTENT_META[tabIntent].shortLabel}</strong><div className="category-heading-actions"><span>{categoryItems.length} 条</span>
             <button id="inquiry-delete-toggle" className="category-delete-toggle" type="button" aria-label={deleteMode ? "退出删除模式" : "删除知识贴"} title={deleteMode ? "退出删除模式（Esc）" : "删除知识贴"} aria-pressed={deleteMode}
               disabled={!categoryItems.length || library.readOnly || library.busy || !library.ready}
               onClick={() => { setDeleteMode(value => !value); setPendingDeleteId(null); }}><Trash2 size={16} aria-hidden="true" /></button>
           </div></div>
           {categoryItems.length ? categoryItems.map(item => <div className="category-row" key={item.id}>
             <button className="category-open" type="button" data-inquiry-id={item.id} aria-current={activeInquiry?.id === item.id ? "true" : undefined} onFocus={() => setFocusedInquiryId(item.id)} onBlur={() => setFocusedInquiryId(null)} onClick={() => jumpToInquiry(item.id)}>
-              <span>{item.anchor.quote}</span><small>{inquiryCategoryStatus(item)}</small>
+              <span>{item.intent === "ask" ? item.question : item.anchor.quote}{item.intent === "ask" ? <small className="question-anchor">{item.anchor.quote}</small> : null}</span><small>{inquiryCategoryStatus(item)}</small>
             </button>
             {deleteMode ? <button className={`category-delete${pendingDeleteId === item.id ? " confirming" : ""}`} type="button" data-delete-inquiry-id={item.id}
               aria-label={`${pendingDeleteId === item.id ? "确认删除知识贴" : "删除知识贴"}：${item.anchor.quote}`}
               title={pendingDeleteId === item.id ? "再次点击，删除此知识贴及全部回答" : "删除此知识贴"}
               onClick={() => deleteInquiry(item.id)}>{pendingDeleteId === item.id ? <Check size={16} aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}</button> : null}
-          </div>) : <p>还没有{INTENT_META[tabIntent].label}条目。在原文选中文字，再选择“{INTENT_META[tabIntent].label}”即可创建。</p>}
+          </div>) : <p>还没有{tabIntent === "ask" ? "提问" : INTENT_META[tabIntent].label}条目。在原文选中文字，再选择“{tabIntent === "ask" ? "问一问" : INTENT_META[tabIntent].label}”即可创建。</p>}
         </nav>
-        {activeInquiry && new Set(group.map(i => i.intent)).size > 1 ? <nav className="anchor-requests" aria-label="这处原文的已有需求"><small>此处已有</small>{([...NEW_INQUIRY_INTENTS, "why"] as InquiryIntent[]).filter(intent => group.some(i => i.intent === intent)).map(intent => <button type="button" key={intent} aria-current={intent === activeInquiry.intent ? "true" : undefined} onClick={() => { if (intent !== activeInquiry.intent) jumpToInquiry(intentHistory(group, intent)[0].id); }}>{INTENT_META[intent].shortLabel}</button>)}</nav> : null}
-        {activeInquiry?.anchor.pdf && library.entry ? <PdfSourcePreview entryId={library.entry.id} inquiry={activeInquiry} onJump={()=>jumpToInquiry(activeInquiry.id)} onCorrect={library.readOnly?undefined:correctPdfText} disabled={groupBusy||library.busy||!library.ready||modelsLoading||!!modelsError||!codexModels.length}/> : null}
+        {activeInquiry && group.length > 1 ? <nav className="anchor-requests" aria-label="这处原文的已有结果"><small>这处原文</small>{(['explain','verify','ask','why'] as InquiryIntent[]).flatMap(intent => {
+          const items = intentHistory(group, intent);
+          const remembered = intent === 'ask' ? [...(workspace.visitedInquiryIds ?? [])].reverse().map(id => items.find(i => i.id === id)).find(Boolean) : undefined;
+          const visible = (remembered ? [remembered] : items).slice(0, 1);
+          return visible.map(item => <button type="button" key={item.id} title={intent === 'ask' ? '我的问题' : INTENT_META[intent].shortLabel} aria-current={categoryIntent(activeInquiry.intent) === intent ? 'true' : undefined} onClick={() => { if (categoryIntent(activeInquiry.intent) !== intent) jumpToInquiry(item.id); }}>{intent === 'ask' ? '我的问题' : INTENT_META[intent].shortLabel}</button>);
+        })}</nav> : null}
         {activeInquiry ? (
           <InquiryPanel
             key={activeInquiry.id}
@@ -936,11 +1001,11 @@ function App() {
             onCancel={cancelInquiry}
             provider={activeProvider}
             onFollowUp={submitFollowUp}
+            onQuestion={submitCustomQuestion}
             onRetry={retryInquiry}
             onContinue={continueVerification}
             progress={progress[activeInquiry.id]}
-            onSetStatus={setInquiryStatus}
-            onReturnToReading={() => { switchTab(tabIntent); setMobilePanelOpen(false); }}
+            relatedHistory={history.length > 1 && tabIntent !== "ask" ? <details className="answer-history related-history"><summary>同处原文的历史记录</summary><label className="history-picker">历史记录<select aria-label="历史记录" value={activeInquiry.id} onChange={e => jumpToInquiry(e.target.value)}>{history.map(i => <option key={i.id} value={i.id}>{new Date(i.updatedAt).toLocaleString()} · {i.question}</option>)}</select></label></details> : null}
           />
         ) : (
           categoryItems.length ? <div className="empty-intent"><p>选择上方条目查看结果。</p></div> : null
@@ -951,7 +1016,8 @@ function App() {
       {selectionDraft ? (
         <SelectionToolbar
           draft={selectionDraft}
-          onSelect={createInquiry}
+          onSelect={(intent, question) => createInquiry(intent, undefined, question)}
+          disabled={!modelReady || workspace.inquiries.some(i => i.status === "answering" && sameAnchor(i.anchor, selectionDraft.anchor)) || library.readOnly || library.busy}
           onClose={() => {
             setSelectionDraft(null);
             window.getSelection()?.removeAllRanges();
@@ -1056,33 +1122,36 @@ function SelectionToolbar({
   draft,
   onSelect,
   onClose,
+  disabled,
 }: {
   draft: SelectionDraft;
-  onSelect: (intent: ActiveInquiryIntent) => void;
+  onSelect: (intent: ActiveInquiryIntent, question?: string) => void;
+  disabled?: boolean;
   onClose: () => void;
 }) {
   const left = Math.min(
     Math.max(draft.rect.left + draft.rect.width / 2, 238),
     window.innerWidth - 238,
   );
-  const top = Math.min(draft.rect.top + draft.rect.height + 12, window.innerHeight - 82);
+  const top = Math.min(draft.rect.top + draft.rect.height + 12, Math.max(12, window.innerHeight - 320));
   return (
     <div
       className="selection-toolbar"
       style={{ left, top }}
-      onMouseDown={(event) => event.preventDefault()}
+      onMouseDown={(event) => { if (!(event.target instanceof HTMLTextAreaElement)) event.preventDefault(); }}
     >
       <div className="selection-quote">“{draft.anchor.quote}”</div>
       <div className="selection-actions">
-        {NEW_INQUIRY_INTENTS.map((intent) => {
+        {NEW_INQUIRY_INTENTS.filter(intent => intent !== "ask").map((intent) => {
           const Icon = INTENT_ICONS[intent];
           return (
-            <button key={intent} type="button" data-intent={intent} onClick={() => onSelect(intent)}>
+            <button key={intent} type="button" data-intent={intent} disabled={disabled} onClick={() => onSelect(intent)}>
               <Icon size={14} />
               {INTENT_META[intent].label}
             </button>
           );
         })}
+        <QuestionComposer inline disabled={disabled} onSubmit={question => onSelect("ask", question)} />
         <button className="selection-close" type="button" aria-label="关闭" onClick={onClose}>
           <X size={14} />
         </button>
@@ -1100,9 +1169,9 @@ interface InquiryPanelProps {
   onFollowUp: (action: Refinement) => void;
   onRetry: () => void;
   onContinue: () => void;
+  onQuestion: (question: string) => void;
   progress?: string;
-  onSetStatus: (status: "understood") => void;
-  onReturnToReading: () => void;
+  relatedHistory?: ReactNode;
 }
 
 function InquiryPanel({
@@ -1114,11 +1183,10 @@ function InquiryPanel({
   onFollowUp,
   onRetry,
   onContinue,
+  onQuestion,
   progress,
-  onSetStatus,
-  onReturnToReading,
+  relatedHistory,
 }: InquiryPanelProps) {
-  const isComplete = inquiry.status === "understood" || inquiry.status === "distilled";
   const latestAssistant = [...inquiry.messages]
     .reverse()
     .find((message) => message.role === "assistant");
@@ -1126,26 +1194,17 @@ function InquiryPanel({
   const actionsEnabled = !groupBusy && canCompleteInquiry(inquiry);
   const verificationUnfinished = isVerificationUnfinished(inquiry);
   const recheckDisabledReason = groupBusy ? "当前请求正在进行，请等待完成或先停止" : !modelReady ? "请先连接可用模型" : !provider.supportsWebSearch ? "当前提供方不支持联网查找来源，请切换支持搜索的提供方" : undefined;
+  const followUpDisabledReason = groupBusy ? "当前请求正在进行，请等待完成或先停止" : !modelReady ? "请先连接可用模型" : !actionsEnabled ? "需要完整回答后才能继续；失败或中断时请重试" : undefined;
   const threadRef = useRef<HTMLDivElement>(null);
-  const lastThreadKey = useRef("");
-  useEffect(() => {
-    const thread = threadRef.current;
-    const key = `${inquiry.id}:${inquiry.messages.length}:${latestAssistant?.completion}`;
-    if (!thread || lastThreadKey.current === key) return;
-    if (!lastThreadKey.current) thread.scrollTop = 0;
-    else {
-      const last = thread.querySelector<HTMLElement>(".assistant-message:last-of-type");
-      if (last) thread.scrollTop += last.getBoundingClientRect().top - thread.getBoundingClientRect().top;
-    }
-    lastThreadKey.current = key;
-  }, [inquiry.id, inquiry.messages.length, latestAssistant?.completion]);
+  // Reset only for a new reply, never for streaming chunks or completion changes.
+  useLayoutEffect(() => { if (threadRef.current) threadRef.current.scrollTop = 0; }, [inquiry.id, latestAssistant?.id]);
 
   return (
     <div className="inquiry-panel-content">
       <div className="thread-scroll" ref={threadRef}>
         {inquiry.anchor.matchStatus === "needs-relink" ? <p className="anchor-warning">原文位置需要重新确认</p> : null}
+        {inquiry.intent === "ask" ? <div className="current-question"><small>我的问题</small><h2>{[...inquiry.messages].reverse().find(m => m.role === "user")?.content ?? inquiry.question}</h2></div> : null}
         <div className="thread-messages">
-          {inquiry.messages.filter(message => message.role === "assistant" && message.id !== latestAssistant?.id).length ? <details className="answer-history"><summary>历史回答</summary>{inquiry.messages.filter(message => message.role === "assistant" && message.id !== latestAssistant?.id).map(message => <AssistantMessage key={message.id} message={message} history verification={inquiry.intent === "verify"} entity={inquiry.intent === "entity"} />)}</details> : null}
           {latestAssistant ? <AssistantMessage message={latestAssistant} failure={inquiry.lastError} verification={inquiry.intent === "verify"} entity={inquiry.intent === "entity"} /> : null}
           {inquiry.status === "answering" && latestAssistant ? <RequestStatus key={latestAssistant.requestId ?? latestAssistant.id} startedAt={latestAssistant.createdAt} hasText={!!latestAssistant.content.trim()} progress={progress} /> : null}
           {latestAssistant?.mode === "demo" && inquiry.status !== "answering" ? (
@@ -1162,25 +1221,24 @@ function InquiryPanel({
       <footer className="inquiry-actions compact-actions">
         {inquiry.intent === "verify" ? (
           <button className="secondary-action verify-again-action" type="button" disabled={!!recheckDisabledReason} title={recheckDisabledReason} aria-describedby={recheckDisabledReason ? "recheck-unavailable" : undefined} onClick={verificationUnfinished ? onRetry : onContinue}>再找一下</button>
-        ) : (
-          <button type="button" className={`secondary-action ${inquiry.intent === "entity" ? "detail-introduction-action" : "explain-again-action"}`} disabled={!actionsEnabled || !modelReady} onClick={() => onFollowUp(inquiry.intent === "entity" ? "detail" : "simplify")}>
+        ) : inquiry.intent !== "ask" ? (
+          <button type="button" className={`secondary-action ${inquiry.intent === "entity" ? "detail-introduction-action" : "explain-again-action"}`} disabled={!!followUpDisabledReason} title={followUpDisabledReason} aria-describedby={followUpDisabledReason ? "followup-unavailable" : undefined} onClick={() => onFollowUp(inquiry.intent === "entity" ? "detail" : "simplify")}>
             {inquiry.intent === "entity" ? "详细介绍" : "再解释下"}
           </button>
-        )}
+        ) : null}
         {inquiry.intent !== "verify" && inquiry.status !== "answering" && (inquiry.lastError || latestAssistant?.completion === "interrupted" || latestAssistant?.verification?.completion === "interrupted" || latestAssistant?.search?.status === "failed") ? (
           <button className="secondary-action regenerate-action" type="button" disabled={groupBusy} onClick={onRetry}><RefreshCw size={14} aria-hidden="true" />重新生成</button>
         ) : null}
-        {inquiry.status === "answering" ? <button className="secondary-action stop-action" type="button" onClick={onCancel}>停止本次请求</button> : <button type="button" className="primary-action" disabled={groupBusy || isComplete || (inquiry.intent !== "verify" && !actionsEnabled)} onClick={() => { onSetStatus("understood"); if (inquiry.intent === "verify") onReturnToReading(); }}><CircleCheck size={14} />{isComplete ? inquiry.intent === "verify" ? "已查找" : "已理解" : verificationUnfinished ? "暂时先这样" : "明白了，继续阅读"}</button>}
+        {inquiry.status === "answering" ? <button className="secondary-action stop-action" type="button" onClick={onCancel}>停止本次请求</button> : null}
       </footer>
-      {(inquiry.intent === "verify" || inquiry.intent === "explain" || inquiry.intent === "why") && recheckDisabledReason ? <p className="recheck-unavailable" id="recheck-unavailable">{recheckDisabledReason}</p> : null}
+      {inquiry.intent !== "verify" && inquiry.intent !== "ask" && followUpDisabledReason ? <p className="recheck-unavailable" id="followup-unavailable">{followUpDisabledReason}</p> : null}
+      {(inquiry.intent === "verify" || (!followUpDisabledReason && (inquiry.intent === "explain" || inquiry.intent === "why"))) && recheckDisabledReason ? <p className="recheck-unavailable" id="recheck-unavailable">{recheckDisabledReason}</p> : null}
+          {inquiry.messages.filter(message => message.role === "assistant" && message.id !== latestAssistant?.id).length ? <details className="answer-history"><summary>历史回答</summary>{inquiry.messages.filter(message => message.role === "assistant" && message.id !== latestAssistant?.id).map(message => <AssistantMessage key={message.id} message={message} history verification={inquiry.intent === "verify"} entity={inquiry.intent === "entity"} />)}</details> : null}
+      <QuestionComposer disabled={groupBusy || !modelReady} followUp={inquiry.intent === "ask"} onSubmit={onQuestion} />
+      {relatedHistory}
       </div>
     </div>
   );
-}
-
-function StatusBadge({ status }: { status: Inquiry["status"] }) {
-  const meta = STATUS_META[status];
-  return <span className={`status-badge tone-${meta.tone}`}>{meta.label}</span>;
 }
 
 export function AssistantMessage({ message, verification = false, entity = false, failure, history = false }: { message: ThreadMessage; verification?: boolean; entity?: boolean; failure?: string; history?: boolean }) {

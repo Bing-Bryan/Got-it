@@ -18,9 +18,12 @@ export interface RecoveryRecord {
   draft: ReadingDraft; disk: RecoverySnapshot | null; previous: RecoverySnapshot[];
   reason: 'changed' | 'unknown' | 'unreadable';
   choice?: 'draft' | 'disk'; resultEntryId?: string;
+  acknowledgedAt?: string;
+  /** Current saved content is loaded for review, never persisted over snapshots. */
+  current?: RecoverySnapshot | null;
   intent?: { choice: 'draft' | 'disk'; expectedVersion: number | null; target: LibraryEntry };
 }
-export type RecoverySummary = Pick<RecoveryRecord, 'id' | 'entryId' | 'createdAt' | 'state' | 'resultEntryId'> & { filename: string };
+export type RecoverySummary = Pick<RecoveryRecord, 'id' | 'entryId' | 'createdAt' | 'state' | 'resultEntryId' | 'acknowledgedAt'> & { filename: string; hasDifferences?: boolean; savedRecordUnavailable?: boolean };
 export type RecoveryResult = { kind: 'same' | 'restored'; entry: LibraryEntry } | { kind: 'review'; record: RecoveryRecord };
 
 export function canonical(value: unknown): string {

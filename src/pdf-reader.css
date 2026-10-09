@@ -7,7 +7,7 @@
 .pdf-status,.pdf-error { font-size:12px; padding:8px 20px; margin:0; }
 .pdf-error { color:#a13d39; background:#fff1ef; }
 .pdf-page-wrap { padding:12px 20px; }
-.pdf-page { position:relative; box-shadow:0 2px 14px #22222215; background:white; isolation:isolate; }
+.pdf-page { position:relative; box-shadow:0 1px 6px #22222210; background:white; isolation:isolate; }
 .pdf-page>canvas { display:block; }
 .pdf-page.drawing { cursor:crosshair; touch-action:none; user-select:none; }
 .pdf-page.drawing .pdf-native,.pdf-page.drawing .pdf-ocr { pointer-events:none; }
@@ -22,7 +22,7 @@
 .pdf-mark.text { background:linear-gradient(90deg,#9d91dd50,#9d91dd30 8%,#9d91dd30 92%,#9d91dd50); border-radius:3px 2px 4px 2px; }
 .pdf-mark.region { background:linear-gradient(90deg,#9d91dd20,#9d91dd0c 5%,#9d91dd0c 95%,#9d91dd20); box-shadow:inset 0 0 3px #9d91dd44; border-radius:4px 2px 5px 3px; }
 .pdf-mark.active { outline:1px dashed #67578f; outline-offset:1px; }
-.pdf-mark button { position:absolute; right:-8px; top:-13px; color:#66529c; background:#f5f1ff; border:1px solid #cbc1e0; border-radius:4px; padding:0 3px; font-size:11px; pointer-events:auto; cursor:pointer; }
+.pdf-mark button { position:absolute; right:-8px; top:-13px; color:#66529c; background:#f5f1ff; border:1px solid #cbc1e0; border-radius:4px; padding:0 3px; font-size:12px; pointer-events:auto; cursor:pointer; }
 .pdf-draft-box { background:linear-gradient(90deg,#9d91dd48,#9d91dd22 6%,#9d91dd22 94%,#9d91dd48); box-shadow:0 0 2px #9d91dd60; border-radius:4px 2px 5px 3px; outline:1px solid #8b80b944; }
 .pdf-selection-card { position:fixed; z-index:110; background:#fff; box-shadow:0 7px 32px #24204233; border:1px solid #dedce9; border-radius:12px; width:min(360px,calc(100vw - 24px)); max-height:70dvh; overflow:auto; padding:12px; }
 .pdf-selection-card img { display:block; max-width:100%; max-height:140px; object-fit:contain; margin:0 auto 8px; border:1px solid #eee; }
@@ -54,18 +54,18 @@
 .pdf-source-preview details { width:100%; }
 
 /* One shared row: normal controls never consume a separate line per page. */
-.pdf-toolbar { height:36px; min-height:36px; padding:0 12px; gap:8px; flex-wrap:nowrap; background:#fafaf8; overflow:visible; }
-.pdf-page-number { flex:none; margin-right:0; padding-right:10px; border-right:1px solid var(--line); white-space:nowrap; font-size:11px; }
+.pdf-toolbar { height:36px; min-height:36px; padding:0 12px; gap:8px; flex-wrap:nowrap; background:#f7f8fa; overflow:visible; }
+.pdf-page-number { flex:none; margin-right:0; padding-right:10px; border-right:1px solid var(--line); white-space:nowrap; font-size:12px; }
 .pdf-toolbar button { flex:none; height:26px; padding:3px 8px; line-height:18px; }
-.pdf-inline-help { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; color:var(--muted); }
-.pdf-save-state { flex:none; max-width:30%; min-width:0; margin-left:auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; color:var(--muted); }
+.pdf-inline-help { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:var(--muted); }
+.pdf-save-state { flex:none; max-width:30%; min-width:0; margin-left:auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:var(--muted); }
 .pdf-save-state.failed { color:#a13d39; }
-.pdf-mode-hint { flex:none; white-space:nowrap; font-size:11px; color:#62528c; }
+.pdf-mode-hint { flex:none; white-space:nowrap; font-size:12px; color:#62528c; }
 .pdf-sheet { padding-bottom:12px; }
 .pdf-page-wrap { padding-top:8px; padding-bottom:8px; }
 @media(max-width:560px) {
  .pdf-toolbar { padding:0 8px; gap:5px; }
  .pdf-page-number { padding-right:6px; }
  .pdf-toolbar button { padding-inline:6px; }
- .pdf-mode-hint { font-size:10px; }
+ .pdf-mode-hint { font-size:12px; }
 }
