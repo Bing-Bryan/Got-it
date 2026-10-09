@@ -10,7 +10,7 @@ Got it is a local-first Markdown and PDF reader. Select an unfamiliar passage, e
 
 ## See it in action
 
-These screenshots were captured from the latest code on **October 9, 2026**. The Markdown example is an AI companion product analysis; the PDF is WGSN’s report on silver-generation consumers. Only excerpts are shown, and the complete reports are not distributed. Report figures are unverified input, not endorsed conclusions. Markdown answers are previously saved real model responses, not newly generated for this refresh.
+These screenshots were captured from the latest code on **October 10, 2026**. The Markdown example is an AI companion product analysis; the PDF is WGSN’s report on silver-generation consumers. Only excerpts are shown, and the complete reports are not distributed. Report figures are unverified input, not endorsed conclusions. Markdown answers are previously saved real model responses, not newly generated for this refresh.
 
 ### 1. Keep reading in context
 
@@ -50,13 +50,13 @@ Select native text directly, or use **Select region** for images, scans and comp
 
 ### Reading controls
 
-- Pin or collapse either sidebar independently. Drag the right panel to resize it; narrow screens use drawers.
-- Adjust Markdown content width from 50–100% (default 80%), or PDF zoom from 25–400%, using the upper-right reading control. PDF can reset to automatic fitting. Preferences stay local.
+- Pin or collapse either sidebar independently. Drag the right panel to resize it; navigation uses a drawer at ≤1080px and knowledge cards at ≤780px. Mirrored sidebar icons keep one opening control per side.
+- Adjust Markdown content width from 50–100% (default 80%), or PDF zoom from 25–400%, using the upper-right reading control. Hover to open it and move away to close; keyboard and touch operation remain available. PDF can reset to automatic fitting. Preferences stay local.
 - Wait for **Saved locally** before closing. Reopen to continue reading and revisit cards. Save failures offer retry; conflicting records retain both versions for your choice.
 - Delete cards through the category’s trash control and a second confirmation. The original passage and other cards remain intact.
 - Opening a question input does not call a model. Enter sends; Shift+Enter adds a line. Stopping, timing out or failing preserves received content and allows retry.
 
-All functions currently default to **GPT-6.1 SOL / medium**. AI settings read the installed Codex model catalog; unavailable configurations are reported rather than silently replaced. Reading-time estimates are computed locally without model calls. See the [latest update and validation scope](docs/updates/2026-10-09-reading-controls.md).
+All functions currently default to **GPT-6.1 SOL / medium**. AI settings read the installed Codex model catalog; unavailable configurations are reported rather than silently replaced. Reading-time estimates are computed locally without model calls. See the [latest update and validation scope](docs/updates/2026-10-10-brand-and-reader-ui.md).
 
 ## Run locally
 

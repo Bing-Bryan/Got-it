@@ -3,8 +3,8 @@
   "files": [
     {
       "path": "src/App.tsx",
-      "bytes": 76394,
-      "sha256": "8ec4152c23f6debaf43303648be7db6b9925e413d1f6e7b65d9015373a92e5ce"
+      "bytes": 78759,
+      "sha256": "a24a6662a158ac18ba262033081ff3ff6a42d2801fdf73ac7a7ea05a95c3e6cb"
     },
     {
       "path": "src/CodexLogin.tsx",
@@ -23,8 +23,8 @@
     },
     {
       "path": "src/MarkdownWidthControls.tsx",
-      "bytes": 2963,
-      "sha256": "d447b8bacdadc8b659d7baff9f4f83e17465803e00b8f03d8df191e6ce6ebe85"
+      "bytes": 2724,
+      "sha256": "e418ac6416dcc9e312aaa29d09a21eaaf2b615b0a68b0a7f866de331995e1a8e"
     },
     {
       "path": "src/PanelResizeHandle.test.tsx",
@@ -43,8 +43,8 @@
     },
     {
       "path": "src/PdfReader.tsx",
-      "bytes": 29227,
-      "sha256": "9c6a74ab7233ab940ac3d082f1a69e94f7494bc78cc05f48a008490e23d63ac2"
+      "bytes": 29776,
+      "sha256": "78f1341789568a1f89cd50ede33375179e97b76d017b4773fc98322827a92900"
     },
     {
       "path": "src/PdfSourcePreview.tsx",
@@ -53,8 +53,8 @@
     },
     {
       "path": "src/PdfZoomControls.tsx",
-      "bytes": 3114,
-      "sha256": "c4ec12a8c30babc2f3a50324afb28cba321e31c8778258c1590a239e05981ad1"
+      "bytes": 2884,
+      "sha256": "0f9cfe226f27c560a4c1de65c3fb0393d912f6df61e1d733740b5de5a007ecdd"
     },
     {
       "path": "src/QuestionComposer.tsx",
@@ -85,6 +85,11 @@
       "path": "src/VerificationAnswer.tsx",
       "bytes": 3914,
       "sha256": "76432dea7bbeb043d91acbf84f47db7e32db4832b12c7675dfd4db2e5b3f0818"
+    },
+    {
+      "path": "src/assets/got-it-icon.svg",
+      "bytes": 97672,
+      "sha256": "f994681a1ca784c76797e0d3a099bdb00236d599284227f0ad9fd8bea7841678"
     },
     {
       "path": "src/codex-login-ui.test.tsx",
@@ -303,8 +308,8 @@
     },
     {
       "path": "src/lib/reading-library-lifecycle.test.tsx",
-      "bytes": 14774,
-      "sha256": "6259f24a099aaa978348c9d620a7b35ea937abe53c056c7d23969dc57163346e"
+      "bytes": 14962,
+      "sha256": "1f4a03e092e217c3ea69d4236690af4033197d28df8f86cc17fc2a2304fe20a0"
     },
     {
       "path": "src/lib/reading-navigation.test.ts",
@@ -408,8 +413,8 @@
     },
     {
       "path": "src/pdf-reader.test.tsx",
-      "bytes": 20203,
-      "sha256": "588f68ece7e76432759f12ef507fce9243d7a37e2b608fc2f8ea25a6398cc6d9"
+      "bytes": 21458,
+      "sha256": "482375b31aeb41cb3bad458e05cee0bcd875dc9509e9478648143d8642e0646e"
     },
     {
       "path": "src/question-composer.test.tsx",
@@ -418,8 +423,8 @@
     },
     {
       "path": "src/reading-adjustment.test.tsx",
-      "bytes": 1960,
-      "sha256": "83086a55982092f527027467c1c98f5d579d10f60c26643ca643cf9a3a26059e"
+      "bytes": 5611,
+      "sha256": "8138782398779388422ca6df74a8a00f9e50bb57f271bb8afe6963e59d15e546"
     },
     {
       "path": "src/reading-document-ui.test.tsx",
@@ -449,12 +454,12 @@
     {
       "path": "src/sample.ts",
       "bytes": 3687,
-      "sha256": "e7733409056e026269cdf74138a1aa04f3f7ce0f6ca7c63dc1b9d6bb4eddfdb7"
+      "sha256": "d77955bacbd7a57893f4e43dd8b48dcf7fed1e7c8f95c98fe7a5f0d3e3e3f920"
     },
     {
       "path": "src/styles.css",
-      "bytes": 85982,
-      "sha256": "b31f8a0ce7e433ba4afa32301c45189bcd4327c8827525e404f3692a6ded9d63"
+      "bytes": 87009,
+      "sha256": "eda793dac831dcf58b1f0195f34a179816bdcd3157e29066de9a96b0a46bc20c"
     },
     {
       "path": "src/test-support/library.ts",
@@ -488,13 +493,28 @@
     },
     {
       "path": "src/usePdfZoom.ts",
-      "bytes": 6155,
-      "sha256": "f39ed9f3d39a5e39ff8bb0929e52acd1f76bb1b1d2568288dedfc3ecec276f2f"
+      "bytes": 6189,
+      "sha256": "940a6cd1295491ff9b72cd1b2f65b37a9c66c3a92afd7335003b13687e884c05"
+    },
+    {
+      "path": "src/useReadingAdjustment.ts",
+      "bytes": 2987,
+      "sha256": "2ff790b9c459ffcd05d52ee5fed2b72c64bb117dec51101272ada5d259b2acd6"
     },
     {
       "path": "src/useReadingLibrary.ts",
       "bytes": 21026,
       "sha256": "9684dd4fe07f2ab66c52ede2f9fcfececdfa2d716bd9b0752a47fdf02abd599d"
+    },
+    {
+      "path": "src/useResponsiveDrawer.test.tsx",
+      "bytes": 3724,
+      "sha256": "5a455a8abca87514144104a44d265e17166e7a2ff9f26b757ebe9c9580371204"
+    },
+    {
+      "path": "src/useResponsiveDrawer.ts",
+      "bytes": 2294,
+      "sha256": "48fb44ea3f05468ea5ff654984a537f8c897f5ac32ce3757339f7c58660b0889"
     },
     {
       "path": "src/useResultPanel.test.tsx",
@@ -803,8 +823,8 @@
     },
     {
       "path": "docs/images/explain.png",
-      "bytes": 407016,
-      "sha256": "1a4f68dc6174841f2558b298bcc1f4ad28fe218b1c869231f9621a38c6584be5"
+      "bytes": 401099,
+      "sha256": "9957620a2a068b97d2d0908f796368858e8fca79abb55f76ccc9c766dc6b8cdd"
     },
     {
       "path": "docs/images/introduction.png",
@@ -813,28 +833,28 @@
     },
     {
       "path": "docs/images/pdf-reading.png",
-      "bytes": 1028328,
-      "sha256": "000f7e1254fc658e367e723842a5d9d68cee7d08047301ae5d0d9339c7ecabf9"
+      "bytes": 1014911,
+      "sha256": "79ef93967ac622a7e513aa3b1984851644522e63e1674e03d0edc2eeac2874a1"
     },
     {
       "path": "docs/images/pdf-selection.png",
-      "bytes": 967449,
-      "sha256": "938d5449409c2bebe0440de922e7fa3b1e87a6f4e5bdcace14cfe8cd1605323b"
+      "bytes": 955755,
+      "sha256": "3f38dc48c735297f1de97b02d55fb130dee20071afdfaca465b90d78779d3481"
     },
     {
       "path": "docs/images/question.png",
-      "bytes": 362038,
-      "sha256": "a6501f01e533504cbab33e159008b2f87331e9c601dbf1b901e3c8acf4a5473c"
+      "bytes": 356077,
+      "sha256": "c0f271079e1c3f4e044e1229cdfb7f4d6a0c1244e8870961f0b6f7e2f1cd8e62"
     },
     {
       "path": "docs/images/reading.png",
-      "bytes": 346889,
-      "sha256": "7836af6d1d587a45421269098d60e628a8547532e821634f0b5e66caf0879cd3"
+      "bytes": 341488,
+      "sha256": "7f2ff9e9c7ad39e735b09c598cb4dc8848a461bd34d6c4804cfc42520e88a804"
     },
     {
       "path": "docs/images/sources.png",
-      "bytes": 320826,
-      "sha256": "47a1a52cbfb73f7379a9037a9b4608ce854ee1de903c655ef1ab0d4b61c074b5"
+      "bytes": 314532,
+      "sha256": "d0ea98504b25d5505d8259cc9d2e968e8f755bf932cf492d36c7b7707af62102"
     },
     {
       "path": "docs/updates/2026-09-30.md",
@@ -852,14 +872,19 @@
       "sha256": "afbf765449109ede1fedaf5a633b122622244a3468f61aebb1ee226dd3ce8822"
     },
     {
+      "path": "docs/updates/2026-10-10-brand-and-reader-ui.md",
+      "bytes": 1345,
+      "sha256": "e05a9576535af434f9b846078478f8155b566897fcd8bf2871a52313ebf1a258"
+    },
+    {
       "path": "docs/release-checklist.md",
       "bytes": 3000,
       "sha256": "0d2ff1b8ee24cdc8bc3b17725a7bbb07682e193061fe554fe7193e41a77d53c6"
     },
     {
       "path": "docs/release-results.md",
-      "bytes": 7245,
-      "sha256": "7c6e34a68ff290a821cc9ae634bb5cdc64938958d81f84ffcd9a7cd7071ca2ae"
+      "bytes": 7767,
+      "sha256": "73e9a94de3fffe1d61fd13094a4bd82c767c1190cd3ce925396b2ce90f11fafb"
     },
     {
       "path": "SECURITY.md",
@@ -873,13 +898,13 @@
     },
     {
       "path": "README.md",
-      "bytes": 11841,
-      "sha256": "58e7a9a0b13822fbf6c553695396a8cdaae479741ec6c9442a667bbe26307521"
+      "bytes": 12109,
+      "sha256": "0504560006bac0fea30f76bf9c428513052a421478c376e45da3603c8ed5526e"
     },
     {
       "path": "README.en.md",
-      "bytes": 10182,
-      "sha256": "e51160b961240820757679c4fa7dfa8e6081ace8a38e1f066e101b1eab916f1e"
+      "bytes": 10375,
+      "sha256": "d9a42c911f0e13b0195bf5d85681794802309653baefeb49edbddecdb1ba3aba"
     },
     {
       "path": "package.json",
@@ -903,8 +928,8 @@
     },
     {
       "path": "index.html",
-      "bytes": 429,
-      "sha256": "e2a228256de306021b30e006c2da27608d64209bada73d1aa908a9e687e8717f"
+      "bytes": 509,
+      "sha256": "4ec7822c88e8cbec27f1a32531fd25bd63a13401ff0b89bfd454a83e1ba7612d"
     },
     {
       "path": ".env.example",

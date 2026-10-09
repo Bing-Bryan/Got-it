@@ -1,29 +1,25 @@
-import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
+import { useReadingAdjustment } from './useReadingAdjustment';
+import { useId, useRef, useState, type CSSProperties } from 'react';
 import { RotateCcw, MoveDiagonal } from 'lucide-react';
 import { clampZoom, sliderZoom, zoomSlider } from './usePdfZoom';
 
 export function PdfZoomControls({ scale, automatic, onChange }: { scale: number; automatic: boolean; onChange: (value: number | null) => void }) {
   const panelId = useId();
-  const [open, setOpen] = useState(false), [draft, setDraft] = useState<string | null>(null);
-  const ref = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+  const { root: ref, open, close, triggerClick, events } = useReadingAdjustment();
+  const trigger = useRef<HTMLButtonElement>(null);
   const cancelled = useRef(false);
   const percent = Math.round(scale * 100);
-  useEffect(() => {
-    if (!open) return;
-    const outside = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('pointerdown', outside);
-    return () => document.removeEventListener('pointerdown', outside);
-  }, [open]);
   const commit = () => {
     if (cancelled.current || draft === null) { setDraft(null); return; }
     const text = draft.trim().replace(/%$/, '');
     if (/^\d+(\.\d+)?$/.test(text)) onChange(clampZoom(Number(text) / 100));
     setDraft(null);
   };
-  return <div ref={ref} className={`reading-adjustment pdf-zoom-controls${open ? ' is-open' : ''}`} onKeyDown={e => {
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelled.current = true; setDraft(null); setOpen(false); trigger.current?.focus(); }
+  return <div {...events} ref={ref} className={`reading-adjustment pdf-zoom-controls${open ? ' is-open' : ''}`} onKeyDown={e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelled.current = true; setDraft(null); close(); trigger.current?.focus(); }
   }}>
-    <button ref={trigger} type="button" className="reading-adjustment-trigger pdf-zoom-trigger" title="页面缩放" aria-controls={panelId} aria-label={`调整原文缩放，当前 ${percent}%${automatic ? '，自动适配' : ''}`} aria-expanded={open} onClick={() => setOpen(!open)}><MoveDiagonal size={18} strokeWidth={1.8} aria-hidden="true"/></button>
+    <button ref={trigger} type="button" className="reading-adjustment-trigger pdf-zoom-trigger" title="页面缩放" aria-controls={panelId} aria-label={`调整原文缩放，当前 ${percent}%${automatic ? '，自动适配' : ''}`} aria-expanded={open} onClick={triggerClick}><MoveDiagonal size={18} strokeWidth={1.8} aria-hidden="true"/></button>
     <div id={panelId} hidden={!open} className="reading-adjustment-fields pdf-zoom-fields" role="group" aria-label="原文缩放">
       <span className="reading-adjustment-label pdf-zoom-label" title={automatic ? '自动适配阅读宽度' : '手动比例'}>页面缩放</span>
       <input className="pdf-zoom-slider" style={{'--zoom-progress': `${zoomSlider(scale) / 10}%`} as CSSProperties} type="range" min="0" max="1000" step="1" value={zoomSlider(scale)} aria-label="原文缩放" aria-valuetext={`${percent}%${automatic ? '，自动适配' : ''}`} onChange={e => onChange(sliderZoom(Number(e.target.value)))} />

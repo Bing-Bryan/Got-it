@@ -27,7 +27,7 @@ export function usePdfZoom(root: RefObject<HTMLDivElement | null>, id: string, p
     const x = point?.x ?? bounds.left + scroll.clientWidth / 2;
     const y = point?.y ?? (Math.max(bounds.top, tools?.bottom ?? bounds.top) + bounds.bottom) / 2;
     const sheets = [...root.current.querySelectorAll<HTMLElement>('.pdf-page')];
-    const node = sheets.find(p => { const r = p.getBoundingClientRect(); return r.top <= y && r.bottom > y; }) ?? sheets.find(p => p.getBoundingClientRect().bottom > bounds.top + 36);
+    const node = sheets.find(p => { const r = p.getBoundingClientRect(); return r.top <= y && r.bottom > y; }) ?? sheets.find(p => p.getBoundingClientRect().bottom > Math.max(bounds.top, tools?.bottom ?? bounds.top));
     if (!node) return;
     const rect = node.getBoundingClientRect();
     anchor.current = { node, x: (x - rect.left) / rect.width, y: (y - rect.top) / rect.height, screenX: x - bounds.left, screenY: y - bounds.top };

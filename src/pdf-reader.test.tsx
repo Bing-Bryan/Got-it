@@ -20,7 +20,7 @@ beforeEach(()=>{
  vi.stubGlobal('ResizeObserver',class{observe(){}disconnect(){}});vi.stubGlobal('requestAnimationFrame',(cb:()=>void)=>{cb();return 1;});vi.stubGlobal('CSS',{escape:(s:string)=>s});
  vi.spyOn(HTMLElement.prototype,'clientWidth','get').mockReturnValue(280);
  HTMLElement.prototype.scrollIntoView=vi.fn();HTMLCanvasElement.prototype.getContext=vi.fn(()=>({drawImage:()=>{}})) as never;HTMLCanvasElement.prototype.toDataURL=()=> 'data:image/png;base64,AA==';
- vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(()=>({x:0,y:0,left:0,top:0,right:240,bottom:180,width:240,height:180,toJSON:()=>{}}));
+ vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(function(this:HTMLElement){const height=this.classList.contains('pdf-toolbar')?36:180;return {x:0,y:0,left:0,top:0,right:240,bottom:height,width:240,height,toJSON:()=>{}};});
  mocks.request.mockReset();mocks.worker.mockReset();mocks.render.mockReset().mockImplementation(()=>({promise:Promise.resolve(),cancel:()=>{}}));
  mocks.binary.mockReset().mockImplementation(async(path:string)=>({arrayBuffer:async()=>new ArrayBuffer(1),blob:async()=>new Blob(['png']),json:async()=>path.includes('/crops?')?{id:'c'.repeat(64)}:({version:1,fileHash:hash,page:1,lines:[{text:'2096',rect:[20,200,80,220],block:'region'}]})}));
  host=document.createElement('div');document.body.append(host);root=createRoot(host);
@@ -205,4 +205,17 @@ it('keeps the old canvas during zoom rendering and discards a late cancelled ren
   await act(async()=>{for(const job of jobs)job.resolve();});expect(canvas.style.width).toBe('1200px');
   await act(async()=>{for(const job of oldJobs)job.resolve();});expect(canvas.style.width).toBe('1200px');
  } finally {vi.useRealTimers();}
+});
+
+it('mounts live PDF tools outside scrolling content and removes portals on unmount',async()=>{
+ const tools=document.createElement('div'),adjustments=document.createElement('div');document.body.append(tools,adjustments);
+ host.className='reader-scroll';
+ try {
+  await act(async()=>root.render(<PdfReader toolbarHost={tools} adjustmentHost={adjustments} document={pdf as Extract<DocumentSnapshot,{kind:'pdf'}>} entryId="entry" inquiries={[]}/>));
+  expect(host.querySelector('.pdf-toolbar')).toBeNull();expect(host.querySelector('.reading-adjustment')).toBeNull();
+  expect(tools.querySelectorAll('.pdf-toolbar')).toHaveLength(1);expect(adjustments.querySelector('.pdf-zoom-trigger')).not.toBeNull();
+  await act(async()=>tools.querySelector<HTMLButtonElement>('.pdf-select-mode')!.click());expect(host.querySelector('.drawing')).not.toBeNull();
+  await act(async()=>tools.querySelector<HTMLButtonElement>('.pdf-select-mode')!.click());expect(host.querySelector('.drawing')).toBeNull();
+  await act(async()=>root.render(null));expect(tools.children).toHaveLength(0);expect(adjustments.children).toHaveLength(0);
+ } finally {tools.remove();adjustments.remove();}
 });

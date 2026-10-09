@@ -114,31 +114,12 @@ a:focus-visible {
 }
 
 .brand-mark {
-  display: grid;
+  display: block;
   flex: 0 0 auto;
-  grid-template-columns: repeat(3, 4px);
-  grid-template-rows: repeat(3, 4px);
-  gap: 2px;
-  place-content: center;
   width: 29px;
   height: 29px;
-  border: 1px solid #dfe2f3;
-  border-radius: 9px;
-  background: #f7f8ff;
-}
-
-.brand-mark i {
-  display: block;
-  width: 4px;
-  height: 4px;
-  border-radius: 1px;
-  background: #25272c;
-}
-
-.brand-mark i:nth-child(3),
-.brand-mark i:nth-child(5),
-.brand-mark i:nth-child(8) {
-  background: var(--blue);
+  object-fit: contain;
+  transform: translateY(-2px);
 }
 
 .icon-button {
@@ -362,7 +343,8 @@ a:focus-visible {
 
 .reader-toolbar {
   position: relative;
-  z-index: 15;
+  /* Provider popover must clear the status toolbar (16), below drawers (80+). */
+  z-index: 17;
   display: flex;
   flex: 0 0 64px;
   align-items: center;
@@ -1760,7 +1742,8 @@ a:focus-visible {
   animation: toast-in 160ms ease-out;
 }
 
-.mobile-only,
+.drawer-navigation-trigger,
+.drawer-results-trigger,
 .mobile-scrim {
   display: none;
 }
@@ -1833,7 +1816,7 @@ a:focus-visible {
   }
 
   .sidebar-close,
-  .mobile-only {
+  .drawer-navigation-trigger {
     display: inline-flex;
   }
 
@@ -1849,6 +1832,8 @@ a:focus-visible {
 }
 
 @media (max-width: 780px) {
+  .drawer-results-trigger { display: inline-flex; }
+
   .app-frame {
     display: block;
     border: 0;
@@ -1897,7 +1882,7 @@ a:focus-visible {
     padding-inline: 11px;
   }
 
-  .toolbar-title > svg:not(.mobile-only) {
+  .toolbar-title > svg {
     display: none;
   }
 
@@ -2335,14 +2320,14 @@ a:focus-visible {
 .desktop-sidebar-controls .icon-button, .desktop-panel-controls .icon-button { width: 26px; height: 28px; }
 .brand-row > div:not(.desktop-sidebar-controls) { min-width: 0; }
 .desktop-sidebar-controls .icon-button[aria-pressed=true], .desktop-panel-controls .icon-button[aria-pressed=true] { color: #6267e8; background: #eeedff; }
-@media (min-width: 1081px) {
+@media (width > 1080px) {
   .app-frame.sidebar-collapsed:not(.sidebar-peek) { --left-width: 32px; }
   .sidebar-collapsed:not(.sidebar-peek) .sidebar-rail { display: flex; align-items: flex-start; padding-top: 18px; background: var(--panel); border-right: 1px solid var(--line); }
   .sidebar-rail .icon-button { width: 30px; padding: 0; }
   .sidebar-collapsed:not(.sidebar-peek) .left-sidebar { position: absolute; width: 0; visibility: hidden; overflow: hidden; pointer-events: none; }
 }
 @media (max-width: 1080px) { .brand-row .desktop-sidebar-controls { display: none; } }
-@media (min-width: 781px) {
+@media (width > 780px) {
   .app-frame.result-collapsed { --right-width: 32px; }
   .result-collapsed .result-rail { display: flex; align-items: flex-start; padding-top: 18px; background: var(--panel); border-left: 1px solid var(--line); }
   .result-rail .icon-button { width: 30px; padding: 0; }
@@ -2542,7 +2527,7 @@ a:focus-visible {
 .question-prompt { align-self: center; font-size: 13px; color: var(--muted); }
 
 /* Keep the preferred desktop width separate from temporary viewport constraints. */
-@media (min-width: 781px) {
+@media (width > 780px) {
  .app-frame { --reader-left-space: 0px; --right-width: min(var(--preferred-right-width, 404px), max(220px, calc(100vw - var(--reader-left-space) - 320px))); }
  .panel-resize-handle { position:absolute; z-index:30; left:0; top:0; bottom:0; width:8px; cursor:col-resize; touch-action:none; }
  .panel-resize-handle::after { content:""; position:absolute; inset:0 auto 0 0; width:2px; background:transparent; }
@@ -2550,7 +2535,7 @@ a:focus-visible {
  .panel-resize-handle:focus-visible { outline:2px solid #8a83df; outline-offset:-2px; }
  .panel-resizing, .panel-resizing * { cursor:col-resize !important; user-select:none !important; }
 }
-@media (min-width:1081px) { .app-frame { --reader-left-space:var(--left-width); } }
+@media (width > 1080px) { .app-frame { --reader-left-space:var(--left-width); } }
 @media (max-width:780px) { .panel-resize-handle { display:none; } }
 .compact-references { display:flex; flex-wrap:wrap; gap:6px 12px; font-size:12px; line-height:1.6; }
 .compact-references a { color:#6259a6; text-decoration:underline; text-underline-offset:3px; overflow-wrap:anywhere; }
@@ -2624,7 +2609,20 @@ a:focus-visible {
 }
 
 /* Keep labels visible longer by spending less width on header gutters. */
-@media (min-width:781px) {
+@media (width > 780px) {
  .panel-desktop-head { padding-left:8px; }
  .panel-desktop-head .inquiry-tabs { padding-inline:4px 6px; gap:2px; }
 }
+
+/* Reader chrome shares the full viewport, including the native scrollbar gutter. */
+.reader-status-host { flex: none; min-width: 0; container-type: inline-size; }
+.reader-status-host:empty { display: none; }
+.reader-status-host .pdf-toolbar { position: relative; width: 100%; border-bottom-color: #f0f0f4; }
+.reader-viewport { position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; container-type: inline-size; --reader-adjustment-inset: 20px; }
+.reader-viewport > .reader-scroll { min-width: 0; }
+.reader-adjustment-layer { position: absolute; inset: 0; z-index: 14; pointer-events: none; }
+.reader-adjustment-layer .reading-adjustment-dock { position: absolute; top: var(--reader-adjustment-inset); width: 100%; }
+.reader-adjustment-layer .reading-adjustment-dock > .reading-adjustment { right: var(--reader-adjustment-inset); }
+.reader-adjustment-layer .reading-adjustment-fields { max-width: calc(100cqw - var(--reader-adjustment-inset) - 12px); }
+/* Bridge the visual gap so a slow pointer can reach the slider. */
+.reading-adjustment.is-open::after { content: ''; position: absolute; top: 100%; right: 0; width: 260px; max-width: calc(100cqw - var(--reader-adjustment-inset, 12px) - 12px); height: 8px; }

@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { pdfReadingMinutes } from "./lib/pdf-reading-time";
 import { usePdfZoom } from "./usePdfZoom";
 import { PdfZoomControls } from "./PdfZoomControls";
@@ -18,7 +19,7 @@ import './pdf-reader.css';
 GlobalWorkerOptions.workerSrc = workerUrl;
 type PdfDocument = Extract<DocumentSnapshot, {kind:'pdf'}>;
 type Viewport = ReturnType<PDFPageProxy['getViewport']>;
-interface Props { onReadingTime?:(hash:string,minutes:number|null)=>void; outlineTarget?:{item:PdfOutlineItem;nonce:number}|null; onCurrentPage?:(page:number)=>void; document:PdfDocument; entryId:string; inquiries:Inquiry[]; activeId?:string|null; target?:{id:string;nonce:number;returnToSource?:boolean}|null; onLocated?:(id:string,success:boolean,returnToSource?:boolean,target?:HTMLElement)=>void; initialPosition?:ReadingPosition; readOnly?:boolean; saveStatus?:string; saveBusy?:boolean; saveError?:boolean; onCreate?:(intent:ActiveInquiryIntent,draft:SelectionDraft,question?:string)=>void; onActivate?:(id:string)=>void; onReady?:()=>void; onView?:()=>void }
+interface Props { toolbarHost?:HTMLElement|null; adjustmentHost?:HTMLElement|null; onReadingTime?:(hash:string,minutes:number|null)=>void; outlineTarget?:{item:PdfOutlineItem;nonce:number}|null; onCurrentPage?:(page:number)=>void; document:PdfDocument; entryId:string; inquiries:Inquiry[]; activeId?:string|null; target?:{id:string;nonce:number;returnToSource?:boolean}|null; onLocated?:(id:string,success:boolean,returnToSource?:boolean,target?:HTMLElement)=>void; initialPosition?:ReadingPosition; readOnly?:boolean; saveStatus?:string; saveBusy?:boolean; saveError?:boolean; onCreate?:(intent:ActiveInquiryIntent,draft:SelectionDraft,question?:string)=>void; onActivate?:(id:string)=>void; onReady?:()=>void; onView?:()=>void }
 interface SheetToolbar {page:number;ready:boolean;mode:'text'|'region';busy:boolean;start:()=>void;cancel:()=>void}
 const rectStyle=(r:PdfRect)=>({left:r[0],top:r[1],width:r[2]-r[0],height:r[3]-r[1]});
 const errorText=(e:unknown)=>e instanceof Error?e.message:'PDF 操作未完成，请重试。';
@@ -33,7 +34,7 @@ export default function PdfReader(props:Props) {
   useEffect(()=>{if(!pdf||restored.current)return;const frame=requestAnimationFrame(()=>{restored.current=true;props.onReady?.();});return()=>cancelAnimationFrame(frame);},[pdf,width]);
   useEffect(()=>{
     const scroll=root.current?.closest<HTMLElement>('.reader-scroll,.recovery-original');if(!scroll||!pdf)return;
-    const update=()=>{const reader=root.current;if(!reader)return;const bounds=scroll.getBoundingClientRect(),top=bounds.top+36;let visible=0,page=0;for(const sheet of reader.querySelectorAll<HTMLElement>('[data-pdf-page]')){const r=sheet.getBoundingClientRect(),height=Math.max(0,Math.min(r.bottom,bounds.bottom)-Math.max(r.top,top));if(height>visible){visible=height;page=Number(sheet.dataset.pdfPage);}}if(page)setCurrentPage(page);};
+    const update=()=>{const reader=root.current;if(!reader)return;const bounds=scroll.getBoundingClientRect(),top=Math.max(bounds.top,reader.querySelector('.pdf-toolbar')?.getBoundingClientRect().bottom??bounds.top);let visible=0,page=0;for(const sheet of reader.querySelectorAll<HTMLElement>('[data-pdf-page]')){const r=sheet.getBoundingClientRect(),height=Math.max(0,Math.min(r.bottom,bounds.bottom)-Math.max(r.top,top));if(height>visible){visible=height;page=Number(sheet.dataset.pdfPage);}}if(page)setCurrentPage(page);};
     update();scroll.addEventListener('scroll',update,{passive:true});window.addEventListener('resize',update);
     return()=>{scroll.removeEventListener('scroll',update);window.removeEventListener('resize',update);};
   },[pdf,width,zoom.manual]);
@@ -43,7 +44,7 @@ export default function PdfReader(props:Props) {
     const {item}=props.outlineTarget;
     const frame=requestAnimationFrame(()=>{
       const sheet=root.current?.querySelector<HTMLElement>(`[data-pdf-page="${item.page}"] .pdf-page`),scroll=root.current?.closest<HTMLElement>('.reader-scroll');
-      if(sheet&&scroll){scroll.scrollTo({top:scroll.scrollTop+sheet.getBoundingClientRect().top-scroll.getBoundingClientRect().top+item.top*sheet.clientHeight-44,behavior:'instant'});setCurrentPage(item.page);props.onView?.();}
+      if(sheet&&scroll){scroll.scrollTo({top:scroll.scrollTop+sheet.getBoundingClientRect().top-scroll.getBoundingClientRect().top+item.top*sheet.clientHeight-(root.current?.querySelector('.pdf-toolbar')?.getBoundingClientRect().height??0)-8,behavior:'instant'});setCurrentPage(item.page);props.onView?.();}
     });return()=>cancelAnimationFrame(frame);
   },[pdf,props.outlineTarget]);
   useEffect(()=>{
@@ -64,14 +65,16 @@ export default function PdfReader(props:Props) {
   useEffect(()=>{if(error&&props.target)props.onLocated?.(props.target.id,false,props.target.returnToSource);},[error,props.target]);
   const activeToolbar=toolbar?.page===currentPage?toolbar:null;
   const saveLabel=props.saveError?'未保存':props.saveBusy?'处理中':props.saveStatus??'';
-  return <div ref={root} className="pdf-reader" data-zoom={zoom.manual??0}>
-    <div className="pdf-toolbar" aria-label="PDF 阅读工具栏">
+  const toolbarNode = <div className="pdf-toolbar" aria-label="PDF 阅读工具栏">
       <span className="pdf-page-number" aria-live="off">第 {currentPage} / {props.document.pdf.pages.length} 页</span>
       {!props.readOnly?<><button type="button" className="pdf-select-mode" aria-pressed={activeToolbar?.mode==='region'} disabled={!activeToolbar?.ready} onClick={()=>{if(activeToolbar?.busy||activeToolbar?.mode==='region')activeToolbar.cancel();else activeToolbar?.start();}}>{activeToolbar?.busy?'取消识别':activeToolbar?.mode==='region'?'取消框选':'框选内容'}</button>{activeToolbar?.mode==='region'||activeToolbar?.busy?<span className="pdf-mode-hint">{activeToolbar.busy?'识别中…':'拖动框选'}</span>:null}</>:<span className="pdf-mode-hint">只读</span>}
       <span className="pdf-inline-help" title="文字可直接拖选；图片可框选，再选择功能。">文字可直接拖选；图片可框选，再选择功能。</span>
       <span className={`pdf-save-state ${props.saveError?'failed':''}`} role="status" title={props.saveStatus}>{saveLabel}</span>
-    </div>
-    <div className="reading-adjustment-dock reading-adjustment-dock--pdf"><PdfZoomControls scale={zoom.scale} automatic={zoom.manual===null} onChange={zoom.change}/></div>
+    </div>;
+  const adjustmentNode = <div className="reading-adjustment-dock reading-adjustment-dock--pdf"><PdfZoomControls scale={zoom.scale} automatic={zoom.manual===null} onChange={zoom.change}/></div>;
+  return <div ref={root} className="pdf-reader" data-zoom={zoom.manual??0}>
+    {props.toolbarHost ? createPortal(toolbarNode, props.toolbarHost) : toolbarNode}
+    {props.adjustmentHost ? createPortal(adjustmentNode, props.adjustmentHost) : adjustmentNode}
     {error?<p className="pdf-error" role="alert">{error}</p>:null}
     {!pdf&&!error?<p className="pdf-status">正在加载 PDF…</p>:null}
     {pdf?props.document.pdf.pages.map((info,index)=><PdfSheet key={index} {...props} pdf={pdf} page={index+1} width={zoom.widthFor(info)} info={info} draftPage={draftPage} currentPage={currentPage} onToolbar={setToolbar} claim={()=>setDraftPage(index+1)}/>):null}
@@ -128,7 +131,7 @@ function PdfSheet(props:SheetProps) {
   useEffect(()=>{if(props.draftPage!==page)cancel();},[props.draftPage,page]);
   useEffect(()=>{if(!box&&!selection)return;const outside=(event:PointerEvent)=>{
     if(card.current?.contains(event.target as Node))return;
-    if(root.current?.closest('.pdf-reader')?.querySelector('.pdf-toolbar')?.contains(event.target as Node))return;
+    if(props.toolbarHost?.contains(event.target as Node)||root.current?.closest('.pdf-reader')?.querySelector('.pdf-toolbar')?.contains(event.target as Node))return;
     const bounds=surface.current?.getBoundingClientRect();
     const rects=box?[box]:selection?.anchor.pdf?.rects??[];
     if(bounds&&viewport&&rects.some(r=>{const sr=screenRect(displayViewport!,r);return event.clientX>=bounds.left+sr[0]&&event.clientX<=bounds.left+sr[2]&&event.clientY>=bounds.top+sr[1]&&event.clientY<=bounds.top+sr[3];}))return;

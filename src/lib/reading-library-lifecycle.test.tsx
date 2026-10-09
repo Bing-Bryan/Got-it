@@ -162,6 +162,11 @@ it('does not immediately replace a dismissed dialog with another already-known r
  await mount();expect(control.recovery).not.toBeNull();
  await act(async()=>control.closeRecovery());await settle();await settle();
  expect(control.recovery).toBeNull();
- await act(async()=>control.open(b.id));await act(async()=>control.open(a.id));await settle();
- expect(control.recovery).not.toBeNull();
+ await act(async()=>control.open(b.id));await act(async()=>control.open(a.id));
+ // Reopening schedules an effect that reads the recovery from disk; await its result.
+ await vi.waitFor(async()=>{
+  await settle();
+  expect(control.busy).toBe(false);
+  expect(control.recovery).not.toBeNull();
+ },{timeout:2000,interval:25});
 });

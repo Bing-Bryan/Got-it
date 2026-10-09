@@ -1,3 +1,5 @@
+import brandIcon from "./assets/got-it-icon.svg";
+import { useResponsiveDrawer } from "./useResponsiveDrawer";
 import { documentAnchor, documentQuestionContext, markdownSections } from "./lib/document-question";
 import { MarkdownWidthControls } from "./MarkdownWidthControls";
 import { useMarkdownWidth } from "./useMarkdownWidth";
@@ -39,7 +41,6 @@ import {
   Lightbulb,
   Link2,
   LoaderCircle,
-  Menu,
   PanelRightOpen,
   PanelRightClose,
   PanelLeftOpen,
@@ -160,6 +161,23 @@ function App() {
   const [providerOpen, setProviderOpen] = useState(false);
   const [settingsIntent, setSettingsIntent] = useState<InquiryIntent>("explain");
   const providerControlRef = useRef<HTMLDivElement>(null);
+  const readerViewportRef = useRef<HTMLDivElement>(null);
+  const [pdfToolbarHost, setPdfToolbarHost] = useState<HTMLDivElement | null>(null);
+  const [adjustmentHost, setAdjustmentHost] = useState<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const viewport = readerViewportRef.current;
+    const provider = providerControlRef.current;
+    if (!viewport || !provider) return;
+    const align = () => {
+      const trigger = provider.querySelector('.provider-trigger');
+      if (trigger) viewport.style.setProperty('--reader-adjustment-inset', `${Math.max(0, viewport.getBoundingClientRect().right - trigger.getBoundingClientRect().right)}px`);
+    };
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(align);
+    observer?.observe(viewport); observer?.observe(provider);
+    window.addEventListener('resize', align); align();
+    return () => { observer?.disconnect(); window.removeEventListener('resize', align); };
+  }, []);
+
   useEffect(() => {
     if (!providerOpen) return;
     const outside = (event: PointerEvent) => { if (!providerControlRef.current?.contains(event.target as Node)) setProviderOpen(false); };
@@ -178,9 +196,11 @@ function App() {
   const listPositions = useRef(new Map<string, {top:number;id?:string}>());
   const restoreListFocus = useRef(false);
   const navigationSequence = useRef(0);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const sidebarDrawer = useResponsiveDrawer({ narrow: sidebar.narrow, panel: sidebar.ref, desktopExpanded: sidebar.pinned || sidebar.peek, desktopTrigger: '.sidebar-rail button', desktopControl: '.desktop-sidebar-controls button' });
+  const { open: mobileSidebarOpen, setOpen: setMobileSidebarOpen } = sidebarDrawer;
   const [documentQuestionOpen, setDocumentQuestionOpen] = useState(false);
-  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  const resultDrawer = useResponsiveDrawer({ narrow: resultPanel.narrow, panel: resultPanel.ref, desktopExpanded: resultPanel.expanded, desktopTrigger: '.result-rail button', desktopControl: '.desktop-panel-controls button' });
+  const { open: mobilePanelOpen, setOpen: setMobilePanelOpen } = resultDrawer;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const articleRef = useRef<HTMLElement>(null);
   const markdownWidth = useMarkdownWidth(articleRef);
@@ -799,7 +819,7 @@ function App() {
       onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) {
         if (providerOpen || selectionDraft) return;
         if (deleteMode) { setDeleteMode(false); setPendingDeleteId(null); document.getElementById("inquiry-delete-toggle")?.focus(); return; }
-        sidebar.close(); resultPanel.close(); setMobileSidebarOpen(false); setMobilePanelOpen(false); } }}
+        sidebar.close(); resultPanel.close(); sidebarDrawer.close(); resultDrawer.close(); } }}
     >
       <input
         ref={fileInputRef}
@@ -810,8 +830,8 @@ function App() {
         onChange={handleFileChange}
       />
 
-      <div className="sidebar-rail" onMouseEnter={sidebar.reveal} onMouseLeave={sidebar.leave}><button type="button" className="icon-button" aria-label="展开导航" aria-expanded={sidebar.peek} onClick={sidebar.reveal}><PanelLeftOpen size={17} /></button></div>
-      <aside ref={sidebar.ref} className="left-sidebar" aria-label="文档导航" inert={sidebar.narrow ? !mobileSidebarOpen : !sidebar.pinned && !sidebar.peek} onMouseEnter={sidebar.cancel} onMouseLeave={sidebar.leave} onBlur={sidebar.leave}>
+      <div className="sidebar-rail" onMouseEnter={sidebar.reveal} onMouseLeave={sidebar.leave}><button type="button" className="icon-button" aria-label="展开导航" aria-controls="document-navigation" aria-expanded={sidebar.peek} onClick={sidebar.reveal}><PanelLeftOpen size={17} /></button></div>
+      <aside id="document-navigation" ref={sidebar.ref} className="left-sidebar" aria-label="文档导航" inert={sidebar.narrow ? !mobileSidebarOpen : !sidebar.pinned && !sidebar.peek} onMouseEnter={sidebar.cancel} onMouseLeave={sidebar.leave} onBlur={sidebar.leave}>
         <div className="brand-row">
           <BrandMark />
           <div>
@@ -824,7 +844,7 @@ function App() {
             className="icon-button sidebar-close"
             type="button"
             aria-label="关闭导航"
-            onClick={() => setMobileSidebarOpen(false)}
+            onClick={() => sidebarDrawer.close()}
           >
             <X size={16} />
           </button>
@@ -881,12 +901,15 @@ function App() {
         <header className="reader-toolbar">
           <div className="toolbar-title">
             <button
-              className="icon-button mobile-only"
+              className="icon-button drawer-navigation-trigger"
+              ref={sidebarDrawer.triggerRef}
               type="button"
               aria-label="打开导航"
+              aria-controls="document-navigation"
+              aria-expanded={sidebar.narrow && mobileSidebarOpen}
               onClick={() => setMobileSidebarOpen(true)}
             >
-              <Menu size={18} />
+              <PanelLeftOpen size={18} />
             </button>
             <FileText size={15} />
             <div>
@@ -943,20 +966,27 @@ function App() {
               </div>
             </div>
             <button
-              className="icon-button mobile-only"
+              className="icon-button drawer-results-trigger"
+              ref={resultDrawer.triggerRef}
               type="button"
               aria-label="打开知识贴"
-              onClick={() => { setMobilePanelOpen(true); openResultPanel(); }}
+              aria-controls="knowledge-panel"
+              aria-expanded={resultPanel.narrow && mobilePanelOpen}
+              onClick={() => setMobilePanelOpen(true)}
             >
               <PanelRightOpen size={18} />
             </button>
           </div>
         </header>
 
-        {workspace.document.kind !== "pdf" ? <div className="markdown-toolbar"><div className="markdown-toolbar-row"><div className="library-save-status" role="status">{saveStatus}{library.busy ? " · 正在处理…" : ""}</div></div></div> : null}
         <ReadingLibraryStatus library={library} />
+        <div ref={setPdfToolbarHost} className="reader-status-host" />
+        {workspace.document.kind !== "pdf" ? <div className="markdown-toolbar"><div className="markdown-toolbar-row"><div className="library-save-status" role="status">{saveStatus}{library.busy ? " · 正在处理…" : ""}</div></div></div> : null}
+        <div className="reader-viewport" ref={readerViewportRef}>
+        <div ref={setAdjustmentHost} className="reader-adjustment-layer">
+          {workspace.document.kind !== "pdf" ? <div key={workspace.document.id+":"+documentLoadId} className="reading-adjustment-dock"><MarkdownWidthControls width={markdownWidth.width} onChange={markdownWidth.change}/></div> : null}
+        </div>
         <div key={workspace.document.id+":"+documentLoadId} className={`reader-scroll${workspace.document.kind === "pdf" ? " reader-scroll--pdf" : ""}`} onScroll={() => { if (!markdownWidth.adjusting.current) library.scrolled(); }}>
-          {workspace.document.kind !== "pdf" ? <div className="reading-adjustment-dock"><MarkdownWidthControls width={markdownWidth.width} onChange={markdownWidth.change}/></div> : null}
           {workspace.document.isDemo ? (
             <div className="demo-document-note">
               <Sparkles size={15} />
@@ -964,7 +994,7 @@ function App() {
               <button type="button" onClick={() => void library.choose()}>换成我的文档</button>
             </div>
           ) : null}
-          {workspace.document.kind === "pdf" && library.entry ? <Suspense fallback={<p className="pdf-status">正在加载 PDF 阅读器…</p>}><PdfReader onReadingTime={receivePdfMinutes} outlineTarget={pdfDirectoryTarget?.documentId===workspace.document.id?pdfDirectoryTarget:null} onCurrentPage={setPdfCurrentPage} key={workspace.document.id+documentLoadId} document={workspace.document} entryId={library.entry.id} inquiries={workspace.inquiries} activeId={workspace.activeInquiryId} target={pdfTarget} onLocated={finishSourceNavigation} initialPosition={library.initialPosition} readOnly={library.readOnly} saveStatus={saveStatus} saveBusy={library.busy} saveError={library.blocked||library.status==="阅读进度暂未保存"} onCreate={createInquiry} onActivate={openAnchor} onReady={library.rendered} onView={library.scrolled}/></Suspense> : <article
+          {workspace.document.kind === "pdf" && library.entry ? <Suspense fallback={<p className="pdf-status">正在加载 PDF 阅读器…</p>}><PdfReader toolbarHost={pdfToolbarHost} adjustmentHost={adjustmentHost} onReadingTime={receivePdfMinutes} outlineTarget={pdfDirectoryTarget?.documentId===workspace.document.id?pdfDirectoryTarget:null} onCurrentPage={setPdfCurrentPage} key={workspace.document.id+documentLoadId} document={workspace.document} entryId={library.entry.id} inquiries={workspace.inquiries} activeId={workspace.activeInquiryId} target={pdfTarget} onLocated={finishSourceNavigation} initialPosition={library.initialPosition} readOnly={library.readOnly} saveStatus={saveStatus} saveBusy={library.busy} saveError={library.blocked||library.status==="阅读进度暂未保存"} onCreate={createInquiry} onActivate={openAnchor} onReady={library.rendered} onView={library.scrolled}/></Suspense> : <article
             ref={articleRef}
             className="markdown-article"
             style={{ width: `min(100%, max(360px, ${markdownWidth.width}%))` }}
@@ -977,6 +1007,7 @@ function App() {
             <span>读到不懂处，选中原文。一次只解决一个知识缺口。</span>
           </footer>
         </div>
+        </div>
       </main>
 
       <div className="result-rail" onMouseEnter={resultPanel.hoverReveal} onMouseLeave={resultPanel.leave}>
@@ -987,7 +1018,7 @@ function App() {
 
         <div className="panel-mobile-head">
           <span>活动知识贴</span>
-          <button className="icon-button" type="button" aria-label="关闭知识贴" onClick={() => setMobilePanelOpen(false)}>
+          <button className="icon-button" type="button" aria-label="关闭知识贴" onClick={() => resultDrawer.close()}>
             <X size={17} />
           </button>
         </div>
@@ -1078,14 +1109,15 @@ function App() {
         </div>
       ) : null}
 
-      {mobileSidebarOpen || (resultPanel.narrow && mobilePanelOpen) ? (
+      {(sidebar.narrow && mobileSidebarOpen) || (resultPanel.narrow && mobilePanelOpen) ? (
         <button
           className="mobile-scrim"
           type="button"
           aria-label="关闭面板"
           onClick={() => {
-            setMobileSidebarOpen(false);
-            setMobilePanelOpen(false);
+            // The right drawer sits above the left one when both are open.
+            sidebarDrawer.close(!mobilePanelOpen);
+            resultDrawer.close(true);
           }}
         />
       ) : null}
@@ -1097,9 +1129,7 @@ function App() {
 
 function BrandMark() {
   return (
-    <span className="brand-mark" aria-hidden="true">
-      {Array.from({ length: 9 }, (_, index) => <i key={index} />)}
-    </span>
+    <img className="brand-mark" src={brandIcon} width={29} height={29} alt="" aria-hidden="true" />
   );
 }
 
