@@ -17,7 +17,7 @@ function fixture(){
 }
 it('shows concrete same-count differences, preserved-choice consequences, and keeps adding available',async()=>{
  const l=fixture();await act(async()=>root.render(<><ReadingLibraryNavigation library={l} importCopy={vi.fn()}/><ReadingLibraryStatus library={l}/></>));
- expect(host.textContent).toContain('未保存的完整回答');expect(host.textContent).toContain('已保存的完整回答');expect(host.textContent).toContain('另一份记录会安全保留');expect(host.querySelector<HTMLDetailsElement>('.recovery-needed-details')!.open).toBe(false);
+ expect(host.textContent).toContain('未保存的完整回答');expect(host.textContent).toContain('已保存的完整回答');expect(host.textContent).toContain('另一份记录会安全保留');expect(host.querySelector<HTMLDetailsElement>('.recovery-needed-details')!.open).toBe(true);
  expect(host.textContent).not.toContain('恢复并保存缓存');expect(host.querySelector<HTMLButtonElement>('.library-add')!.disabled).toBe(false);
  const button=[...host.querySelectorAll('button')].find(b=>b.textContent==='使用之前记录（1 条）')!;await act(async()=>button.click());expect(l.resolveRecovery).toHaveBeenCalledWith('draft');
 });
@@ -26,7 +26,7 @@ it('distinguishes save failure, stale choice errors and read-only retained recor
  await act(async()=>root.render(<ReadingLibraryStatus library={l}/>));expect(host.textContent).toContain('再次变化');
  l.recovery!.state='resolved';await act(async()=>root.render(<ReadingLibraryStatus library={l}/>));expect(host.textContent).toContain('继续当前阅读');expect(host.textContent).not.toContain('使用之前记录');
  l.recovery=null;l.recoveries=[];l.blocked=true;l.error='磁盘无法写入';await act(async()=>root.render(<ReadingLibraryStatus library={l}/>));
- expect(host.textContent).toContain('须先保存阅读记录才能离开');expect(host.textContent).toContain('重试保存');expect(host.textContent).not.toContain('两份阅读记录');
+ expect(host.textContent).toContain('保存成功后才能离开');expect(host.textContent).toContain('重试保存');expect(host.textContent).not.toContain('两份阅读记录');
 });
 it('explains separate-original selection and unreadable disk without fabricating a second snapshot',async()=>{
  const l=fixture();l.recovery!.disk=null;l.recovery!.reason='unreadable';await act(async()=>root.render(<ReadingLibraryStatus library={l}/>));

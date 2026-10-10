@@ -10,11 +10,11 @@ Got it is a local-first Markdown and PDF reader. Select an unfamiliar passage, e
 
 ## See it in action
 
-These screenshots were captured from the latest code on **October 10, 2026**. The Markdown example is an AI companion product analysis; the PDF is WGSN’s report on silver-generation consumers. Only excerpts are shown, and the complete reports are not distributed. Report figures are unverified input, not endorsed conclusions. Markdown answers are previously saved real model responses, not newly generated for this refresh.
+All six screenshots were newly captured after the UI fixes on **October 10, 2026**, following the reading flow below; they are not audit screenshots. The Markdown example is an AI companion product analysis; the PDF is WGSN’s report on silver-generation consumers. Only excerpts are shown, and the complete reports are not distributed. Report figures are unverified input, not endorsed conclusions. Markdown answers are previously saved real model responses, not newly generated for this refresh.
 
 ### 1. Keep reading in context
 
-Navigate chapters on the left, read in the center, and revisit knowledge cards on the right. Markdown keeps headings, lists and tables; PDFs retain their original layout. Switching documents or reopening an answer does not call a model or change the original file.
+Navigate the full chapter outline on the left, read in the center, and revisit knowledge cards on the right. The current chapter stays highlighted; the outline search box is removed, with consistent spacing around headings. Markdown keeps headings, lists and tables; PDFs retain their original layout. Switching documents or reopening an answer does not call a model or change the original file.
 
 ![Current Markdown reader with the AI companion report and knowledge cards](docs/images/reading.png)
 
@@ -30,7 +30,7 @@ Select a claim or figure to start one bounded lookup. Results explain the materi
 
 ![A related source for the market forecast around the selected CAGR](docs/images/sources.png)
 
-This screenshot predates the source-card update. See the [current behavior and validation scope](docs/updates/2026-10-10-source-reading.md).
+This saved historical record has a checked excerpt but cannot establish whether search ran. The interface preserves that distinction; a checked excerpt does not establish the claim.
 
 ### 4. Ask your own question
 
@@ -42,7 +42,7 @@ Ask about the selected passage—for example, recalculate a growth rate from the
 
 ### 5. Read and select directly on PDF pages
 
-WGSN’s original case-study page is shown below. PDFs scroll continuously, and the chapter outline supports search and navigation. Collapse the sidebars for more reading space.
+WGSN’s original case-study page is shown below. PDFs scroll continuously, and the sidebar shows the full chapter outline with click-to-jump navigation. Collapse the sidebars for more reading space.
 
 ![WGSN report with original images, layout and chapter navigation](docs/images/pdf-reading.png)
 
@@ -53,12 +53,13 @@ Select native text directly, or use **Select region** for images, scans and comp
 ### Reading controls
 
 - Pin or collapse either sidebar independently. Drag the right panel to resize it; navigation uses a drawer at ≤1080px and knowledge cards at ≤780px. Mirrored sidebar icons keep one opening control per side.
-- Adjust Markdown content width from 50–100% (default 80%), or PDF zoom from 25–400%, using the upper-right reading control. Hover to open it and move away to close; keyboard and touch operation remain available. PDF can reset to automatic fitting. Preferences stay local.
+- Adjust Markdown content width from 50–100% (default 80%), or PDF zoom from 25–400%, using the fixed toolbar control outside the document. Hover to open it and move away to close; keyboard and touch operation remain available. PDF can reset to automatic fitting. Preferences stay local.
 - Wait for **Saved locally** before closing. Reopen to continue reading and revisit cards. Save failures offer retry; conflicting records retain both versions for your choice.
-- Delete cards through the category’s trash control and a second confirmation. The original passage and other cards remain intact.
+- Delete cards through the category’s trash control and an explicit second confirmation. Duplicate entries show dates and answer previews. The original passage and other cards remain intact.
+- Failed imports offer file reselection; PDF load failures offer reload. Intentional stops and request failures have distinct feedback, and a single recovery difference opens directly.
 - Opening a question input does not call a model. Enter sends; Shift+Enter adds a line. Stopping, timing out or failing preserves received content and allows retry.
 
-All functions currently default to **GPT-6.1 SOL / medium**. AI settings read the installed Codex model catalog; unavailable configurations are reported rather than silently replaced. Reading-time estimates are computed locally without model calls. See the [latest update and validation scope](docs/updates/2026-10-10-source-reading.md).
+All functions currently default to **GPT-6.1 SOL / medium**. AI settings read the installed Codex model catalog; unavailable configurations are reported rather than silently replaced. Reading-time estimates are computed locally without model calls. See the [UI update and validation scope](docs/updates/2026-10-10-reader-ui.md).
 
 ## Run locally
 

@@ -4,7 +4,7 @@ export function revealReadingTarget(target: HTMLElement, options: { align?: "sta
   if (!scroll) return false;
   const bounds = scroll.getBoundingClientRect();
   const tools = scroll.querySelector<HTMLElement>('.pdf-toolbar')?.getBoundingClientRect();
-  const top = Math.max(bounds.top, tools?.bottom ?? bounds.top) + 8;
+  const top = Math.max(bounds.top, tools?.bottom ?? bounds.top) + 24;
   const bottom = bounds.bottom - 8;
   const rect = target.getBoundingClientRect();
   const height = bottom - top;

@@ -47,7 +47,7 @@ it('categories list the whole document and highlights open their own results wit
  expect(host.querySelector('.answer-markdown')).toBeNull();await click('[data-inquiry-id=mini]');
  expect(host.querySelector('.answer-markdown')?.textContent).toContain('MiniMax介绍');
  await click('#intent-tab-explain');expect(host.querySelector('.category-items')?.textContent).toContain('CAGR');expect(host.querySelector('.category-items')?.textContent).toContain('MiniMax');
- await click('.category-open');expect(host.querySelector('.answer-markdown')?.textContent).toContain('已有解释');
+ await click('.category-open');expect(host.querySelector('.answer-markdown')?.textContent).toContain('已有解释');expect(host.querySelector('main')?.hasAttribute('inert')).toBe(false);expect(host.querySelector('.left-sidebar')?.hasAttribute('inert')).toBe(false);
  await click('#intent-tab-verify');expect(host.querySelector('.category-items')?.textContent).toContain('还没有');expect(host.querySelector('.empty-intent button')).toBeNull();
  expect(stream).not.toHaveBeenCalled();expect(testWorkspace().activeTab).toEqual({intent:'verify'});
 });
@@ -91,7 +91,7 @@ it('preserves unavailable SOL 6.1 defaults, reports missing catalog and refreshe
  expect((host.querySelector('select[aria-label="当前用途的模型"]') as HTMLSelectElement).value).toBe('gpt-6.1-sol');
  expect(testWorkspace().modelPreferences!.explain).toEqual({model:'gpt-6.1-sol',reasoningEffort:'medium'});
  failed=true;await act(async()=>{const details=host.querySelector('.model-settings') as HTMLDetailsElement;details.open=true;details.dispatchEvent(new Event('toggle'));});expect(host.querySelector('[role=alert]')?.textContent).toContain('连接中断');expect((host.querySelector('select[aria-label="当前用途的模型"]') as HTMLSelectElement).disabled).toBe(true);
- failed=false;await click('.model-controls [role=alert] button');expect(host.querySelector('.model-controls [role=alert]')).toBeNull();expect(stream).not.toHaveBeenCalled();
+ failed=false;await click('.model-controls .refresh-models');expect(host.querySelector('.model-controls [role=alert]')).toBeNull();expect(stream).not.toHaveBeenCalled();
 });
 it('restores legacy empty anchor tabs as category pages without creating requests',async()=>{
  w.inquiries[0].intent='verify';w.activeTab={anchorInquiryId:w.inquiries[0].id,intent:'explain'};

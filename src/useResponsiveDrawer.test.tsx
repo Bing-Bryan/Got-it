@@ -43,3 +43,14 @@ it('recovers focus if CSS blurs a hidden drawer before the media update arrives'
   input.focus();input.blur();expect(document.activeElement).toBe(document.body);
   await render(false);expect(document.activeElement?.id).toBe('edge');
 });
+
+it('cycles keyboard focus inside an open drawer and redirects programmatic background focus', async () => {
+ await render(true);await act(async()=>drawer.setOpen(true));
+ expect(document.activeElement?.id).toBe('pin');
+ host.querySelector('input')!.focus();
+ await act(async()=>document.activeElement!.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true})));
+ expect(document.activeElement?.id).toBe('pin');
+ await act(async()=>document.activeElement!.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true})));
+ expect(document.activeElement).toBe(host.querySelector('input'));
+ host.querySelector<HTMLButtonElement>('#outside')!.focus();expect(document.activeElement?.id).toBe('pin');
+});

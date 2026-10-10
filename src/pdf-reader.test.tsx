@@ -219,3 +219,10 @@ it('mounts live PDF tools outside scrolling content and removes portals on unmou
   await act(async()=>root.render(null));expect(tools.children).toHaveLength(0);expect(adjustments.children).toHaveLength(0);
  } finally {tools.remove();adjustments.remove();}
 });
+
+it('retries a failed PDF resource without generating an inquiry', async () => {
+ mocks.binary.mockRejectedValueOnce(new Error('资源暂时不可用'));
+ const create=vi.fn();await act(async()=>root.render(<PdfReader document={pdf} entryId="e" inquiries={[]} onCreate={create}/>));
+ expect(host.querySelector('.pdf-error')?.textContent).toContain('重新加载 PDF');expect(host.querySelector('.reading-adjustment')).toBeNull();
+ await click('.pdf-error button');expect(host.querySelector('.pdf-error')).toBeNull();expect(host.querySelector('.pdf-page')).not.toBeNull();expect(create).not.toHaveBeenCalled();
+});

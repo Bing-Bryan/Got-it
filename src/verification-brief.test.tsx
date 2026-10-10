@@ -55,7 +55,7 @@ it.each([false, true])("shows interruption and retains partial sources (sources=
   const interrupted = interruptMessage({ ...message, completion: "provisional", sources: hasSources ? message.sources : [] });
   const host = document.createElement("div");
   host.innerHTML = renderToStaticMarkup(<VerificationAnswer message={interrupted} failure="连接断开" />);
-  expect(host.querySelector('.verification-conclusion')?.textContent).toBe(`本次查找已中断${hasSources ? '，已收到的参考资料已保留' : ''}。`);
+  expect(host.querySelector('.verification-conclusion')?.textContent).toBe(`本次查找失败${hasSources ? '，已收到的参考资料已保留' : ''}。`);
   expect(host.querySelectorAll('.source-evidence-card')).toHaveLength(hasSources ? 1 : 0);
   expect(host.textContent).not.toContain('暂未找到');
   expect(host.textContent).not.toContain('本轮没有');
@@ -114,4 +114,11 @@ it('does not turn a matched secondary quote into an affirmative partial conclusi
 it('retains a useful scope restriction stored only in legacy reading advice',()=>{
  const m={...message,verification:{...message.verification!,verdict:'insufficient' as const,reason:'缺少完整出处。',readingAdvice:'仅适用于2024年的预测，不代表实测。请继续查找。'}};
  const brief=verificationBrief(m);expect(brief.limitation).toContain('仅适用于2024年的预测，不代表实测');expect(brief.limitation).not.toContain('继续查找');
+});
+
+it('distinguishes deliberate stop from failed and unexplained interrupted lookup', () => {
+ const stopped={...message, completion:'interrupted' as const};
+ expect(verificationBrief(stopped, '已停止本次请求；内容已保留').conclusion).toContain('你已停止查找');
+ expect(verificationBrief(stopped, '网络错误').conclusion).toContain('本次查找失败');
+ expect(verificationBrief(stopped).conclusion).toContain('本次查找已中断');
 });

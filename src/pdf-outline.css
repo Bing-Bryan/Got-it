@@ -6,3 +6,6 @@
 .pdf-outline-item small {font-size:10px;color:var(--text-muted,#777);font-variant-numeric:tabular-nums;flex-shrink:0;}
 .pdf-outline-item[aria-current=location] {background:#eeedff;color:#5d56d8;border-radius:6px;}
 .pdf-outline-error {font-size:11px;color:#a23b32;overflow-wrap:anywhere;}
+.pdf-outline-item { align-items: flex-start; }
+.pdf-outline-item span { overflow: hidden; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.pdf-outline-item small { padding-top: 2px; min-width: 16px; text-align: right; }

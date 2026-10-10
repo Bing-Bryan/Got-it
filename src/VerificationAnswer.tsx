@@ -16,7 +16,7 @@ export function verificationBrief(message: ThreadMessage, failure?: string) {
   const pending = message.completion === "provisional" || v?.completion === "provisional";
   const retained = sources.length ? "，已收到的参考资料已保留" : "";
   if (message.mode === "demo") return { complete: false, conclusion: "这是演示来源，没有执行真实查找。", limitation: "" };
-  if (stopped || failed) return { complete: false, conclusion: `${stopped ? "本次查找已中断" : "本次查找失败"}${retained}。`, limitation: failure || "" };
+  if (stopped || failed) return { complete: false, conclusion: `${failure?.startsWith("已停止") ? "你已停止查找" : failed ? "本次查找失败" : "本次查找已中断"}${retained}。`, limitation: failure || "" };
   if (pending) return { complete: false, conclusion: "正在查找来源，当前内容尚待核对。", limitation: "" };
   if (message.search?.status !== "executed") {
     const reason = message.search?.status === "not-executed" ? "这份记录没有执行联网搜索。" : "现有记录无法确认是否执行了搜索。";

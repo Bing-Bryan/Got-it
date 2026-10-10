@@ -45,6 +45,7 @@ export function useReadingLibrary(options: Options) {
   const [historyId, setHistoryId] = useState("");
   const [status, setStatus] = useState("正在连接本机阅读库…");
   const [error, setError] = useState("");
+  const [importError, setImportError] = useState(false);
   const [check, setCheck] = useState<SourceCheck | null>(null);
   const [recovery, setRecovery] = useState<RecoveryRecord | null>(null);
   const recoveryRef = useRef<RecoveryRecord | null>(null);
@@ -141,11 +142,11 @@ export function useReadingLibrary(options: Options) {
     };
     const job = pending.current.catch(() => {}).then(work); pending.current = job; return job;
   }
-  async function transition(work: () => Promise<void>) {
+  async function transition(work: () => Promise<void>, importing = false) {
     if (busyRef.current) return;
     importSequence.current++;
-    busyRef.current = true; setBusy(true); setError("");
-    try { await work(); } catch (e) { setError(message(e)); } finally { busyRef.current = false; setBusy(false); }
+    busyRef.current = true; setBusy(true); setError(""); setImportError(false);
+    try { await work(); } catch (e) { setImportError(importing && !savePaused.current && !blockedDraft.current); setError(message(e)); } finally { busyRef.current = false; setBusy(false); }
   }
   async function preserve() {
     if (blockedDraft.current) throw new Error("须先保存阅读记录才能离开，请重试保存。");
@@ -171,8 +172,8 @@ export function useReadingLibrary(options: Options) {
   async function importFile(file: File) {
     if (busyRef.current || !ready) return;
     const sequence = ++importSequence.current;
-    try { if(file.name.toLowerCase().endsWith('.pdf')){if(file.size>50*1024*1024)throw new Error('PDF 须不超过 50 MiB。');await transition(async()=>{const selected:SelectedFile=await (await libraryBinary('/pdf?filename='+encodeURIComponent(file.name),new Blob([file],{type:'application/pdf'}))).json();await addWorkspace(selected.workspace!,selected.selectionId);});return;} const w = await readDocumentFile(file); if (sequence !== importSequence.current) return; await transition(() => addWorkspace(w)); }
-    catch (e) { if (sequence === importSequence.current) setError(message(e)); }
+    try { if(file.name.toLowerCase().endsWith('.pdf')){if(file.size>50*1024*1024)throw new Error('PDF 须不超过 50 MiB。');await transition(async()=>{const selected:SelectedFile=await (await libraryBinary('/pdf?filename='+encodeURIComponent(file.name),new Blob([file],{type:'application/pdf'}))).json();await addWorkspace(selected.workspace!,selected.selectionId);}, true);return;} const w = await readDocumentFile(file); if (sequence !== importSequence.current) return; await transition(() => addWorkspace(w), true); }
+    catch (e) { if (sequence === importSequence.current) { setImportError(true); setError(message(e)); } }
   }
   async function choose(relink = false) {
     await transition(async () => {
@@ -312,7 +313,7 @@ export function useReadingLibrary(options: Options) {
     if (!timer.current) timer.current = setTimeout(() => { timer.current = null; void flush().catch(() => {}); }, 500);
   }
   useEffect(()=> { if (!notice) return; const id=setTimeout(()=>setNotice(""),4500); return ()=>clearTimeout(id); },[notice]);
-  return { initialPosition: desiredPosition.current, entry, list, ready, busy, error, status, check, recovery, recoveries, blocked, draftWarning, notice, historyId,
+  return { initialPosition: desiredPosition.current, entry, list, ready, busy, error, importError, clearError: () => { setError(""); setImportError(false); }, status, check, recovery, recoveries, blocked, draftWarning, notice, historyId,
     readOnly: !!historyId || !!recovery || blocked || busy,
     open, choose, importFile, checkSource: () => transition(checkSource), acceptUpdate, viewRevision, resolveRecovery, acknowledgeRecovery, showRecovery, closeRecovery,
     retry: () => ready && !blockedDraft.current ? transition(() => flush()) : initialize(),

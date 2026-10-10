@@ -26,6 +26,7 @@ const errorText=(e:unknown)=>e instanceof Error?e.message:'PDF 操作未完成�
 const tidy=(s:string)=>s.trim().replace(/(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g,'');
 export default function PdfReader(props:Props) {
   const [pdf,setPdf]=useState<PDFDocumentProxy|null>(null),[error,setError]=useState('');
+  const [loadAttempt,setLoadAttempt]=useState(0);
   const [draftPage,setDraftPage]=useState<number|null>(null);
   const [currentPage,setCurrentPage]=useState(props.initialPosition?.pdfPage??1),[toolbar,setToolbar]=useState<SheetToolbar|null>(null);
   const root=useRef<HTMLDivElement>(null),restored=useRef(false);
@@ -48,10 +49,11 @@ export default function PdfReader(props:Props) {
     });return()=>cancelAnimationFrame(frame);
   },[pdf,props.outlineTarget]);
   useEffect(()=>{
+    setError('');setPdf(null);setToolbar(null);restored.current=false;
     let disposed=false;let task:ReturnType<typeof getDocument>|undefined;
     void(async()=>{try{const response=await libraryBinary(`/entries/${props.entryId}/resources/${props.document.pdf.resourceId}`);if(disposed)return;task=getDocument({data:new Uint8Array(await response.arrayBuffer()),cMapUrl:'/pdf-assets/cmaps/',cMapPacked:true,standardFontDataUrl:'/pdf-assets/standard_fonts/',wasmUrl:'/pdf-assets/wasm/',enableXfa:false});const doc=await task.promise;if(!disposed)setPdf(doc);}catch(e){if(!disposed)setError(errorText(e));}})();
     return()=>{disposed=true;void task?.destroy();};
-  },[props.entryId,props.document.pdf.resourceId]);
+  },[props.entryId,props.document.pdf.resourceId,loadAttempt]);
   useEffect(() => {
     if (!pdf || !props.onReadingTime) return;
     const controller = new AbortController();
@@ -74,8 +76,8 @@ export default function PdfReader(props:Props) {
   const adjustmentNode = <div className="reading-adjustment-dock reading-adjustment-dock--pdf"><PdfZoomControls scale={zoom.scale} automatic={zoom.manual===null} onChange={zoom.change}/></div>;
   return <div ref={root} className="pdf-reader" data-zoom={zoom.manual??0}>
     {props.toolbarHost ? createPortal(toolbarNode, props.toolbarHost) : toolbarNode}
-    {props.adjustmentHost ? createPortal(adjustmentNode, props.adjustmentHost) : adjustmentNode}
-    {error?<p className="pdf-error" role="alert">{error}</p>:null}
+    {pdf ? (props.adjustmentHost ? createPortal(adjustmentNode, props.adjustmentHost) : adjustmentNode) : null}
+    {error?<div className="pdf-error" role="alert"><p>PDF 暂时无法加载：{error}</p><button type="button" className="secondary-action" onClick={()=>setLoadAttempt(n=>n+1)}>重新加载 PDF</button></div>:null}
     {!pdf&&!error?<p className="pdf-status">正在加载 PDF…</p>:null}
     {pdf?props.document.pdf.pages.map((info,index)=><PdfSheet key={index} {...props} pdf={pdf} page={index+1} width={zoom.widthFor(info)} info={info} draftPage={draftPage} currentPage={currentPage} onToolbar={setToolbar} claim={()=>setDraftPage(index+1)}/>):null}
   </div>;

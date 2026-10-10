@@ -3,11 +3,11 @@ import {LibraryClientError, libraryRequest} from './lib/library-client';
 import {copyOutline, type PdfOutline as Outline, type PdfOutlineItem} from './lib/pdf-outline';
 import './pdf-outline.css';
 
-interface Props {entryId:string; fileHash:string; pages:number; query:string; currentPage:number; readOnly?:boolean; onJump:(item:PdfOutlineItem)=>void}
+interface Props {entryId:string; fileHash:string; pages:number; currentPage:number; readOnly?:boolean; onJump:(item:PdfOutlineItem)=>void}
 type Failure = {message:string; action:string};
 const message = (error:unknown) => error instanceof Error ? error.message : '目录操作失败，请重试。';
 
-export default function PdfOutline({entryId, fileHash, pages, query, currentPage, readOnly, onJump}:Props) {
+export default function PdfOutline({entryId, fileHash, pages, currentPage, readOnly, onJump}:Props) {
   const [outline, setOutline] = useState<Outline | null>(null);
   const [status, setStatus] = useState('正在读取目录…');
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -91,7 +91,6 @@ export default function PdfOutline({entryId, fileHash, pages, query, currentPage
   }, [entryId, fileHash, pages, readOnly]);
 
   const allItems = outline?.items ?? [];
-  const items = allItems.filter(item => item.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   const active = allItems.filter(item => item.page <= currentPage).at(-1)?.id;
   return <div className="pdf-outline" aria-label="PDF 原文章节目录">
     <div className="section-label"><span>原文章节</span><span>{allItems.length} 项 · {pages} 页</span></div>
@@ -100,10 +99,9 @@ export default function PdfOutline({entryId, fileHash, pages, query, currentPage
       <p>{failure.message}</p>
       <button type="button" onClick={() => retry.current?.()}>{failure.action}</button>
     </div> : null}
-    <div className="outline-list">{items.map(item => <button type="button" key={item.id}
+    <div className="outline-list">{allItems.map(item => <button type="button" key={item.id}
       className={`outline-item level-${item.level} pdf-outline-item`} aria-current={active === item.id ? 'location' : undefined}
-      onClick={() => onJump(item)}><span>{item.title}</span><small>{item.page}</small></button>)}
-      {allItems.length > 0 && !items.length ? <p className="nav-empty">没有匹配的目录标题。</p> : null}
+      title={item.title} onClick={() => onJump(item)}><span>{item.title}</span><small>{item.page}</small></button>)}
     </div>
   </div>;
 }

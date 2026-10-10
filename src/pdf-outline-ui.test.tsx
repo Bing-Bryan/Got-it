@@ -19,8 +19,8 @@ beforeEach(() => {
   mocks.generate.mockResolvedValue([item]);
 });
 afterEach(async () => {await act(async () => root.unmount()); host.remove();});
-const render = async (query='', jump=vi.fn(), entryId='id', readOnly=false) => {
-  await act(async () => root.render(<PdfOutline entryId={entryId} fileHash={hash} pages={3} query={query} currentPage={2} readOnly={readOnly} onJump={jump}/>));
+const render = async (jump=vi.fn(), entryId='id', readOnly=false) => {
+  await act(async () => root.render(<PdfOutline entryId={entryId} fileHash={hash} pages={3} currentPage={2} readOnly={readOnly} onJump={jump}/>));
 };
 const click = async (text:string) => {
   const button = [...host.querySelectorAll('button')].find(b => b.textContent === text);
@@ -34,13 +34,13 @@ const noManagement = () => {
 it('automatically generates and saves a missing outline, without management buttons', async () => {
   await render(); expect(mocks.generate).toHaveBeenCalledTimes(1); expect(writes()).toHaveLength(1);
   expect(host.textContent).toContain('原文标题'); noManagement();
-  await render('标题'); expect(mocks.generate).toHaveBeenCalledTimes(1);
+  await render(); expect(mocks.generate).toHaveBeenCalledTimes(1);
 });
-it('loads existing manual titles without OCR, preserves search, highlighting and repeated navigation', async () => {
-  mocks.request.mockResolvedValue({...saved, reviewed:true, items:[{...item, source:'manual'}]});
-  const jump=vi.fn(); await render('', jump); await click('原文标题2'); await click('原文标题2');
+it('loads existing manual titles without OCR, preserves all titles, highlighting and repeated navigation', async () => {
+  mocks.request.mockResolvedValue({...saved, reviewed:true, items:[{...item, source:'manual'}, {...item,id:'two',title:'另一章节',page:3,source:'manual'}]});
+  const jump=vi.fn(); await render(jump); await click('原文标题2'); await click('原文标题2');
   expect(jump).toHaveBeenCalledTimes(2); expect(host.querySelector('[aria-current=location]')).not.toBeNull();
-  expect(mocks.generate).not.toHaveBeenCalled(); noManagement(); await render('missing'); expect(host.textContent).toContain('没有匹配');
+  expect(mocks.generate).not.toHaveBeenCalled(); noManagement(); expect(host.querySelectorAll('.outline-item')).toHaveLength(2); await click('另一章节3'); expect(jump.mock.lastCall?.[0]).toMatchObject({id:'two',page:3});
 });
 it('shows progress while generating and no premature success or retry action', async () => {
   let resolve!:(value:unknown)=>void;
@@ -51,7 +51,7 @@ it('shows progress while generating and no premature success or retry action', a
 it('only offers recognition retry on failure and succeeds without a persistent retry button', async () => {
   mocks.generate.mockRejectedValueOnce(new Error('识别超时')); await render();
   expect(host.textContent).toContain('识别超时'); expect(writes()).toHaveLength(0);
-  await render(''); expect(mocks.generate).toHaveBeenCalledTimes(1);
+  await render(); expect(mocks.generate).toHaveBeenCalledTimes(1);
   await click('重新识别'); expect(mocks.generate).toHaveBeenCalledTimes(2); expect(writes()).toHaveLength(1); noManagement();
 });
 it('treats empty recognition as unsuccessful and does not save a false success', async () => {
@@ -76,13 +76,13 @@ it('resolves a save conflict by loading the other version, never overwriting it 
   expect(host.textContent).toContain('另一页面的标题'); expect(writes()).toHaveLength(1);
 });
 it('does not generate or save an empty read-only document', async () => {
-  await render('',vi.fn(),'id',true); expect(mocks.generate).not.toHaveBeenCalled(); expect(writes()).toHaveLength(0);
+  await render(vi.fn(),'id',true); expect(mocks.generate).not.toHaveBeenCalled(); expect(writes()).toHaveLength(0);
   expect(host.textContent).toContain('只读'); expect(host.querySelector('button')).toBeNull();
 });
 it('ignores a late load when the document changes, even without a React key', async () => {
   let resolve!:(value:unknown)=>void;
   mocks.request.mockImplementationOnce(() => new Promise(r => resolve=r)).mockResolvedValue(saved);
-  await render(); await render('',vi.fn(),'other'); await act(async () => resolve(empty));
+  await render(); await render(vi.fn(),'other'); await act(async () => resolve(empty));
   expect(mocks.generate).not.toHaveBeenCalled(); expect(host.textContent).toContain('原文标题');
 });
 it('aborts a generation after switching away and never saves its late result', async () => {
@@ -95,10 +95,10 @@ it('ignores a late save response after switching to a different document', async
   let resolve!:(value:unknown)=>void;
   mocks.request.mockResolvedValueOnce(empty).mockImplementationOnce(() => new Promise(r => resolve=r))
     .mockResolvedValue({...saved, items:[{...item,title:'新文档标题'}]});
-  await render(); await render('',vi.fn(),'other'); await act(async () => resolve(saved));
+  await render(); await render(vi.fn(),'other'); await act(async () => resolve(saved));
   expect(host.textContent).toContain('新文档标题'); expect(host.textContent).not.toContain('原文标题');
 });
 it('does not start duplicate OCR under StrictMode effect replay', async () => {
-  await act(async () => root.render(<StrictMode><PdfOutline entryId="id" fileHash={hash} pages={3} query="" currentPage={1} onJump={vi.fn()}/></StrictMode>));
+  await act(async () => root.render(<StrictMode><PdfOutline entryId="id" fileHash={hash} pages={3} currentPage={1} onJump={vi.fn()}/></StrictMode>));
   expect(mocks.generate).toHaveBeenCalledTimes(1); expect(writes()).toHaveLength(1); noManagement();
 });

@@ -29,7 +29,7 @@ export function ReadingLibraryNavigation({ library, importCopy }: { library: Lib
         onPointerLeave={() => { if (!holder.current?.contains(document.activeElement)) setOpen(false); }}
         onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}
         onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); setOpen(false); trigger.current?.focus(); } }}>
-        <button ref={trigger} type="button" className="library-current" aria-label={`切换文件：${library.entry?.workspace.document.filename ?? "选择文件"}`} aria-expanded={open} aria-controls={popupId}
+        <button ref={trigger} type="button" className="library-current" title={library.entry?.workspace.document.filename ?? "选择文件"} aria-label={`切换文件：${library.entry?.workspace.document.filename ?? "选择文件"}`} aria-expanded={open} aria-controls={popupId}
           onClick={() => setOpen(true)} onKeyDown={event => { if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); requestAnimationFrame(() => holder.current?.querySelector<HTMLButtonElement>(".library-open")?.focus()); } }}>
           <span>{library.entry?.workspace.document.filename ?? "选择文件"}</span><span aria-hidden="true">▸</span>
         </button>
@@ -50,19 +50,21 @@ export function ReadingLibraryNavigation({ library, importCopy }: { library: Lib
     {library.list.warnings.map((warning,i) => <p key={i} role="alert" className="library-warning">{warning}</p>)}
   </section>;
 }
-export function ReadingLibraryStatus({ library }: { library: Library }) {
+export function ReadingLibraryStatus({ library, onImport }: { library: Library; onImport?: () => void }) {
   const sourceStatus = library.check?.status;
   const sourceProblem = !!sourceStatus && sourceStatus !== "available";
   const cannotRead = sourceStatus === "missing" || sourceStatus === "permission" || sourceStatus === "unreadable" || sourceStatus === "reselect";
+  const saveBlocked = library.blocked || library.status === "阅读进度暂未保存";
   return <div className="library-state">
-    {library.error ? <div role="alert" className="library-warning">{library.error} <button type="button" disabled={library.busy} onClick={() => void library.retry()}>重试保存</button></div> : null}
-    {library.blocked || library.status === "阅读进度暂未保存" ? <p className="library-warning">须先保存阅读记录才能离开，当前内容仍保留。</p> : null}
+    {(library.error || saveBlocked) && !library.recovery ? <div role="alert" className="library-warning"><span>{library.error}{saveBlocked ? <small>当前内容仍保留，保存成功后才能离开。</small> : null}</span>
+      {saveBlocked || !library.ready ? <button type="button" disabled={library.busy} onClick={() => void library.retry()}>{saveBlocked ? "重试保存" : "重新连接"}</button> : library.importError && onImport ? <button type="button" disabled={library.busy} onClick={onImport}>重新选择文件</button> : <button type="button" disabled={library.busy} onClick={library.clearError}>关闭提示</button>}
+    </div> : null}
     {library.draftWarning ? <p role="alert" className="library-warning">{library.draftWarning}</p> : null}
     {library.notice ? <p role="status" className="library-recovered">{library.notice}</p> : null}
     {library.recoveries.filter(r=>r.state === 'pending' && r.savedRecordUnavailable).map(r=><div key={r.id} className="library-warning" role="alert"><span>{r.filename}：当前保存记录无法读取，之前的记录已保留。</span><button type="button" disabled={library.busy} onClick={()=>void library.showRecovery(r.id)}>找回阅读记录</button></div>)}
     <ReadingRecoveryView library={library} />
     {library.entry && (sourceProblem || library.entry.history.length > 0) ? <div className="library-source-state">
-      {sourceProblem ? <span>{library.check?.message}</span> : null}
+      {sourceProblem ? <span title={library.check?.message}>{sourceStatus === "unlinked" ? "阅读副本 · 未关联原文件" : library.check?.message}</span> : null}
       {cannotRead ? <button type="button" disabled={library.busy || library.readOnly} onClick={() => void library.checkSource()}>重试读取</button> : null}
       {(cannotRead || sourceStatus === "unlinked") && library.list.nativePicker ? <button type="button" disabled={library.busy || library.readOnly} onClick={() => void library.choose(true)}>{library.entry.source ? "重新定位" : "关联原文件"}</button> : null}
       {library.check?.status === "changed" ? <><span>可继续阅读保存版本，或</span><button type="button" disabled={library.busy || library.readOnly} onClick={() => void library.acceptUpdate()}>使用更新后的原文</button></> : null}

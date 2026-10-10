@@ -46,7 +46,6 @@ import {
   PanelLeftOpen,
   Pin,
   RefreshCw,
-  Search,
   ShieldCheck,
   Sparkles,
   Terminal,
@@ -185,7 +184,6 @@ function App() {
     document.addEventListener("pointerdown", outside); document.addEventListener("keydown", escape);
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
   }, [providerOpen]);
-  const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [pdfTarget,setPdfTarget] = useState<{id:string;nonce:number;returnToSource?:boolean}|null>(null);
@@ -214,7 +212,7 @@ function App() {
     navigationSequence.current++;
     setPdfDirectoryTarget(null);
     workspaceRef.current = next; setWorkspace(next); setDocumentLoadId(v => v + 1);
-    setDocumentQuestionOpen(false); setPdfTarget(null); setProgress({}); setSearchQuery(""); setSelectionDraft(null); setFocusedInquiryId(null); setMobileSidebarOpen(false); setMobilePanelOpen(false); setProviderOpen(false);
+    setDocumentQuestionOpen(false); setPdfTarget(null); setProgress({}); setSelectionDraft(null); setFocusedInquiryId(null); setMobileSidebarOpen(false); setMobilePanelOpen(false); setProviderOpen(false);
     window.getSelection()?.removeAllRanges();
   }, []);
   const interruptForSwitch = useCallback(() => {
@@ -230,6 +228,28 @@ function App() {
     () => workspace.document.kind === "pdf" ? {html:"",outline:[]} : renderMarkdown(workspace.document.markdown),
     [workspace.document.kind,workspace.document.markdown],
   );
+  const [currentHeading, setCurrentHeading] = useState<string | null>(null);
+  useEffect(() => {
+    const scroll = document.querySelector<HTMLElement>('.reader-scroll');
+    if (!scroll || workspace.document.kind === 'pdf') { setCurrentHeading(null); return; }
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const top = scroll.getBoundingClientRect().top + 28;
+      let active = rendered.outline[0]?.id ?? null;
+      for (const item of rendered.outline) {
+        const node = document.getElementById(item.id);
+        if (node && node.getBoundingClientRect().top <= top) active = item.id;
+        else if (node) break;
+      }
+      setCurrentHeading(active);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    schedule(); scroll.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    return () => { cancelAnimationFrame(frame); scroll.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule); };
+  }, [rendered.outline, workspace.document.id, documentLoadId]);
+
 
   const markdownMinutes = useMemo(() => renderedReadingMinutes(rendered.html), [rendered.html]);
   const [pdfMinutes, setPdfMinutes] = useState<{ hash: string; minutes: number | null } | null>(null);
@@ -744,12 +764,18 @@ function App() {
     [importFile],
   );
 
+  const [sourceFocus, setSourceFocus] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (mobilePanelOpen || !sourceFocus) return;
+    if (sourceFocus.isConnected && !sourceFocus.closest('[inert]')) focusReadingTarget(sourceFocus);
+    setSourceFocus(null);
+  }, [mobilePanelOpen, sourceFocus]);
   const finishSourceNavigation = useCallback((id: string, success: boolean, returnToSource = false, target?: HTMLElement) => {
     if (workspaceRef.current.activeInquiryId !== id) return;
     if (!success) { showToast("原文位置无法恢复，请在原文件中查看；已有回答仍保留。"); return; }
     if (returnToSource && window.matchMedia('(max-width: 780px)').matches) {
       setMobilePanelOpen(false);
-      if (target) focusReadingTarget(target);
+      if (target) setSourceFocus(target);
     }
   }, [showToast]);
 
@@ -799,11 +825,6 @@ function App() {
     [openAnchor],
   );
 
-  const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
-  const filteredOutline = rendered.outline.filter((item) =>
-    item.text.toLocaleLowerCase().includes(normalizedSearch),
-  );
-
   return (
     <div
       className={`app-frame ${!sidebar.pinned ? "sidebar-collapsed" : ""} ${sidebar.peek ? "sidebar-peek" : ""} ${!resultPanel.expanded ? "result-collapsed" : ""} ${mobileSidebarOpen ? "sidebar-open" : ""} ${mobilePanelOpen ? "panel-open" : ""}`}
@@ -831,7 +852,7 @@ function App() {
       />
 
       <div className="sidebar-rail" onMouseEnter={sidebar.reveal} onMouseLeave={sidebar.leave}><button type="button" className="icon-button" aria-label="展开导航" aria-controls="document-navigation" aria-expanded={sidebar.peek} onClick={sidebar.reveal}><PanelLeftOpen size={17} /></button></div>
-      <aside id="document-navigation" ref={sidebar.ref} className="left-sidebar" aria-label="文档导航" inert={sidebar.narrow ? !mobileSidebarOpen : !sidebar.pinned && !sidebar.peek} onMouseEnter={sidebar.cancel} onMouseLeave={sidebar.leave} onBlur={sidebar.leave}>
+      <aside id="document-navigation" ref={sidebar.ref} className="left-sidebar" aria-label="文档导航" inert={(resultPanel.narrow && mobilePanelOpen) || (sidebar.narrow ? !mobileSidebarOpen : !sidebar.pinned && !sidebar.peek)} onMouseEnter={sidebar.cancel} onMouseLeave={sidebar.leave} onBlur={sidebar.leave}>
         <div className="brand-row">
           <BrandMark />
           <div>
@@ -852,38 +873,25 @@ function App() {
 
         <ReadingLibraryNavigation library={library} importCopy={() => fileInputRef.current?.click()} />
 
-        <div className="sidebar-search">
-          <Search size={14} />
-          <input
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="搜索目录"
-            aria-label="搜索目录"
-          />
-          {searchQuery ? (
-            <button type="button" aria-label="清空搜索" onClick={() => setSearchQuery("")}>
-              <X size={13} />
-            </button>
-          ) : null}
-        </div>
-
         <nav className="sidebar-scroll">
           <section className="nav-section">
-            {workspace.document.kind === "pdf" && library.entry ? <PdfOutline key={library.entry.id+workspace.document.pdf.resourceId+documentLoadId} entryId={library.entry.id} fileHash={workspace.document.pdf.resourceId} pages={workspace.document.pdf.pages.length} query={searchQuery} currentPage={pdfCurrentPage} readOnly={library.readOnly} onJump={item=>{setPdfDirectoryTarget({documentId:workspace.document.id,item,nonce:Date.now()});setMobileSidebarOpen(false);}}/> : <>
+            {workspace.document.kind === "pdf" && library.entry ? <PdfOutline key={library.entry.id+workspace.document.pdf.resourceId+documentLoadId} entryId={library.entry.id} fileHash={workspace.document.pdf.resourceId} pages={workspace.document.pdf.pages.length} currentPage={pdfCurrentPage} readOnly={library.readOnly} onJump={item=>{setPdfDirectoryTarget({documentId:workspace.document.id,item,nonce:Date.now()});setMobileSidebarOpen(false);}}/> : <>
             <div className="section-label">
               <span>{workspace.document.kind === "pdf" ? "PDF 原页" : "文档结构"}</span>
               <span>{workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页` : rendered.outline.length}</span>
             </div>
-            {workspace.document.kind === "pdf" ? <p className="nav-empty">向下滚动阅读后续页面。页面自动适合宽度，收起左栏可扩大阅读空间。</p> : !filteredOutline.length ? <p className="nav-empty" role="status">{rendered.outline.length ? "没有匹配的目录标题。" : "本文暂无标题目录。"}</p> : null}
+            {workspace.document.kind === "pdf" ? <p className="nav-empty">向下滚动阅读后续页面。页面自动适合宽度，收起左栏可扩大阅读空间。</p> : !rendered.outline.length ? <p className="nav-empty" role="status">本文暂无标题目录。</p> : null}
             <div className="outline-list">
-              {filteredOutline.map((item) => (
+              {rendered.outline.map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   className={`outline-item level-${item.level}`}
+                  title={item.text}
+                  aria-current={currentHeading === item.id ? "location" : undefined}
                   onClick={() => {
                     const target = document.getElementById(item.id);
-                    if (target) revealReadingTarget(target, { align: "start" });
+                    if (target) { revealReadingTarget(target, { align: "start" }); setCurrentHeading(item.id); }
                     setMobileSidebarOpen(false);
                   }}
                 >
@@ -897,7 +905,7 @@ function App() {
         </nav>
       </aside>
 
-      <main className="reader-column">
+      <main className="reader-column" inert={(sidebar.narrow && mobileSidebarOpen) || (resultPanel.narrow && mobilePanelOpen)}>
         <header className="reader-toolbar">
           <div className="toolbar-title">
             <button
@@ -913,8 +921,8 @@ function App() {
             </button>
             <FileText size={15} />
             <div>
-              <strong>{workspace.document.filename}</strong>
-              <span className="document-metadata">{workspace.document.isDemo ? "示例文档" : "本地文档"} · {workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页 PDF` : `${Math.max(1, Math.round(workspace.document.markdown.length / 1000))}k 字符`}{readingMinutes !== null ? <span className="reading-time"> · 预计阅读 {readingMinutes} 分钟</span> : null}</span>
+              <strong title={workspace.document.filename}>{workspace.document.filename}</strong>
+              <span className="document-metadata">{workspace.document.isDemo ? "示例文档" : "本地文档"} · {workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页 PDF` : workspace.document.markdown.length < 1000 ? `${workspace.document.markdown.length} 字符` : `${Math.round(workspace.document.markdown.length / 1000)}k 字符`}{readingMinutes !== null ? <span className="reading-time"> · 预计阅读 {readingMinutes} 分钟</span> : null}</span>
             </div>
           </div>
 
@@ -957,8 +965,8 @@ function App() {
                 {selectedModelInfo?.supportedReasoningEfforts.map(effort => <option key={effort.reasoningEffort} value={effort.reasoningEffort} title={effort.description}>{effort.reasoningEffort}</option>)}
               </select></label>
               {!modelsLoading && !modelsError && !supportsConfig(codexModels, currentModel) ? <small role="status">当前目录不支持 {currentModel.model} / {currentModel.reasoningEffort}；已保留设置，不会自动换模型。</small> : null}
-              <button type="button" className="refresh-models" disabled={modelsLoading} onClick={() => void refreshModels(true)}>{modelsLoading ? "正在刷新…" : "刷新模型列表"}</button>
-              {modelsError ? <small role="alert">{modelsError}。<button type="button" onClick={() => void refreshModels(true)}>重试读取模型</button></small> : null}
+              <button type="button" className="refresh-models" disabled={modelsLoading} onClick={() => void refreshModels(true)}>{modelsLoading ? "正在刷新…" : modelsError ? "重试读取模型" : "刷新模型列表"}</button>
+              {modelsError ? <small role="alert">{modelsError}</small> : null}
             </> : <small>当前使用 {activeProvider.name}，模型由该连接配置。</small>}
           </div>
           </details>
@@ -979,13 +987,15 @@ function App() {
           </div>
         </header>
 
-        <ReadingLibraryStatus library={library} />
+        <div className="reader-tools">
+        <ReadingLibraryStatus library={library} onImport={() => fileInputRef.current?.click()} />
         <div ref={setPdfToolbarHost} className="reader-status-host" />
         {workspace.document.kind !== "pdf" ? <div className="markdown-toolbar"><div className="markdown-toolbar-row"><div className="library-save-status" role="status">{saveStatus}{library.busy ? " · 正在处理…" : ""}</div></div></div> : null}
-        <div className="reader-viewport" ref={readerViewportRef}>
         <div ref={setAdjustmentHost} className="reader-adjustment-layer">
           {workspace.document.kind !== "pdf" ? <div key={workspace.document.id+":"+documentLoadId} className="reading-adjustment-dock"><MarkdownWidthControls width={markdownWidth.width} onChange={markdownWidth.change}/></div> : null}
         </div>
+        </div>
+        <div className="reader-viewport" ref={readerViewportRef}>
         <div key={workspace.document.id+":"+documentLoadId} className={`reader-scroll${workspace.document.kind === "pdf" ? " reader-scroll--pdf" : ""}`} onScroll={() => { if (!markdownWidth.adjusting.current) library.scrolled(); }}>
           {workspace.document.isDemo ? (
             <div className="demo-document-note">
@@ -1013,7 +1023,7 @@ function App() {
       <div className="result-rail" onMouseEnter={resultPanel.hoverReveal} onMouseLeave={resultPanel.leave}>
         <button ref={resultPanel.triggerRef} type="button" className="icon-button" aria-label="展开知识贴" aria-controls="knowledge-panel" aria-expanded={resultPanel.expanded} onClick={resultPanel.reveal}><PanelRightOpen size={17} /></button>
       </div>
-      <aside id="knowledge-panel" ref={resultPanel.ref} className="right-panel" aria-label="活动知识贴" inert={resultPanel.narrow ? !mobilePanelOpen : !resultPanel.expanded} onMouseEnter={resultPanel.enter} onMouseLeave={resultPanel.leave} onFocus={resultPanel.cancel} onBlur={resultPanel.deferClose}>
+      <aside id="knowledge-panel" ref={resultPanel.ref} className="right-panel" aria-label="活动知识贴" inert={(sidebar.narrow && mobileSidebarOpen) || (resultPanel.narrow ? !mobilePanelOpen : !resultPanel.expanded)} onMouseEnter={resultPanel.enter} onMouseLeave={resultPanel.leave} onFocus={resultPanel.cancel} onBlur={resultPanel.deferClose}>
         <PanelResizeHandle panel={resultPanel.ref} onStart={resultPanel.openReading} onCollapse={resultPanel.collapseFromDrag} />
 
         <div className="panel-mobile-head">
@@ -1050,18 +1060,18 @@ function App() {
           </div></div>
           {categoryItems.length ? categoryItems.map(item => <div className="category-row" key={item.id}>
             <button className="category-open" type="button" data-inquiry-id={item.id} aria-current={activeInquiry?.id === item.id ? "true" : undefined} onFocus={() => setFocusedInquiryId(item.id)} onBlur={() => setFocusedInquiryId(null)} onClick={() => jumpToInquiry(item.id)}>
-              <span>{item.intent === "ask" ? item.question : item.anchor.quote}{item.intent === "ask" ? <small className="question-anchor">{item.anchor.quote}</small> : null}</span><small>{inquiryCategoryStatus(item)}</small>
+              <span>{item.intent === "ask" ? item.question : item.anchor.quote}{item.intent === "ask" ? <small className="question-anchor">{item.anchor.quote}</small> : null}</span><small>{inquiryCategoryStatus(item)}</small>{categoryItems.filter(other => other.anchor.quote === item.anchor.quote).length > 1 ? <small className="inquiry-identity">{new Date(item.messages.at(-1)?.createdAt ?? item.updatedAt).toLocaleDateString()} · {(item.messages.filter(message => message.role === "assistant").at(-1)?.content || item.question).replace(/[#*_`]/g, "").slice(0, 56)}</small> : null}
             </button>
             {deleteMode ? <button className={`category-delete${pendingDeleteId === item.id ? " confirming" : ""}`} type="button" data-delete-inquiry-id={item.id}
               aria-label={`${pendingDeleteId === item.id ? "确认删除知识贴" : "删除知识贴"}：${item.anchor.quote}`}
               title={pendingDeleteId === item.id ? "再次点击，删除此知识贴及全部回答" : "删除此知识贴"}
-              onClick={() => deleteInquiry(item.id)}>{pendingDeleteId === item.id ? <Check size={16} aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}</button> : null}
+              onClick={() => deleteInquiry(item.id)}>{pendingDeleteId === item.id ? <><Check size={16} aria-hidden="true" /><span>确认删除</span></> : <Trash2 size={16} aria-hidden="true" />}</button> : null}
           </div>) : <p>{tabIntent === "ask" ? "可以向全文提问，也可以选中原文问一问。" : <>还没有{INTENT_META[tabIntent].label}条目。在原文选中文字，再选择“{INTENT_META[tabIntent].label}”即可创建。</>}</p>}
           {tabIntent === "ask" ? <div className="document-question-entry">
             {documentQuestionOpen ? <QuestionComposer initialOpen disabled={documentQuestionBusy || library.readOnly || library.busy || !library.ready || !modelReady} onClose={() => setDocumentQuestionOpen(false)} onSubmit={question => createInquiry("ask", { anchor: documentAnchor(workspace.document), context: "", rect: { top: 0, left: 0, width: 0, height: 0 } }, question)} /> : <button className="document-question-trigger" type="button" disabled={documentQuestionBusy || library.readOnly || library.busy || !library.ready || !modelReady} onClick={() => setDocumentQuestionOpen(true)}><span aria-hidden="true">＋</span>向全文提问</button>}
           </div> : null}
         </nav>
-        {activeInquiry && activeInquiry.anchor.scope !== "document" && group.length > 1 ? <nav className="anchor-requests" aria-label="这处原文的已有结果">{(['explain','verify','ask','why'] as InquiryIntent[]).flatMap(intent => {
+        {activeInquiry && activeInquiry.anchor.scope !== "document" && group.length > 1 ? <nav className="anchor-requests" aria-label="这处原文的已有结果"><small>这处原文</small>{(['explain','verify','ask','why'] as InquiryIntent[]).flatMap(intent => {
           const items = intentHistory(group, intent);
           const remembered = intent === 'ask' ? [...(workspace.visitedInquiryIds ?? [])].reverse().map(id => items.find(i => i.id === id)).find(Boolean) : undefined;
           const visible = (remembered ? [remembered] : items).slice(0, 1);
@@ -1103,7 +1113,7 @@ function App() {
         <div className="drop-overlay">
           <div>
             <Upload size={24} />
-            <strong>放下 Markdown 或阅读文档</strong>
+            <strong>放下 PDF、Markdown 或阅读文档</strong>
             <span>当前文档不会被修改</span>
           </div>
         </div>
@@ -1160,7 +1170,7 @@ function ProviderPopover({
         <div>
           <strong>AI 设置</strong>
         </div>
-        <button className="icon-button" type="button" onClick={onClose}><X size={14} /></button>
+        <button className="icon-button" type="button" onClick={onClose} aria-label="关闭 AI 设置"><X size={14} /></button>
       </div>
 
       <div className="provider-list">
@@ -1267,9 +1277,9 @@ function InquiryPanel({
             <button className="secondary-action" type="button" onClick={onRetry}><RefreshCw size={13} /> 用真实模型回答</button>
           ) : null}
           {inquiry.lastError && !(latestAssistant && (latestAssistant.operation ? latestAssistant.operation === "verify" : inquiry.intent === "verify")) ? (
-            <div className="error-card">
+            <div className={inquiry.lastError.startsWith("已停止") ? "stopped-card" : "error-card"}>
               <CircleAlert size={16} />
-              <div><strong>{inquiry.intent === "verify" ? "查找失败" : "本轮未完成"}</strong><p>{inquiry.lastError}</p></div>
+              <div><strong>{inquiry.lastError.startsWith("已停止") ? "你已停止生成" : inquiry.intent === "verify" ? "查找失败" : "请求失败"}</strong><p>{inquiry.lastError}</p></div>
             </div>
           ) : null}
         </div>
@@ -1310,7 +1320,7 @@ export function AssistantMessage({ message, verification = false, entity = false
         <div className="demo-answer-label"><Info size={12} /> 演示回答 · 未调用真实模型</div>
       ) : null}
       {message.completion === "provisional" && !message.verification ? <p className="provisional-note" role="status">正在生成，内容尚未完成{message.operation === "verify" || message.operation === "entity" || isWebExplanation ? "；来源与结论尚未核对" : ""}。</p> : null}
-      {message.completion === "interrupted" ? <p className="no-source-note">本轮中断，未收到最终结果。</p> : null}
+      {message.completion === "interrupted" && !failure ? <p className="no-source-note">本轮中断，未收到最终结果。</p> : null}
       {message.contextNotice ? <p className="document-context-note">{message.contextNotice}</p> : null}
       <div className="answer-markdown" dangerouslySetInnerHTML={{ __html: renderedAnswer.html }} />
       {isWebExplanation ? <CompactSources message={message} answerHtml={renderedAnswer.html} /> : null}
@@ -1330,7 +1340,7 @@ export function RequestStatus({ startedAt, hasText, progress }: { startedAt: str
   const elapsed = Math.max(0, (clock - started) / 1000);
   const searching = progress?.includes("搜索") || progress?.includes("核对");
   return <>
-    <div className="request-status"><span>{hasText ? "正在生成" : progress ?? "正在处理"}</span><time aria-label="本次请求已用时间">{elapsed.toFixed(1)}s</time></div>
+    <div className="request-status"><span>{hasText ? "已用时" : progress ?? "正在处理"}</span><time aria-label="本次请求已用时间">{elapsed.toFixed(1)}s</time></div>
     {!hasText && elapsed >= 8 ? <div className="waiting-toast" role="status">请再稍等一下，我正在{searching ? "查找资料" : "整理答案"}…</div> : null}
   </>;
 }

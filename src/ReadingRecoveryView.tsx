@@ -40,9 +40,9 @@ function InquiryPreview({inquiry,other}:{inquiry:Inquiry;other?:Inquiry}) {
     {inquiry.lastError ? <p>{inquiry.lastError}</p> : null}
   </details>;
 }
-function Difference({row}:{row:RecoveryDifference}) {
+function Difference({row,expanded=false}:{row:RecoveryDifference;expanded?:boolean}) {
   const item=row.after ?? row.before!;
-  return <details className={`recovery-difference ${row.kind}`}>
+  return <details className={`recovery-difference ${row.kind}`} open={expanded}>
     <summary><span className="difference-title">{item.anchor.quote || item.question} · {INTENT_META[item.intent].shortLabel}</span><span className="difference-kind">{row.kind==='added'?'仅已保存记录有':row.kind==='removed'?'仅保留记录有':row.kind==='same'?'内容相同':row.fields.join(' · ')}</span></summary>
     <div className="recovery-columns">{row.before?<section><h4>保留记录</h4><InquiryPreview inquiry={row.before} other={row.after}/></section>:<p>保留记录中没有这一条。</p>}{row.after?<section><h4>已保存记录</h4><InquiryPreview inquiry={row.after} other={row.before}/></section>:<p>已保存记录中没有这一条。</p>}</div>
   </details>;
@@ -70,7 +70,7 @@ export function ReadingRecoveryView({library}:{library:Library}) {
     <div className="recovery-body">
       {library.error?<p role="alert" className="library-warning">{library.error}</p>:null}
       <p className="recovery-description">{saved?describeRecoveryDifference(record.draft.workspace,saved.workspace):'当前保存记录暂时无法读取。之前的阅读内容已保留，可另存为未关联原文件的条目。'}</p>
-      {diff && (diff.counts.changed || diff.counts.removed)?<details className="recovery-needed-details"><summary>查看这 {diff.counts.changed+diff.counts.removed} 处差异</summary>{diff.rows.filter(r=>r.kind==='changed'||r.kind==='removed').map(row=><Difference key={row.id} row={row}/>)}</details>:null}
+      {diff && (diff.counts.changed || diff.counts.removed)?<details className="recovery-needed-details" open={diff.counts.changed+diff.counts.removed===1}><summary>查看这 {diff.counts.changed+diff.counts.removed} 处差异</summary>{diff.rows.filter(r=>r.kind==='changed'||r.kind==='removed').map(row=><Difference key={row.id} row={row} expanded={diff.counts.changed+diff.counts.removed===1}/>)}</details>:null}
       {diff?.originalChanged?<details className="recovery-needed-details"><summary>查看不同的原文</summary><div className="recovery-columns">{[{workspace:record.draft.workspace,label:'之前保留的原文'},{workspace:saved!.workspace,label:'当前保存的原文'}].map(({workspace,label})=><section key={label}><h3>{label}</h3>{workspace.document.kind==='pdf'?<Suspense fallback={<p>正在加载原页…</p>}><PdfReader document={workspace.document} entryId={record.entryId} inquiries={workspace.inquiries} readOnly/></Suspense>:<Markdown text={workspace.document.markdown}/>}</section>)}</div></details>:null}
     </div>
     <footer className="recovery-footer"><p>{separate?'选择之前记录会另存一份，原文件保持不变。':'选择后继续阅读，另一份记录会安全保留。'}</p><div>

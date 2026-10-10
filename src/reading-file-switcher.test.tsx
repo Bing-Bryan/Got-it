@@ -26,7 +26,7 @@ it('keeps ten files in a dismissible popup with stable ordering across switches'
   expect(host.textContent).toContain('复制失败，请选中路径手动复制');
   const order=()=>[...host.querySelectorAll('.library-open')].map(e=>e.textContent);
   expect(order()).toEqual(entries.map(e=>e.filename));
-  expect(host.querySelector('.library-path-tip, [title]')).toBeNull();
+  expect(host.querySelector('.library-path-tip')).toBeNull();expect(host.querySelector('.library-current')?.getAttribute('title')).toBe('文章1.md');
   await act(async()=>(host.querySelectorAll('.library-open')[2] as HTMLElement).click());
   expect(open).toHaveBeenCalledWith('2');expect(host.querySelector('.library-items')).toBeNull();
   library.list.entries.reverse();
