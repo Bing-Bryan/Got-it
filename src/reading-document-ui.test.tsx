@@ -114,7 +114,7 @@ it.each(["failure", "stop"])("keeps source lookup visibly unfinished after %s, i
   else stream.mockImplementation(() => new Promise(() => {}));
   await click('.verify-again-action');
   if (mode === "stop") await click('.stop-action');
-  expect(host.querySelector('.thread-messages > .assistant-message .verification-conclusion')?.textContent).toBe('本次查找已中断');
+  expect(host.querySelector('.thread-messages > .assistant-message .verification-conclusion')?.textContent).toBe('本次查找已中断。');
   expect(host.querySelector('.empty-sources')).toBeNull();
   expect(host.querySelector('.inquiry-actions .primary-action')).toBeNull();
   expect((host.querySelector('.verify-again-action') as HTMLButtonElement).disabled).toBe(false);
@@ -122,6 +122,6 @@ it.each(["failure", "stop"])("keeps source lookup visibly unfinished after %s, i
   expect(stored().inquiries[0].status).not.toBe('understood');
   expect(stored().inquiries[0].messages.at(-1)?.completion).toBe('interrupted');
   await click('.category-open');
-  expect(host.querySelector('.thread-messages > .assistant-message .verification-conclusion')?.textContent).toBe('本次查找已中断');
+  expect(host.querySelector('.thread-messages > .assistant-message .verification-conclusion')?.textContent).toBe('本次查找已中断。');
   expect(host.querySelector('.inquiry-actions .primary-action')).toBeNull();
 });

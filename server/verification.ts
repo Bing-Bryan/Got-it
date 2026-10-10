@@ -1,4 +1,5 @@
 import type { InquiryRequest, InquiryResponse, Verification } from "../src/types";
+import { lacksReadingBasis, sourceLimitations } from "../src/lib/source-reading";
 import { canonicalUrl, copyVerification, legacyEvidence, rankSources } from "../src/lib/verification";
 
 export function isVerification(request: InquiryRequest): boolean { return (request.operation ?? (request.intent === "verify" ? "verify" : "explain")) === "verify"; }
@@ -6,6 +7,7 @@ export function normalizeVerification(value: unknown, request: InquiryRequest, r
   const v = copyVerification(value, response.sources) ?? copyVerification({}, [])!;
   return { ...v, round: request.round ?? 1, scope: request.scope ?? "initial", parentMessageId: request.parentMessageId, completion: "provisional" };
 }
+
 /** Never infer claim support from a matching quotation alone. */
 export function reconcile(response: InquiryResponse, final: boolean): InquiryResponse {
   if (!response.verification) return response;
@@ -24,10 +26,11 @@ export function reconcile(response: InquiryResponse, final: boolean): InquiryRes
   if (v.verdict === "supported" && (!searchConfirmed || !v.claims.length || !v.claims.every(c => c.verdict === "supported"))) { v.verdict = "partial"; downgraded = true; }
   if (v.verdict === "conflicting" && !v.claims.some(c => c.verdict === "conflicting")) { v.verdict = "insufficient"; downgraded = true; }
   if (!searchConfirmed) { v.verdict = "incomplete"; downgraded = true; }
+  if (final && lacksReadingBasis(v, sources)) downgraded = true;
   if (downgraded) {
-    v.summary = v.verdict === "incomplete" ? "未联网核查或未能确认搜索成功，本轮查证未完成。" : "现有材料不足以确认原句的完整结论。";
-    v.reason = !searchConfirmed ? "未确认成功搜索；不能把模型分析当作已完成查证。" : "部分子主张缺少范围直接匹配、可追溯且已核对的依据；相关背景或转载不能替代原句结论。";
-    v.readingAdvice = "保留原句的不确定性；不要直接作为已确认事实引用，也不能据此认定整句错误。";
+    v.summary = !searchConfirmed ? "现有记录无法确认本次已执行搜索。" : sources.length ? "已保留参考资料，但不足以确认原句的完整结论。" : "本次没有定位到可对应的出处。";
+    v.reason = !searchConfirmed ? "这不等于搜索后没有结果；已有材料仍可查看。" : sourceLimitations(sources, v);
+    v.readingAdvice = "上述限制不代表原文错误，也不能把原句作为已确认事实引用。";
   }
   if (!final && v.verdict === "supported") {
     v.summary = "初步材料可能支持原句，引用文字仍在核对中。";

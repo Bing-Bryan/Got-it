@@ -1269,7 +1269,7 @@ function InquiryPanel({
           {inquiry.lastError && !(latestAssistant && (latestAssistant.operation ? latestAssistant.operation === "verify" : inquiry.intent === "verify")) ? (
             <div className="error-card">
               <CircleAlert size={16} />
-              <div><strong>本轮未完成</strong><p>{inquiry.lastError}</p></div>
+              <div><strong>{inquiry.intent === "verify" ? "查找失败" : "本轮未完成"}</strong><p>{inquiry.lastError}</p></div>
             </div>
           ) : null}
         </div>

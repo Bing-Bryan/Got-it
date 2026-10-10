@@ -264,7 +264,7 @@ it.each(['incomplete','interrupted','failed'] as const)('leaving unfinished sour
  expect(host.querySelector('.primary-action')).toBeNull();
  await click('.return-to-list');
  expect(testWorkspace().inquiries[0]).toEqual(before);
- expect(host.querySelector('.category-items')?.textContent).toContain('未完成');
+ expect(host.querySelector('.category-items')?.textContent).toContain(state==='interrupted'?'已中断':state==='failed'?'查找失败':'查看查找记录');
  await click('.category-open');expect(host.querySelector('.primary-action')).toBeNull();
  expect(stream).not.toHaveBeenCalled();
  if(state==='incomplete'){expect(host.querySelector('.verify-again-action')).toBeNull();return;}
@@ -277,7 +277,7 @@ it('completed verification with insufficient evidence returns without changing l
  inquiry.messages[0].search={status:'executed',completedSearches:1,failedSearches:0};
  await mount();const before=structuredClone(testWorkspace().inquiries[0]);
  await click('.return-to-list');expect(testWorkspace().inquiries[0]).toEqual(before);
- expect(host.querySelector('.category-items')?.textContent).toContain('已有结果');expect(stream).not.toHaveBeenCalled();
+ expect(host.querySelector('.category-items')?.textContent).toContain('暂未找到参考资料');expect(stream).not.toHaveBeenCalled();
  await click('.category-open');expect(host.querySelector('.primary-action')).toBeNull();
 });
 

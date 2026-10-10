@@ -2055,7 +2055,7 @@ a:focus-visible {
 .verification-summary small { color: #69716d; }
 .verification-brief { padding: 0; }
 .verification-brief .verification-conclusion { font-size: 15px; font-weight: 650; line-height: 1.65; margin: 0 0 8px; color: var(--ink); }
-.verification-brief .verification-limitation { font-size: 13px; color: #596159; line-height: 1.75; margin: 0; }
+.verification-brief .verification-limitation { font-size: 15px; color: #596159; line-height: 1.75; margin: 0; }
 .compact-sources { margin-top: 16px; padding-top: 12px; }
 .compact-sources .source-evidence-card { padding: 12px; }
 .compact-sources .source-evidence-heading { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 8px; }
@@ -2063,8 +2063,7 @@ a:focus-visible {
 .source-evidence-heading strong span { font-weight: 400; color: #69716d; }
 .source-evidence-heading > a { white-space: nowrap; font-size: 12px; }
 .source-brief { font-size: 13px; line-height: 1.7; margin: 6px 0; color: #4b515c; overflow-wrap: anywhere; }
-.source-full-details > summary, .verification-record > summary { font-size: 12px; color: #69716d; cursor: pointer; padding: 6px 0; }
-.source-full-details[open] > summary { margin-bottom: 8px; }
+.verification-record > summary { font-size: 12px; color: #69716d; cursor: pointer; padding: 6px 0; }
 .verification-record { margin-top: 10px; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 .empty-sources { font-size: 13px; color: #69716d; }
 .provisional-note, .round-change { padding: 9px 11px; background: #f7f2df; border-radius: 7px; }
@@ -2104,7 +2103,7 @@ a:focus-visible {
 .category-heading { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: #676d7a; }
 .category-open { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; padding: 14px 12px; background: transparent; border: 1px solid transparent; border-bottom-color: var(--line); border-radius: 6px; color: #30343d; font-size: 14px; line-height: 1.6; }
 .category-open > span { overflow-wrap: anywhere; min-width: 0; }
-.category-open > small { white-space: nowrap; color: #777d8b; }
+.category-open > small { white-space: normal; flex: 0 0 auto; max-width: 9em; text-align: right; color: #777d8b; }
 .category-open[aria-current="true"] { background: #efedff; border-color: #b9b3ff; }
 .category-items > p { font-size: 13px; line-height: 1.7; color: #777d8b; }
 .anchor-requests { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 20px; }
@@ -2626,3 +2625,15 @@ a:focus-visible {
 .reader-adjustment-layer .reading-adjustment-fields { max-width: calc(100cqw - var(--reader-adjustment-inset) - 12px); }
 /* Bridge the visual gap so a slow pointer can reach the slider. */
 .reading-adjustment.is-open::after { content: ''; position: absolute; top: 100%; right: 0; width: 260px; max-width: calc(100cqw - var(--reader-adjustment-inset, 12px) - 12px); height: 8px; }
+
+/* Source excerpts remain visible beside the reading; assessment metadata stays in storage. */
+.source-reading-card .source-evidence-heading strong { color: #858a98; font-size: 12px; font-weight: 500; }
+.source-card-title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.source-card-title .source-brief { min-width: 0; font-size: 14px; font-weight: 600; }
+.source-card-title > a { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; white-space: nowrap; font-size: 12px; }
+.source-card-title > small { font-size: 12px; color: #737986; }
+.source-reading-card .source-full-details { margin-top: 8px; }
+.source-reading-status { display: flex; align-items: baseline; gap: 8px; }
+.source-reading-card .excerpt-label { display: inline-block; flex-shrink: 0; }
+.source-reading-card blockquote { font-size: 14px; margin: 10px 0; }
+.source-reading-boundary { min-width: 0; overflow-wrap: anywhere; color: #737986; font-size: 12px; line-height: 1.7; margin: 0; }

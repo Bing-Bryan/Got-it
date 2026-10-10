@@ -1,5 +1,5 @@
 import type { Anchor, Inquiry, InquiryIntent, Workspace } from "../types";
-import { isVerificationUnfinished } from "./learning";
+import { safeSourceUrl } from "./evidence";
 export function sameAnchor(a: Anchor, b: Anchor): boolean {
   if (a.scope === "document" || b.scope === "document") return a.scope === b.scope && a.documentId === b.documentId;
   if (!!a.pdf !== !!b.pdf) return false;
@@ -22,14 +22,23 @@ export function copyActiveTab(value: unknown, inquiries: Inquiry[]): Workspace["
 export function inquiryCategoryStatus(inquiry: Inquiry): string {
   const action = inquiry.intent === "verify" ? "查找" : inquiry.intent === "ask" ? "回答" : "解释";
   const latest = [...inquiry.messages].reverse().find(m => m.role === 'assistant');
+  if (inquiry.intent === 'verify') {
+    if (inquiry.status === 'answering') return '查找中';
+    if (latest?.mode === 'demo') return '示例回答';
+    const hasSources = latest?.sources?.some(source => safeSourceUrl(source.url));
+    const stopped = latest?.completion === 'interrupted' || latest?.verification?.completion === 'interrupted';
+    const failed = !!inquiry.lastError || latest?.search?.status === 'failed';
+    const exception = stopped ? '已中断' : failed ? '查找失败' : '';
+    if (exception) return hasSources ? `有参考资料 · ${exception}` : exception;
+    if (hasSources) return '有参考资料';
+    const searched = latest?.search?.status === 'executed' && latest.completion === 'complete'
+      && latest.verification?.completion === 'complete' && latest.verification.verdict !== 'incomplete';
+    return searched ? '暂未找到参考资料' : '查看查找记录';
+  }
   if (inquiry.status === 'answering') return `${action}中`;
   if (inquiry.lastError || latest?.search?.status === 'failed' || latest?.completion === 'interrupted' || latest?.completion === 'provisional') return '未完成';
   if (!latest?.content.trim()) return `待${action}`;
   if (latest.mode === 'demo') return '示例回答';
-  if (inquiry.intent === 'verify') {
-    if (latest.search?.status !== 'executed' || isVerificationUnfinished(inquiry)) return '未完成';
-    return '已有结果';
-  }
   if (latest.completion !== 'complete') return '历史回答';
   return `已有${action}`;
 }

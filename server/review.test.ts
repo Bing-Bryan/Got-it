@@ -19,12 +19,15 @@ function response(sources = [source]): InquiryResponse { return {...normalizeCod
 
 describe('independent evidence judgments',()=>{
  it('keeps high quality background first without replacing the industry conclusion',()=>{
-  const result = reconcile(response([{...source,excerptKind:'quote',retrievalStatus:'matched'}]),true);
+  const candidate=response();candidate.sources=[{...source,excerptKind:'quote',retrievalStatus:'matched',excerpt:source.snippet!}];
+  const result = reconcile(candidate,true);
   expect(result.verification?.verdict).toBe('partial');
   expect(result.verification?.claims.map(c=>c.verdict)).toEqual(['partial','insufficient']);
   expect(result.answer).not.toContain('可直接引用');
   expect(result.verification?.summary).not.toContain('已确认行业');
   expect(result.sources[0].reliability).toBe('strong');
+  expect(result.verification?.reason).toContain('18–25岁');
+  expect(result.verification?.reason).toContain('不能代表18–34岁整个行业');
  });
  it('requires every claim and original non-secondary direct traceable evidence for support',()=>{
   const direct = {...source,applicability:'direct' as const,excerptKind:'quote' as const,retrievalStatus:'matched' as const};
@@ -108,6 +111,7 @@ describe('bounded streaming execution',()=>{
   calls.pop();
   await service.answer({...request,scope:'expanded',previous:{verification:response().verification!,sources:[source]}});
   expect(calls[1].at(-1)).toContain('最多输出 5');expect(calls[1].at(-1)).toContain('前轮结果与缺口');
+  expect(calls[1].at(-1)).toContain('一小段');expect(calls[1].at(-1)).toContain('不为找到源头自动追加轮次');
   for(const providerId of ['demo','deepseek'] as const)await expect(service.answer({...request,providerId,scope:'expanded'})).rejects.toMatchObject({code:'search_unavailable'});
   let count=0;await verifySources(Array.from({length:7},()=>source),async url=>{count++;return{url,text:source.snippet!};},{scope:'expanded'});expect(count).toBe(5);
  });
@@ -149,5 +153,35 @@ describe('abort and expanded budget boundaries',()=>{
 
 it.each(['年份不同','地区不同'])('does not upgrade mismatched %s background into direct support',difference=>{
  const scoped={...source,scope:difference==='年份不同'?'2023年统计':'甲地区样本',differences:[difference],applicability:'background' as const,excerptKind:'quote' as const,retrievalStatus:'matched' as const};
- const result=reconcile(response([scoped]),true);expect(result.verification?.verdict).not.toBe('supported');expect(result.sources[0].differences).toContain(difference);
+ const candidate=response([scoped]);candidate.sources=[scoped];const result=reconcile(candidate,true);expect(result.verification?.verdict).not.toBe('supported');expect(result.sources[0].differences).toContain(difference);expect(result.verification?.reason).toContain(difference);
+});
+
+it.each(['model','source'] as const)('source lookup respects total deadline during %s without late success',async stage=>{
+ let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);
+ const events:{type:string}[]=[];
+ const service=new ProviderService({codexTimeoutMs:80,modelCatalog:testModelCatalog,execFileImpl:async()=>({stdout:'Logged in',stderr:''}),codexTurnImpl:async()=>{if(stage==='model')await gate;return {raw:JSON.stringify(raw()),trace};},sourceReader:async url=>{if(stage==='source')await gate;return {url,text:source.snippet!};}});
+ try { await expect(service.answer(request,{onEvent:e=>events.push(e)})).rejects.toMatchObject({code:'codex_timeout'}); }
+ finally { release(); }
+ await new Promise(resolve=>setTimeout(resolve,30));expect(events.some(e=>e.type==='complete')).toBe(false);
+});
+
+it('does not preserve unsupported verdict prose when only an unread quote or secondary material exists',()=>{
+ const candidate=response();candidate.sources=[{...source,origin:'secondary',applicability:'direct',excerptKind:'quote',retrievalStatus:'matched'}];
+ candidate.verification!.claims=[candidate.verification!.claims[0]];
+ const checked=reconcile(candidate,true);expect(checked.answer).toContain('转述资料');expect(checked.answer).not.toContain('可直接引用');
+ candidate.sources[0].retrievalStatus='unavailable';const unread=reconcile(candidate,true);
+ expect(unread.answer).toContain('引用正文尚未核对');expect(unread.answer).not.toContain('记录的范围为');
+ const unknown=reconcile({...candidate,search:undefined},true);expect(unknown.answer).toContain('无法确认本次已执行搜索');expect(unknown.answer).not.toContain('本次没有定位到');
+});
+
+ it('rebuilds an already-partial result after body verification fails',()=>{
+ const candidate=response();candidate.sources=[{...source,retrievalStatus:'unavailable',excerptKind:'unverified'}];
+ candidate.verification={...candidate.verification!,verdict:'partial',summary:'报告已经确认原文数字',reason:'完全可信',claims:[{text:'数字',verdict:'partial',sourceIds:['s']}]};
+ const checked=reconcile(candidate,true);expect(checked.answer).not.toMatch(/已经确认|完全可信/);expect(checked.answer).toContain('引用正文尚未核对');
+ });
+
+it('rebuilds affirmative partial prose even when a secondary related quote is matched',()=>{
+ const candidate=response();candidate.sources=[{...source,origin:'secondary',relation:'related',applicability:'partial',excerptKind:'quote',retrievalStatus:'matched',scope:'2023年预测',differences:['原文没有注明年份']}];
+ candidate.verification={...candidate.verification!,verdict:'partial',summary:'报告已经确认原文数字',reason:'完全可信',readingAdvice:'可直接引用',claims:[{text:'数字',verdict:'partial',sourceIds:['s']}]};
+ const checked=reconcile(candidate,true);expect(checked.answer).not.toMatch(/已经确认|完全可信|可直接引用/);expect(checked.answer).toContain('2023年预测');expect(checked.answer).toContain('原文没有注明年份');expect(checked.answer).toContain('转述资料');
 });

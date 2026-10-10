@@ -23,7 +23,7 @@ it('never creates unsafe links and does not change stored source data',()=>{
 });
 it('retains complete source cards for verification',()=>{
  const html=renderToStaticMarkup(<AssistantMessage verification message={{...message,operation:'verify',verification:{verdict:'insufficient',summary:'资料不足',reason:'受控',readingAdvice:'保留限制',claims:[],completion:'complete',round:1,scope:'initial'}}}/>);
- expect(html).toContain('source-evidence-card');expect(html).toContain('查看详情');
+ expect(html).toContain('source-evidence-card');expect(html).not.toContain('查看详情');expect(html).toContain('未取得片段');
 });
 
 it.each(['unknown', undefined] as const)('omits generic warning for %s search without altering data', status => {

@@ -26,9 +26,11 @@ Select a term such as CAGR, a product name, or a difficult passage and choose **
 
 ### 3. Find sources for a claim
 
-Select a claim or figure, find related sources, and inspect the original pages and verification details. **Finding a link does not establish that a claim is true.** Search execution, page access, quotation checks and evidential support are separate states.
+Select a claim or figure to start one bounded lookup. Results explain the material found, its relation to the passage and specific limitations. Source cards show excerpts without expanding details. “片段已核对” means the excerpt was matched to retrieved text; “片段未核对” identifies an AI-provided quotation lead. A single “打开来源” link opens the source, with text positioning when supported. A completed lookup may have no references; failure and interruption remain explicit. **Finding a link does not establish that a claim is true.** Search execution, page access, quotation checks and evidential support are separate states.
 
 ![A related source for the market forecast around the selected CAGR](docs/images/sources.png)
+
+This screenshot predates the source-card update. See the [current behavior and validation scope](docs/updates/2026-10-10-source-reading.md).
 
 ### 4. Ask your own question
 
@@ -56,7 +58,7 @@ Select native text directly, or use **Select region** for images, scans and comp
 - Delete cards through the category’s trash control and a second confirmation. The original passage and other cards remain intact.
 - Opening a question input does not call a model. Enter sends; Shift+Enter adds a line. Stopping, timing out or failing preserves received content and allows retry.
 
-All functions currently default to **GPT-6.1 SOL / medium**. AI settings read the installed Codex model catalog; unavailable configurations are reported rather than silently replaced. Reading-time estimates are computed locally without model calls. See the [latest update and validation scope](docs/updates/2026-10-10-brand-and-reader-ui.md).
+All functions currently default to **GPT-6.1 SOL / medium**. AI settings read the installed Codex model catalog; unavailable configurations are reported rather than silently replaced. Reading-time estimates are computed locally without model calls. See the [latest update and validation scope](docs/updates/2026-10-10-source-reading.md).
 
 ## Run locally
 
