@@ -1,6 +1,8 @@
+import type { WebTranslationState, TranslationSelection } from "./lib/web-translation";
 import type { ModelConfig, ModelPreferences } from "./lib/model-routing";
 export const SCHEMA_VERSION = 2 as const;
 import type { PdfDocumentData, PdfLocation } from "./lib/pdf-data";
+import type { WebDocumentData } from "./lib/web-data";
 
 export const NEW_INQUIRY_INTENTS = ["explain", "verify", "ask"] as const;
 
@@ -43,9 +45,11 @@ interface DocumentBase {
   id: string; filename: string; importedAt: string; contentHash: string; isDemo: boolean;
 }
 export type DocumentSnapshot = (DocumentBase & { kind?: 'markdown'; markdown: string; pdf?: never })
-  | (DocumentBase & { kind: 'pdf'; pdf: PdfDocumentData; markdown?: never });
+  | (DocumentBase & { kind: 'pdf'; pdf: PdfDocumentData; markdown?: never })
+  | (DocumentBase & { kind: 'web'; markdown: string; web: WebDocumentData; pdf?: never });
 
 export interface Anchor {
+  translation?: TranslationSelection;
   scope?: "document";
   pdf?: PdfLocation;
   textVersion?: 2;
@@ -167,6 +171,9 @@ export interface Inquiry {
 }
 
 export interface Workspace {
+  webTranslation?: WebTranslationState;
+  readingSide?: "original" | "translated";
+  translationNotice?: string;
   visitedInquiryIds?: string[];
   modelDefaultsVersion?: 2 | 3 | 4;
   activeTab?: { anchorInquiryId?: string; intent: InquiryIntent };

@@ -1,0 +1,86 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { MessageSquareText, Pin, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, X, Copy, Check, Languages, MoveHorizontal, MoveDiagonal, RotateCcw, Terminal, ChevronDown, ChevronLeft, Lightbulb, ShieldCheck, BookOpen, Trash2, ArrowUp, MessageCircle, RefreshCw, ExternalLink } from 'lucide-react';
+const icon = (I, size=16, props={}) => renderToStaticMarkup(createElement(I,{size,strokeWidth:1.8,'aria-hidden':true,...props}));
+const wrap=(cls,s)=>`<div class="${cls} demo-context">${s}</div>`;
+const b=(label,cls='',attrs='')=>`<button type="button" class="${cls}" ${attrs}>${label}</button>`;
+const rows=[];
+function add(group,name,html,note=''){rows.push({group,name,html,note});}
+const nav='导航与工具栏', lib='文件与网页', know='知识贴与提问', trans='翻译', pdf='PDF 与图片', sys='设置与恢复';
+for(const [name,I] of [['展开导航',PanelLeftOpen],['关闭导航',X],['展开知识贴',PanelRightOpen],['关闭知识贴',X],['收起知识贴',PanelRightClose]])add(nav,name,b(icon(I),'icon-button',`aria-label="${name}"`));
+for(const side of ['导航','知识贴']) for(const selected of [false,true])add(nav,`${side}图钉 · ${selected?'已固定':'未固定'}`,wrap(side==='导航'?'desktop-sidebar-controls':'desktop-panel-controls',b(icon(Pin,15,{fill:selected?'currentColor':'none'}),'icon-button',`aria-pressed="${selected}" aria-label="固定${side}"`)),selected?'持续选中，不是按住态':'');
+add(nav,'Codex 模型入口',b(`${icon(Terminal)}<span>Codex</span><span class="connection-dot connected"></span>${icon(ChevronDown,14)}`,'provider-trigger','aria-expanded="false"'));
+add(nav,'Codex 入口 · 已展开',b(`${icon(Terminal)}<span>Codex</span>${icon(ChevronDown,14)}`,'provider-trigger','aria-expanded="true"'),'菜单展开状态');
+for(const [name,I,cls] of [['正文宽度',MoveHorizontal,'markdown-width-trigger'],['PDF 缩放',MoveDiagonal,'pdf-zoom-trigger']])add(nav,name,wrap('reading-adjustment',b(icon(I,18),`reading-adjustment-trigger ${cls}`)));
+for(const [name,cls] of [['恢复正文宽度','markdown-width-reset'],['恢复自动适配','pdf-zoom-reset']])add(nav,name,b(icon(RotateCcw,14),cls,`aria-label="${name}"`));
+add(lib,'添加文件',b('＋ 添加文件','library-add','aria-expanded="false"'));
+for(const label of ['本地文件','网页链接'])add(lib,label,wrap('library-add-options',b(label,'','role="menuitem"')));
+add(lib,'切换文件',b('<span>研究报告.md</span><span>›</span>','library-current','aria-expanded="false"'));
+for(const selected of [false,true])add(lib,`文件条目 · ${selected?'当前':'普通'}`,wrap(`library-item${selected?' current':''}`,b('研究报告.md','library-open',selected?'aria-current="page"':'')));
+add(lib,'复制网页链接',b(icon(Copy,14),'library-copy-url','aria-label="复制来源"'));
+add(lib,'复制本地路径',b(`<span>/文档/报告.md</span>${icon(Copy,14)}`,'library-copy-path'));
+add(lib,'链接已复制',b(icon(Check,14),'library-copy-url','aria-label="已复制"'));
+add(lib,'阅读文章',wrap('web-import-dialog',wrap('web-import-form','<button type="submit">阅读文章</button>')));
+add(lib,'查看待核对差异',wrap('library-title',b('查看待核对差异','library-recovery-link')));
+for(const [label,I] of [['解释一下',Lightbulb],['查找来源',ShieldCheck],['我的问题',BookOpen]])for(const selected of [false,true])add(know,`${label} · ${selected?'选中':'未选中'}`,wrap('inquiry-tabs',b(`${icon(I,14)}<span>${label}</span>`,'',`role="tab" data-intent="${label==='解释一下'?'explain':label==='查找来源'?'verify':'ask'}" aria-selected="${selected}"`)));
+for(const [label,I,intent]of [['解释一下',Lightbulb,'explain'],['查找来源',ShieldCheck,'verify']])add(know,`选区 · ${label}`,wrap('selection-actions',b(`${icon(I,14)}${label}`,'',`data-intent="${intent}"`)));
+add(know,'关闭选区',wrap('selection-actions',b(icon(X,14),'selection-close','aria-label="关闭选区"')));
+add(know,'选区问一问',wrap('selection-actions',b(`${icon(MessageCircle,14)}<span>问一问</span>`,'question-toggle question-input-trigger')));
+add(know,'选区返回',wrap('selection-actions',wrap('question-composer question-inline',b('返回','question-back'))));
+add(know,'选区发送',wrap('selection-actions',wrap('question-composer question-inline','<button type="submit" class="question-send" aria-label="发送问题">'+icon(ArrowUp,19)+'</button>')),'保留真实嵌套结构与圆形图标');
+add(know,'向全文提问',b('＋ 向全文提问','document-question-trigger'));
+for(const label of ['问一问','继续追问…','停止本次请求','重试','重新生成','更详细地介绍'])add(know,label,wrap('compact-actions',b(label,'secondary-action')));
+for(const label of ['取消','发送问题'])add(know,`问题输入 · ${label}`,wrap('question-composer-actions',label==='发送问题'?'<button type="submit">发送问题</button>':b(label)));
+add(know,'复制引用',wrap('source-actions',b(`${icon(Copy,12)}复制引用`)));
+add(know,'返回列表',wrap('result-navigation',b(`${icon(ChevronLeft,16)}返回`,'return-to-list')));
+add(know,'定位原文',wrap('result-navigation',b('<span>对应原文段落</span>','source-excerpt')));
+add(know,'知识贴条目',b('为什么这样设计？','category-open'));
+for(const selected of [false,true])add(know,`原文关联标签 · ${selected?'当前':'普通'}`,wrap('anchor-requests',b('我的问题','',`aria-current="${selected}"`)));
+for(const selected of [false,true])add(know,`删除模式 · ${selected?'开启':'关闭'}`,b(icon(Trash2,15),'category-delete-toggle',`aria-pressed="${selected}" aria-label="删除模式"`));
+add(know,'删除某条知识贴',b(icon(Trash2,15),'category-delete','aria-label="删除知识贴"'));
+add(know,'确认删除',b(`${icon(Check,16)}<span>确认删除</span>`,'category-delete confirming','aria-label="确认删除"'),'确认图标与文字；危险操作保留红色');
+for(const selected of [false,true])add(trans,`翻译切换 · ${selected?'译文侧':'原文侧'}`,wrap('translation-actions',b(icon(Languages,18),'translation-side-toggle',`aria-pressed="${selected}" aria-label="切换原文与译文"`)));
+for(const label of ['全文译中','继续译中','停止翻译'])add(trans,label,wrap('translation-actions',b(label)));
+for(const label of ['开始译中','取消'])add(trans,`翻译授权 · ${label}`,wrap('translation-permission',b(label)));
+for(const selected of [false,true])add(pdf,`框选内容 · ${selected?'已开启':'未开启'}`,wrap('pdf-toolbar',b(selected?'取消框选':'框选内容','pdf-select-mode',`aria-pressed="${selected}"`)));
+add(pdf,'PDF 目录项',wrap('pdf-outline',b('<span>研究方法</span><small>2</small>','outline-item pdf-outline-item')));
+add(pdf,'PDF 当前目录项',wrap('pdf-outline',b('<span>研究方法</span><small>2</small>','outline-item pdf-outline-item','aria-current="location"')));
+add(pdf,'PDF 标记入口',wrap('pdf-mark',b(icon(MessageSquareText,14),'','aria-label="查看知识贴" title="查看知识贴"')));
+for(const label of ['回到第 2 页原处','用修正文字重新回答'])add(pdf,label,wrap('pdf-source-preview',b(label)));
+add(pdf,'重载 PDF',b('重新加载 PDF','secondary-action'));
+add(pdf,'PDF 目录重试',wrap('pdf-outline-error',b('重试读取目录')));
+add(pdf,'关闭图片',wrap('web-image-dialog',b('关闭图片')));
+add(pdf,'图片放大','<img class="web-static-image" role="button" tabindex="0" width="100" height="50" alt="放大图表" src="data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect width="100" height="50" rx="5" fill="#edf0ff"/><path d="M18 36V26h12v10m10 0V18h12v18m10 0V9h12v27" fill="#5058d4"/></svg>')+'">','图片仅改变轮廓；没有禁用态');
+for(const selected of [false,true])add(sys,`模型选项 · ${selected?'当前':'普通'}`,b(`<span class="provider-option-icon">${icon(Terminal)}</span><span class="provider-option-copy"><strong>Codex</strong></span>${selected?icon(Check,15):''}`,`provider-option${selected?' active':''}`));
+add(sys,'关闭 AI 设置',b(icon(X,14),'icon-button','aria-label="关闭 AI 设置"'));
+add(sys,'刷新模型列表',wrap('model-controls',b('刷新模型列表','refresh-models')));
+for(const label of ['登录 Codex','取消本次登录','重新检查'])add(sys,label,wrap('codex-login-actions',b(label)));
+for(const label of ['关闭','使用之前记录','使用当前记录','继续当前阅读'])add(sys,`恢复记录 · ${label}`,wrap('library-state',wrap('recovery-dialog',b(label,['使用当前记录','继续当前阅读'].includes(label)?'recovery-primary':''))));
+for(const label of ['重试保存','重新连接','重新选择文件','关闭提示','找回阅读记录','重试读取','重新定位','关联原文件','使用更新后的原文'])add(sys,label,wrap('library-state',b(label)));
+add(sys,'换成我的文档',wrap('demo-document-note',b('换成我的文档')));
+for(const label of ['模型设置','历史回答','查看记录差异','查看所选内容'])add(sys,`展开项 · ${label}`,`<details class="demo-details"><summary>${label}</summary></details>`,'展开项没有禁用态');
+const css=['styles.css','pdf-reader.css','pdf-outline.css','control-states.css'].map(n=>readFileSync('src/'+n,'utf8')).join('\n');
+const data=JSON.stringify(rows).replaceAll('<','\\u003c');
+const html=`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Got it · 按钮状态总览</title><style>${css}</style><style>
+html,body {height:auto;overflow:visible;background:#f7f8fc;color:#242838}body{margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}*{box-sizing:border-box}
+.showcase{max-width:1500px;margin:auto;padding:40px 28px 80px}.mast{margin-bottom:26px}.eyebrow{font-size:12px;letter-spacing:.12em;color:#5058d4;font-weight:650}h1{font-size:32px;letter-spacing:-.04em;margin:10px 0} .intro{font-size:14px;color:#626874;line-height:1.8;margin:0;max-width:850px}.version{font-size:12px;color:#7a8190;margin:14px 0}
+.filters{display:flex;gap:10px;flex-wrap:wrap;margin:24px 0 16px}.filters input,.filters select{font:inherit;font-size:14px;background:white;border:1px solid #d9dade;border-radius:8px;padding:10px 12px}.filters input{width:280px;max-width:100%}.stats{font-size:12px;color:#626874;margin-left:auto;align-self:center}.group{margin:30px 0 0}.group h2{font-size:18px;margin:0 0 14px;letter-spacing:-.02em}.matrix{border:1px solid #e2e5ee;border-radius:12px;background:white;overflow:hidden}.matrix-head,.sample-row{display:grid;grid-template-columns:200px repeat(5,minmax(0,1fr));}.matrix-head{background:#f4f5fa;border-bottom:1px solid #e5e6ed;color:#626874;font-size:12px}.matrix-head>div{padding:13px 16px}.sample-row{border-bottom:1px solid #eceef4;min-height:90px;align-items:stretch}.sample-row:last-child{border-bottom:0}.row-title{padding:20px 16px;font-size:13px;line-height:1.6;font-weight:600}.row-title small{display:block;font-size:11px;font-weight:400;color:#7a8190;line-height:1.55;margin-top:5px}.cell{min-width:0;padding:20px 12px;display:flex;align-items:center;justify-content:center;border-left:1px solid #f0f1f5;position:relative}.cell.live{background:#fafbff}.cell-label{display:none}.na{color:#969baa;font-size:12px}.empty{padding:32px;color:#626874}.tip{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#252a3d;color:white;border-radius:9px;padding:12px 20px;font-size:13px;z-index:100;box-shadow:0 8px 30px #2223}.tip[hidden]{display:none}
+/* Layout isolation only: preserve real ancestry and the button's own sizing. */
+.demo-context{position:static!important;inset:auto!important;display:flex!important;align-items:center!important;justify-content:center!important;width:auto!important;min-width:0!important;max-width:100%!important;height:auto!important;min-height:0!important;max-height:none!important;flex:0 1 auto!important;padding:0!important;margin:0!important;border:0!important;box-shadow:none!important;background:transparent!important;overflow:visible!important;transform:none!important;gap:5px!important}.demo-context.pdf-mark{pointer-events:auto!important}.demo-context.pdf-mark button{position:static!important}.demo-context.inquiry-tabs{width:100%!important}.demo-context.inquiry-tabs button{min-height:38px}.demo-context.pdf-toolbar button{height:auto;min-height:26px}.demo-context .category-delete,.demo-context .category-delete-toggle{flex-shrink:0}.demo-details{font-size:12px}.demo-details summary{list-style-position:inside;white-space:nowrap;padding:5px 4px}.demo-details[open]::after{content:'展开示意';display:block;font-size:11px;color:#9095a0;margin-top:5px}
+/* Pinned examples use the same state tokens as the app; the live column uses actual pseudostates. */
+[data-preview-state]{transition:none!important;cursor:default!important;outline:0!important;color:var(--control-fg)!important;background:var(--control-bg)!important;border-color:var(--control-border)!important;text-decoration:none!important}
+[data-preview-state=hover]{color:var(--control-hover-fg)!important;background:var(--control-hover-bg)!important;border-color:var(--control-hover-border)!important}
+[data-preview-state=active]{color:var(--control-active-fg)!important;background:var(--control-active-bg)!important;border-color:var(--control-active-border)!important}
+[data-preview-state=disabled]{color:var(--control-disabled-fg)!important;background:var(--control-disabled-bg)!important;border-color:var(--control-disabled-border)!important;box-shadow:none!important;opacity:1!important;cursor:not-allowed!important}
+img[data-preview-state]{background:transparent!important;outline:2px solid transparent!important;outline-offset:4px!important}img[data-preview-state=hover]{outline-color:var(--blue-line)!important}img[data-preview-state=active]{outline-color:var(--blue)!important}
+@media(max-width:1100px){.matrix-head,.sample-row{grid-template-columns:160px repeat(5,minmax(0,1fr))}.cell{padding:16px 7px}.showcase{padding:28px 16px 60px}}
+@media(max-width:850px){.matrix-head{display:none}.sample-row{grid-template-columns:repeat(2,minmax(0,1fr));padding:14px 0}.row-title{grid-column:1/-1;padding:4px 16px 12px}.cell{min-height:90px;flex-direction:column;gap:12px;border-left:0}.cell-label{display:block;font-size:11px;color:#858b99}.cell.live{grid-column:1/-1}.stats{margin-left:0}h1{font-size:27px}}
+</style><main class="showcase"><header class="mast"><div class="eyebrow">GOT IT / UI REFERENCE</div><h1>每一个按钮，每一种状态。</h1><p class="intro">并排比较默认、悬停、按住和禁用。最右侧可亲自悬停、按住或用 Tab 聚焦。图钉、翻译等持续选中状态另起一行展示。</p><p class="version">2026-10-12 · UI 评审改进版 · 单文件，离线可打开</p><p class="intro">这是按钮状态参考，容器排布不等同于产品页面；不会登录、删除、保存文件或调用模型。禁用列展示样式，不代表每个按钮都有实际禁用条件；展开项和图片的禁用态标为不适用。</p></header><div class="filters"><input id="search" type="search" placeholder="搜索按钮，例如：翻译、恢复" aria-label="搜索按钮"><select id="group" aria-label="筛选分组"><option value="">全部分组</option></select><span class="stats" id="stats"></span></div><div id="catalog"></div></main><div class="tip" id="tip" role="status" hidden></div><script>
+const rows=${data};const groups=[...new Set(rows.map(r=>r.group))];const labels=['默认 Default','悬停 Hover','按住 Active','禁用 Disabled','亲自试一试'];const states=['default','hover','active','disabled','live'];
+const groupSelect=document.querySelector('#group');for(const group of groups){const o=document.createElement('option');o.value=group;o.textContent=group;groupSelect.append(o)}
+function render(){const query=document.querySelector('#search').value.trim().toLowerCase(),category=groupSelect.value;const found=rows.filter(r=>(!category||r.group===category)&&(!query||(r.group+' '+r.name+' '+r.note).toLowerCase().includes(query)));document.querySelector('#stats').textContent=found.length+' / '+rows.length+' 个按钮样例';const root=document.querySelector('#catalog');root.replaceChildren();for(const group of groups){const items=found.filter(r=>r.group===group);if(!items.length)continue;const section=document.createElement('section');section.className='group';const title=document.createElement('h2');title.textContent=group;section.append(title);const matrix=document.createElement('div');matrix.className='matrix';const head=document.createElement('div');head.className='matrix-head';for(const text of ['按钮 / 用途',...labels]){const d=document.createElement('div');d.textContent=text;head.append(d)}matrix.append(head);for(const item of items){const row=document.createElement('div');row.className='sample-row';const name=document.createElement('div');name.className='row-title';name.textContent=item.name;if(item.note){const small=document.createElement('small');small.textContent=item.note;name.append(small)}row.append(name);states.forEach((state,index)=>{const cell=document.createElement('div');cell.className='cell'+(state==='live'?' live':'');const lab=document.createElement('span');lab.className='cell-label';lab.textContent=labels[index];cell.append(lab);const preview=document.createElement('div');preview.className='preview';preview.innerHTML=item.html;const target=preview.querySelector('button,summary,img[role=button]');if(state==='disabled'&&target.tagName!=='BUTTON'){const na=document.createElement('span');na.className='na';na.textContent='不适用';cell.append(na)}else{if(state!=='live'){target.dataset.previewState=state;target.tabIndex=-1;if(state==='disabled')target.disabled=true}else{target.dataset.live='true';target.setAttribute('aria-label',item.name+'（视觉预览）')}cell.append(preview)}row.append(cell)});matrix.append(row)}section.append(matrix);root.append(section)}if(!found.length){const empty=document.createElement('div');empty.className='empty';empty.textContent='没有匹配的按钮';root.append(empty)}}
+document.querySelector('#search').addEventListener('input',render);groupSelect.addEventListener('change',render);let timer;document.querySelector('#catalog').addEventListener('click',e=>{const target=e.target.closest('button,summary,img[role=button]');if(!target)return;if(!target.dataset.live){e.preventDefault();return}if(target.tagName!=='SUMMARY')e.preventDefault();const tip=document.querySelector('#tip');tip.textContent='仅预览反馈，不执行实际操作';tip.hidden=false;clearTimeout(timer);timer=setTimeout(()=>tip.hidden=true,1400)});render();
+</script></html>`;
+writeFileSync('artifacts/button-states-20261012/button-showcase.html',html);
+console.log(`Generated ${rows.length} examples / ${rows.length*5} cells`);

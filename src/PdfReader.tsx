@@ -1,3 +1,4 @@
+import { MessageSquareText } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { pdfReadingMinutes } from "./lib/pdf-reading-time";
 import { usePdfZoom } from "./usePdfZoom";
@@ -264,7 +265,7 @@ function PdfSheet(props:SheetProps) {
       <div className="pdf-page-content" style={{width:viewport?.width??width,height:viewport?.height??width*ratio,transform:`scale(${viewport?width/viewport.width:1})`}}>
       {near?<><canvas ref={canvas} aria-label={`PDF 第 ${page} 页`} /><div ref={native} className="pdf-native textLayer"/></>:<div className="pdf-page-placeholder">第 {page} 页</div>}
       <div ref={ocrLayer} className="pdf-ocr">{near&&viewport?ocr.map(o=><div key={o.id} data-ocr-id={o.id}>{o.data.lines.map((l,n)=>{const r=screenRect(viewport,l.rect);return <span key={n} data-line={n} data-width={r[2]-r[0]} style={{left:r[0],top:r[1],fontSize:r[3]-r[1]}}>{l.text}{'\n'}</span>;})}</div>):null}</div>
-      {near&&viewport?marks.flatMap(i=>i.anchor.pdf!.rects.map((r,n)=><div key={i.id+'-'+n} data-pdf-inquiry={i.id} className={`pdf-mark ${i.anchor.pdf!.kind} ${props.activeId===i.id?'active':''}`} style={rectStyle(screenRect(viewport,r))}>{n===0?<button type="button" aria-label={`查看知识贴：${i.anchor.quote}`} onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();props.onActivate?.(i.id);}}>↗</button>:null}</div>)):null}
+      {near&&viewport?marks.flatMap(i=>i.anchor.pdf!.rects.map((r,n)=><div key={i.id+'-'+n} data-pdf-inquiry={i.id} className={`pdf-mark ${i.anchor.pdf!.kind} ${props.activeId===i.id?'active':''}`} style={rectStyle(screenRect(viewport,r))}>{n===0?<button type="button" title="查看知识贴" aria-label={`查看知识贴：${i.anchor.quote}`} onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();props.onActivate?.(i.id);}}><MessageSquareText size={14} aria-hidden="true" /></button>:null}</div>)):null}
       {box&&viewport?<div className="pdf-draft-box" style={rectStyle(screenRect(viewport,box))}/>:null}
       </div>
     </div></div>

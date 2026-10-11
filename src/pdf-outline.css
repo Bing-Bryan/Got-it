@@ -1,3 +1,4 @@
+@layer reader-base {
 .pdf-outline-note {font-size:11px;color:var(--text-muted,#777);line-height:1.5;margin:8px 0;}
 .pdf-outline-error button {border:1px solid var(--border,#ddd);background:var(--surface,#fff);border-radius:6px;padding:5px 8px;font-size:11px;color:inherit;cursor:pointer;}
 .pdf-outline button:disabled {opacity:.5;cursor:default;}
@@ -9,3 +10,4 @@
 .pdf-outline-item { align-items: flex-start; }
 .pdf-outline-item span { overflow: hidden; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .pdf-outline-item small { padding-top: 2px; min-width: 16px; text-align: right; }
+}

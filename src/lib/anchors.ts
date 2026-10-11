@@ -477,12 +477,18 @@ export function applyInquiryHighlights(
       onMissing?.(inquiry);
       continue;
     }
-    const resolution = resolveAnchorDetailed(block.textContent ?? "", inquiry.anchor);
+    const translatedView = article.dataset.readingSide === "translated";
+    const translated = inquiry.anchor.translation;
+    if (translatedView && translated && (translated.translationId !== article.dataset.translationId || String(translated.version ?? 1) !== article.dataset.translationVersion)) continue;
+    const projected = translatedView && translated?.translationId === article.dataset.translationId ? {...inquiry.anchor,...translated} : inquiry.anchor;
+    // A source-only inquiry has a proven paragraph relationship in the translated view,
+    // but no translated word offsets. Mark its block without changing the saved anchor.
+    const resolution = translatedView && !translated ? {start:0,end:(block.textContent ?? "").length} : resolveAnchorDetailed(block.textContent ?? "", projected);
     if (!resolution) {
-      onMissing?.(inquiry);
+      if (!translatedView) onMissing?.(inquiry);
       continue;
     }
-    onResolved?.(inquiry);
+    if (!translatedView) onResolved?.(inquiry);
     const start = boundaryForOffset(block, resolution.start);
     const end = boundaryForOffset(block, resolution.end);
     if (!start || !end) {

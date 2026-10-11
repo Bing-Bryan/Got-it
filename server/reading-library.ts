@@ -1,5 +1,8 @@
 import { hasRecoveryDifference } from "../src/lib/recovery-diff";
 import { PdfResources } from "./pdf-resources";
+import { WebResources } from "./web-resources";
+import { webUrl, WebError } from "./web-fetch";
+import type { ValidImage } from "./web-media";
 import { MAX_PDF_BYTES } from "../src/lib/pdf-data";
 import { createInitialWorkspace } from "../src/sample";
 import { createHash, randomUUID } from "node:crypto";
@@ -38,7 +41,8 @@ export class ReadingLibrary {
   private selections = new Map<string, Candidate>();
   private choosing = false;
   readonly resources: PdfResources;
-  constructor(public readonly dir = defaultLibraryDir(), private picker: FilePicker = pickLocalFile, private clock = Date.now) { this.resources = new PdfResources(join(dir, "resources")); }
+  readonly webResources: WebResources;
+  constructor(public readonly dir = defaultLibraryDir(), private picker: FilePicker = pickLocalFile, private clock = Date.now) { this.resources = new PdfResources(join(dir, "resources")); this.webResources = new WebResources(join(dir,"web-resources")); }
   private serialize<T>(work: () => Promise<T>): Promise<T> {
     const next = this.queue.then(work); this.queue = next.catch(() => {}); return next;
   }
@@ -67,6 +71,7 @@ export class ReadingLibrary {
     await this.atomic(join(dir, name), JSON.stringify(entry));
     await this.atomic(join(dir, "CURRENT"), name);
     await this.syncDirectory(dir);
+    await this.authorizeWeb(entry);
     // Keep the current and previous committed payload for interrupted-write recovery.
     for (const file of await readdir(dir)) if (file !== name && file !== previous && file !== "CURRENT" && (/\.json$/.test(file) || file.endsWith(".tmp"))) await rm(join(dir, file), { force: true }).catch(() => {});
     return entry;
@@ -89,7 +94,7 @@ export class ReadingLibrary {
     for (const id of ids.filter(uid)) { try { entries.push(await this.get(id)); } catch { warnings.push("有一份阅读记录无法读取，其他材料不受影响。"); } }
     let activeId: string | null = null;
     try { const value = JSON.parse(await readFile(join(this.dir, "active.json"), "utf8")); if (entries.some(e => e.id === value.id)) activeId = value.id; } catch { /* optional last view */ }
-    return { entries: entries.sort((a,b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt)).map(e => ({ id: e.id, version: e.version, filename: e.workspace.document.filename, path: e.source?.path ?? null, historyCount: e.history.length, lastOpenedAt: e.lastOpenedAt })), activeId, warnings, nativePicker: process.platform === "darwin" };
+    return { entries: entries.sort((a,b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt)).map(e => ({ id: e.id, version: e.version, filename: e.workspace.document.filename, path: e.source?.path ?? null, historyCount: e.history.length, ...(e.workspace.document.kind === "web" ? {kind:"web" as const,url:e.workspace.document.web.originalUrl,importedAt:e.workspace.document.importedAt} : {}), lastOpenedAt: e.lastOpenedAt })), activeId, warnings, nativePicker: process.platform === "darwin" };
   }
   async activate(id: string) {
     return this.serialize(async () => {
@@ -152,6 +157,7 @@ export class ReadingLibrary {
     if (typeof creationKey !== "string" || !/^[\w:-]{1,160}$/.test(creationKey)) fail("无效的添加请求。");
     const workspace = safeWorkspace(value);
     if (workspace.document.isDemo) fail("示例无需加入阅读列表。");
+    if (workspace.document.kind === "web") fail("网页须先读取并确认服务器预览。",400,"web_candidate_required");
     return this.serialize(async () => {
       const list = await this.list();
       for (const summary of list.entries) { const existing = await this.get(summary.id); if (existing.creationKey === creationKey) return existing; }
@@ -181,8 +187,75 @@ export class ReadingLibrary {
       const e = await this.get(id); this.version(e, expectedVersion);
       if (e.revisionId !== revisionId || e.workspace.document.id !== workspace.document.id || e.workspace.document.kind !== workspace.document.kind || e.workspace.document.contentHash !== workspace.document.contentHash || e.workspace.document.markdown !== workspace.document.markdown) fail("原文版本已变化，请重新打开。", 409);
       await this.resources.validate(id,workspace);
+      await this.validateWeb(id,workspace);
       e.workspace = workspace; e.position = position(view); e.version++; e.updatedAt = now(); return this.commit(e);
     });
+  }
+  async findWeb(input: string): Promise<LibraryEntry | null> {
+    const url=webUrl(input).href;
+    for(const summary of (await this.list()).entries){const e=await this.get(summary.id);if(e.workspace.document.kind==="web" && [e.workspace.document.web.originalUrl,e.workspace.document.web.finalUrl].some(u=>webUrl(u).href===url))return e;}
+    return null;
+  }
+  async addWeb(value: Workspace, resources: Map<string,ValidImage>, creationKey: string, beforeCommit:()=>void = ()=>{}) {
+    if(typeof creationKey!=="string"||!/^[-\w:]{1,160}$/.test(creationKey))fail("无效的添加请求。");
+    const workspace=safeWorkspace(value);if(workspace.document.kind!=="web"||workspace.inquiries.length)return fail("网页预览无效。");
+    const document=workspace.document;
+    return this.serialize(async()=>{
+      const existing=await this.findWeb(document.web.originalUrl) ?? await this.findWeb(document.web.finalUrl);if(existing)return {...existing,webImportCreated:false};
+      for(const summary of (await this.list()).entries){const e=await this.get(summary.id);if(e.creationKey===creationKey)fail("确认标识已用于另一材料。",409,"web_creation_conflict");}
+      for(const m of document.web.media)if(m.status==="saved"){
+        const image=resources.get(m.resourceId!);if(!image||image.mime!==m.mime||image.bytes.length!==m.bytes||image.width!==m.width||image.height!==m.height)fail("网页静态资源与候选不匹配。");
+      }
+      const inserted=new Set<string>();
+      try{
+        beforeCommit();await this.webResources.put(resources,inserted);await this.webResources.validate(workspace);beforeCommit();
+        const entry:LibraryEntry={id:randomUUID(),version:1,revisionId:randomUUID(),source:null,workspace,position:{ratio:0},history:[],updatedAt:now(),lastOpenedAt:now(),creationKey};
+        return {...await this.commit(entry),webImportCreated:true};
+      }catch(error){
+        // The same serialized queue protects resource promotion and reference-aware rollback.
+        // A successful commit whose response was lost is found among durable references.
+        try{await this.webResources.removeUnreferenced(inserted,await this.webReferences());}catch{/* Uncertain references must preserve resources and the original error. */}
+        throw error;
+      }
+    });
+  }
+  private webOriginal(w:Workspace){
+    if(w.document.kind!=="web")return null;
+    return {id:w.document.id,contentHash:w.document.contentHash,markdown:w.document.markdown,web:w.document.web};
+  }
+  private async authorizeWeb(entry:LibraryEntry){
+    const originals=[entry.workspace,...entry.history.map(h=>h.workspace)].map(w=>this.webOriginal(w)).filter(o=>o!==null);
+    if(!originals.length)return;
+    const dir=join(this.dir,"web-authorizations",entry.id);await mkdir(dir,{recursive:true,mode:0o700});
+    for(const original of originals){const digest=hash(JSON.stringify(original));await this.atomic(join(dir,digest+".json"),JSON.stringify({entryId:entry.id,original}));}
+    await this.syncDirectory(dir);
+  }
+  private async validateWeb(id:string,w:Workspace){
+    const original=this.webOriginal(w);if(!original)return;
+    // This evidence is created only after a trusted record has durably committed;
+    // it survives damaged CURRENT pointers and contains the full original/media graph.
+    let allowed=false;
+    try{const proof=JSON.parse(await readFile(join(this.dir,"web-authorizations",id,hash(JSON.stringify(original))+".json"),"utf8"));allowed=proof.entryId===id&&JSON.stringify(proof.original)===JSON.stringify(original);}catch{/* Backward-compatible migration of valid earlier static implementation records. */}
+    if(!allowed){const e=await this.maybeEntry(id);if(e){allowed=[e.workspace,...e.history.map(h=>h.workspace)].some(a=>JSON.stringify(this.webOriginal(a))===JSON.stringify(original));if(allowed)await this.authorizeWeb(e);}}
+    if(!allowed)fail("网页原文或资源不属于此阅读条目。",400,"web_resource_unauthorized");
+    await this.webResources.validate(w);
+  }
+  private async webReferences():Promise<Set<string>>{
+    const ids=new Set<string>();
+    const collect=(original:ReturnType<ReadingLibrary["webOriginal"]>)=>{if(original)for(const media of original.web.media)if(media.status==="saved"&&media.resourceId)ids.add(media.resourceId);};
+    // Valid CURRENT records protect successful commits even if a later response failed.
+    for(const summary of (await this.list()).entries){const entry=await this.get(summary.id);for(const w of [entry.workspace,...entry.history.map(h=>h.workspace)])collect(this.webOriginal(w));}
+    // Independent committed ownership protects history/recovery when CURRENT is damaged.
+    let owners:string[]=[];try{owners=await readdir(join(this.dir,"web-authorizations"));}catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
+    for(const owner of owners.filter(uid))for(const file of await readdir(join(this.dir,"web-authorizations",owner))){if(!/^[a-f0-9]{64}\.json$/.test(file))continue;try{const proof=JSON.parse(await readFile(join(this.dir,"web-authorizations",owner,file),"utf8"));if(proof.entryId===owner&&hash(JSON.stringify(proof.original))+".json"===file)collect(proof.original);}catch{throw new WebError("资源授权记录无法核对，暂不清理。","web_resource_proof",503);}}
+    return ids;
+  }
+  async readWebResource(id:string,revisionId:string,resourceId:string){
+    const e=await this.get(id),w=e.revisionId===revisionId?e.workspace:e.history.find(h=>h.id===revisionId)?.workspace;
+    if(w?.document.kind!=="web")throw new WebError("静态资源不属于此阅读版本。","web_resource_unauthorized",404);
+    const media=w.document.web.media.find(m=>m.status==="saved"&&m.resourceId===resourceId);
+    if(!media)throw new WebError("静态资源不属于此阅读版本。","web_resource_unauthorized",404);
+    return this.webResources.read(media);
   }
   private version(e: LibraryEntry, v: number) { if (e.version !== v) fail("另一页面已更新此材料，正在保留并核对阅读记录。", 409, "version_conflict"); }
   private recoveryPath(id: string) {
@@ -257,6 +330,7 @@ export class ReadingLibrary {
     const draft: ReadingDraft = { ...(v.id ? {id:v.id} : {}), entryId:id, version:v.version!, revisionId:v.revisionId!,
       ...(v.baseDigest ? {baseDigest:v.baseDigest} : {}), workspace:safeWorkspace(v.workspace), position:position(v.position) };
     await this.resources.validate(id,draft.workspace);
+    await this.validateWeb(id,draft.workspace);
     // Include content: reusing a client ID for a different snapshot must not lose either one.
     const recoveryId = hash(JSON.stringify([id,draft.id,draft.revisionId,readingContent(draft.workspace),viewKey(draft.workspace,draft.position)]));
     return this.serialize(async () => {
@@ -309,6 +383,7 @@ export class ReadingLibrary {
         await this.saveRecovery(r);
       }
       await this.resources.clone(r.entryId,r.intent.target.id,r.intent.target.workspace);
+      await this.validateWeb(r.entryId,r.intent.target.workspace);
       const entry = await this.commit(r.intent.target);
       r.state="resolved";r.choice=r.intent.choice;r.resultEntryId=entry.id;delete r.intent;
       await this.saveRecovery(r); return {record:r,entry};
@@ -316,6 +391,7 @@ export class ReadingLibrary {
   }
   async check(id: string): Promise<SourceCheck> {
     const e = await this.get(id);
+    if(e.workspace.document.kind==="web")return {status:"available",message:"网页来源 · 当前显示已保存的本机副本"};
     if (!e.source) return { status: "unlinked", message: "未关联原文件 · 当前为保存的阅读副本" };
     try {
       const c = await this.readSource(e.source.path, e.source.realPath);
@@ -332,6 +408,7 @@ export class ReadingLibrary {
   async relink(id: string, selectionId: string, expectedVersion: number): Promise<{ entry: LibraryEntry; check: SourceCheck }> {
     return this.serialize(async () => {
       const e = await this.get(id); this.version(e, expectedVersion);
+      if(e.workspace.document.kind==="web")fail("网页来源不关联本机文件。",400);
       const c = this.consume(selectionId);
       if(!c.source||(e.workspace.document.kind==="pdf"?!c.workspace:!c.filename.toLowerCase().endsWith(".md")))return fail("请选择同格式的原始文件，不要选择备份文件。");
       await this.noDuplicateSource(id, c.source);

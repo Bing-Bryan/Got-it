@@ -1,3 +1,5 @@
+import { WebTranslationControls } from "./WebTranslationControls";
+import { translatedRendering, canonicalTranslationDraft, selectedQuote, translationContext } from "./lib/translation-reading";
 import brandIcon from "./assets/got-it-icon.svg";
 import { useResponsiveDrawer } from "./useResponsiveDrawer";
 import { documentAnchor, documentQuestionContext, markdownSections } from "./lib/document-question";
@@ -15,7 +17,7 @@ import { CompactSources } from "./CompactSources";
 import { PanelResizeHandle } from "./PanelResizeHandle";
 import { CodexLogin } from "./CodexLogin";
 import { useSaveStatus } from "./useSaveStatus";
-import { useReadingLibrary } from "./useReadingLibrary";
+import { capturePosition, restorePosition, useReadingLibrary } from "./useReadingLibrary";
 import { ReadingLibraryNavigation, ReadingLibraryStatus } from "./ReadingLibraryView";
 import { readDocumentFile } from "./lib/reading-document";
 import { migrateHighlightAnchors } from "./lib/anchor-migration";
@@ -83,6 +85,8 @@ import {
 import { createInitialWorkspace } from "./sample";
 import { REFINEMENTS, canCompleteInquiry, type Refinement } from "./lib/learning";
 import { renderMarkdown } from "./lib/markdown";
+import { loadWebMedia } from "./lib/web-media";
+import { WebImageViewer } from "./WebImageViewer";
 import {
   applyInquiryHighlights,
   emphasizeInquiryHighlight,
@@ -221,13 +225,19 @@ function App() {
     const next = restoreWorkspace(workspaceRef.current) ?? workspaceRef.current;
     workspaceRef.current = next; setWorkspace(next); return next;
   }, []);
-  const library = useReadingLibrary({ workspace, install: installLibraryWorkspace, interrupt: interruptForSwitch });
+  const library = useReadingLibrary({ workspace, install: installLibraryWorkspace, interrupt: interruptForSwitch, getWorkspace: () => workspaceRef.current, update: (next) => { workspaceRef.current=next;setWorkspace(next); } });
   const saveStatus = useSaveStatus(library.status, workspace.document.id + ":" + documentLoadId);
 
   const rendered = useMemo(
-    () => workspace.document.kind === "pdf" ? {html:"",outline:[]} : renderMarkdown(workspace.document.markdown),
-    [workspace.document.kind,workspace.document.markdown],
+    () => workspace.document.kind === "pdf" ? {html:"",outline:[]} : workspace.document.kind === "web" ? translatedRendering(workspace) : renderMarkdown(workspace.document.markdown),
+    [workspace.document, workspace.webTranslation, workspace.readingSide],
   );
+  useEffect(() => {
+    const doc = workspace.document;
+    if (doc.kind !== "web" || !articleRef.current || !library.entry) return;
+    const revision = library.historyId || library.entry.revisionId;
+    return loadWebMedia(articleRef.current, doc.web, id => `/entries/${library.entry!.id}/web-resources/${revision}/${id}`, () => library.rendered());
+  }, [workspace.document, documentLoadId, library.entry?.id, library.historyId, rendered.html]);
   const [currentHeading, setCurrentHeading] = useState<string | null>(null);
   useEffect(() => {
     const scroll = document.querySelector<HTMLElement>('.reader-scroll');
@@ -418,7 +428,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (workspace.document.kind === "pdf") return;
+    if (workspace.document.kind === "pdf" || workspace.document.kind === "web") return;
     if (library.entry) {
       const frame = window.requestAnimationFrame(() => library.rendered());
       return () => window.cancelAnimationFrame(frame);
@@ -435,11 +445,8 @@ function App() {
 
   const updateWorkspace = useCallback(
     (recipe: (current: Workspace) => Workspace) => {
-      setWorkspace((current) => ({
-        ...recipe(current),
-        updatedAt: now(),
-        hasUnexportedChanges: true,
-      }));
+      const next = { ...recipe(workspaceRef.current), updatedAt: now(), hasUnexportedChanges: true };
+      workspaceRef.current = next; setWorkspace(next);
     },
     [],
   );
@@ -532,9 +539,11 @@ function App() {
         showToast(result.error);
         return;
       }
-      setSelectionDraft(result);
+      const canonical = canonicalTranslationDraft(result, workspace);
+      if (!canonical) { showToast("译文无法对应原文段落，请切回原文后选择。"); return; }
+      setSelectionDraft(canonical);
     });
-  }, [showToast, workspace.document.id, library.readOnly, library.busy, library.ready]);
+  }, [showToast, workspace.document.id, workspace.webTranslation, workspace.readingSide, library.readOnly, library.busy, library.ready]);
 
   const createInquiry = useCallback(
     (intent: ActiveInquiryIntent, draftOverride?: SelectionDraft, customQuestion?: string, contextHistory?: Inquiry["contextHistory"]) => {
@@ -552,7 +561,7 @@ function App() {
       if (matches.some(i => i.status === "answering") || [...pendingCreations.current.values()].some(a => sameAnchor(a, draft.anchor))) return;
       const createdAt = now();
       const id = newId("inquiry");
-      const question = intent === "ask" ? customQuestion!.trim() : INTENT_META[intent].prompt(draft.anchor.quote);
+      const question = intent === "ask" ? customQuestion!.trim() : INTENT_META[intent].prompt(selectedQuote(draft.anchor));
       const userMessage: ThreadMessage = {
         id: newId("message"),
         role: "user",
@@ -585,8 +594,8 @@ function App() {
         intent,
         ...(["explain", "ask"].includes(intent) ? {explanationMode:"auto" as const} : {}),
         ...(draft.anchor.scope === "document" ? { readingScope: "document" as const } : {}),
-        quote: draft.anchor.quote,
-        context: intent === "ask" ? questionContext(articleRef.current, draft.anchor, question) : readingContext(articleRef.current, draft.anchor),
+        quote: selectedQuote(draft.anchor),
+        context: translationContext(draft.anchor) ?? (intent === "ask" ? questionContext(articleRef.current, draft.anchor, question) : readingContext(articleRef.current, draft.anchor)),
         documentTitle: workspace.document.filename,
         question,
         history: copyContextHistory(contextHistory),
@@ -629,8 +638,8 @@ function App() {
         intent: activeInquiry.intent,
         operation: action === "detail" ? "entity" : "explain",
         ...(action !== "detail" ? { explanationMode: action === "web" ? "web" as const : "auto" as const } : {}),
-        quote: activeInquiry.anchor.quote,
-        context: readingContext(articleRef.current, activeInquiry.anchor),
+        quote: selectedQuote(activeInquiry.anchor),
+        context: translationContext(activeInquiry.anchor) ?? readingContext(articleRef.current, activeInquiry.anchor),
         documentTitle: workspace.document.filename,
         question: content,
         history,
@@ -647,7 +656,7 @@ function App() {
     if (!question.trim() || question.length > 2000 || requests.current.has(activeInquiry.id)) return;
     const history = [...(activeInquiry.contextHistory ?? []), ...activeInquiry.messages].filter(m => m.content.trim()).slice(-8).map(({role,content}) => ({role,content:content.slice(0,3000)}));
     updateInquiry(activeInquiry.id, i => ({...i,status:'answering',lastError:undefined,messages:[...i.messages,{id:newId('message'),role:'user',content:question.trim(),createdAt:now()}]}));
-    void askProvider(activeInquiry.id, {providerId:workspace.activeProviderId,intent:'ask',operation:'ask',explanationMode:'auto',readingScope:activeInquiry.anchor.scope,quote:activeInquiry.anchor.quote,context:questionContext(articleRef.current,activeInquiry.anchor,question),documentTitle:workspace.document.filename,question:question.trim(),history});
+    void askProvider(activeInquiry.id, {providerId:workspace.activeProviderId,intent:'ask',operation:'ask',explanationMode:'auto',readingScope:activeInquiry.anchor.scope,quote:selectedQuote(activeInquiry.anchor),context:translationContext(activeInquiry.anchor) ?? questionContext(articleRef.current,activeInquiry.anchor,question),documentTitle:workspace.document.filename,question:question.trim(),history});
   };
 
   const retryInquiry = useCallback(() => {
@@ -667,8 +676,8 @@ function App() {
       providerId: workspace.activeProviderId,
       intent: activeInquiry.intent,
       readingScope: activeInquiry.anchor.scope,
-      quote: activeInquiry.anchor.quote,
-      context: activeInquiry.intent === "ask" ? questionContext(articleRef.current, activeInquiry.anchor, lastUserMessage?.content ?? activeInquiry.question) : readingContext(articleRef.current, activeInquiry.anchor),
+      quote: selectedQuote(activeInquiry.anchor),
+      context: translationContext(activeInquiry.anchor) ?? (activeInquiry.intent === "ask" ? questionContext(articleRef.current, activeInquiry.anchor, lastUserMessage?.content ?? activeInquiry.question) : readingContext(articleRef.current, activeInquiry.anchor)),
       documentTitle: workspace.document.filename,
       modelConfig: failed?.modelConfig,
       explanationMode: failed?.explanationMode,
@@ -783,6 +792,7 @@ function App() {
     const current = workspaceRef.current;
     const inquiry = current.inquiries.find(i => i.id === inquiryId);
     if (inquiry?.anchor.scope === "document") return;
+    if (current.readingSide === "translated" && inquiry?.anchor.translation && (inquiry.anchor.translation.translationId !== current.webTranslation?.id || inquiry.anchor.translation.version !== current.webTranslation?.version)) { showToast("旧译文摘录仍保留；当前译文版本不同，请用对应原文段落回看。"); return; }
     const sequence = ++navigationSequence.current;
     if (!inquiry || inquiry.anchor.matchStatus !== 'matched') { finishSourceNavigation(inquiryId, false); return; }
     if (current.document.kind === 'pdf') {
@@ -796,7 +806,7 @@ function App() {
       const target = articleRef.current && findInquiryHighlight(articleRef.current, workspaceRef.current.inquiries, inquiryId);
       finishSourceNavigation(inquiryId, !!target && revealReadingTarget(target), returnToSource, target ?? undefined);
     });
-  }, [finishSourceNavigation]);
+  }, [finishSourceNavigation, showToast]);
 
   const jumpToInquiry = (inquiryId: string) => {
     rememberList();
@@ -922,7 +932,7 @@ function App() {
             <FileText size={15} />
             <div>
               <strong title={workspace.document.filename}>{workspace.document.filename}</strong>
-              <span className="document-metadata">{workspace.document.isDemo ? "示例文档" : "本地文档"} · {workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页 PDF` : workspace.document.markdown.length < 1000 ? `${workspace.document.markdown.length} 字符` : `${Math.round(workspace.document.markdown.length / 1000)}k 字符`}{readingMinutes !== null ? <span className="reading-time"> · 预计阅读 {readingMinutes} 分钟</span> : null}</span>
+              <span className="document-metadata">{workspace.document.isDemo ? "示例文档" : workspace.document.kind === "web" ? (workspace.document.web.coverage === "public-excerpt" ? "网页公开部分副本" : "网页保存副本") : "本地文档"} · {workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页 PDF` : workspace.document.markdown.length < 1000 ? `${workspace.document.markdown.length} 字符` : `${Math.round(workspace.document.markdown.length / 1000)}k 字符`}{readingMinutes !== null ? <span className="reading-time"> · 预计阅读 {readingMinutes} 分钟</span> : null}</span>
             </div>
           </div>
 
@@ -987,10 +997,11 @@ function App() {
           </div>
         </header>
 
-        <div className="reader-tools">
-        <ReadingLibraryStatus library={library} onImport={() => fileInputRef.current?.click()} />
+        <div className={`reader-tools${workspace.document.kind === "web" ? " reader-tools--web" : ""}`}>
+        <ReadingLibraryStatus library={library} hideWebSource={workspace.document.kind === "web"} onImport={() => fileInputRef.current?.click()} />
+        <WebTranslationControls key={workspace.document.id+":"+documentLoadId} workspace={workspace} library={library} saveStatus={saveStatus} onSide={side => { setSelectionDraft(null);window.getSelection()?.removeAllRanges(); const position = capturePosition();updateWorkspace(current=>({...current,readingSide:side})); requestAnimationFrame(()=>restorePosition(position)); }} />
         <div ref={setPdfToolbarHost} className="reader-status-host" />
-        {workspace.document.kind !== "pdf" ? <div className="markdown-toolbar"><div className="markdown-toolbar-row"><div className="library-save-status" role="status">{saveStatus}{library.busy ? " · 正在处理…" : ""}</div></div></div> : null}
+        {workspace.document.kind !== "pdf" && workspace.document.kind !== "web" ? <div className="markdown-toolbar"><div className="markdown-toolbar-row"><div className="library-save-status" role="status">{saveStatus}{library.busy ? " · 正在处理…" : ""}</div></div></div> : null}
         <div ref={setAdjustmentHost} className="reader-adjustment-layer">
           {workspace.document.kind !== "pdf" ? <div key={workspace.document.id+":"+documentLoadId} className="reading-adjustment-dock"><MarkdownWidthControls width={markdownWidth.width} onChange={markdownWidth.change}/></div> : null}
         </div>
@@ -1007,6 +1018,9 @@ function App() {
           {workspace.document.kind === "pdf" && library.entry ? <Suspense fallback={<p className="pdf-status">正在加载 PDF 阅读器…</p>}><PdfReader toolbarHost={pdfToolbarHost} adjustmentHost={adjustmentHost} onReadingTime={receivePdfMinutes} outlineTarget={pdfDirectoryTarget?.documentId===workspace.document.id?pdfDirectoryTarget:null} onCurrentPage={setPdfCurrentPage} key={workspace.document.id+documentLoadId} document={workspace.document} entryId={library.entry.id} inquiries={workspace.inquiries} activeId={workspace.activeInquiryId} target={pdfTarget} onLocated={finishSourceNavigation} initialPosition={library.initialPosition} readOnly={library.readOnly} saveStatus={saveStatus} saveBusy={library.busy} saveError={library.blocked||library.status==="阅读进度暂未保存"} onCreate={createInquiry} onActivate={openAnchor} onReady={library.rendered} onView={library.scrolled}/></Suspense> : <article
             ref={articleRef}
             className="markdown-article"
+            data-reading-side={workspace.readingSide ?? "original"}
+            data-translation-id={workspace.webTranslation?.id}
+            data-translation-version={workspace.webTranslation?.version}
             style={{ width: `min(100%, max(360px, ${markdownWidth.width}%))` }}
             onMouseUp={handleArticleMouseUp}
             onClick={handleArticleClick}
@@ -1020,6 +1034,7 @@ function App() {
         </div>
       </main>
 
+      {workspace.document.kind === "web" ? <WebImageViewer article={articleRef} documentKey={workspace.document.id+":"+documentLoadId}/> : null}
       <div className="result-rail" onMouseEnter={resultPanel.hoverReveal} onMouseLeave={resultPanel.leave}>
         <button ref={resultPanel.triggerRef} type="button" className="icon-button" aria-label="展开知识贴" aria-controls="knowledge-panel" aria-expanded={resultPanel.expanded} onClick={resultPanel.reveal}><PanelRightOpen size={17} /></button>
       </div>
@@ -1051,16 +1066,16 @@ function App() {
         </div>
         {!resultPanel.pinned ? <button className="result-collapse-action icon-button" type="button" aria-label="收起知识贴" title="收起知识贴（Esc）" onClick={resultPanel.close}><PanelRightClose size={15} /></button> : null}
         <div ref={listScrollRef} onScroll={rememberList} className={`intent-result${activeInquiry ? "" : " category-view"}`} id="intent-result" role="tabpanel" aria-labelledby={tabIntent !== "why" ? `intent-tab-${tabIntent}` : undefined}>
-        {activeInquiry ? <div className="result-navigation"><button className="return-to-list" type="button" onClick={() => switchTab(tabIntent, true)}><ChevronLeft size={16} aria-hidden="true" />返回</button>{activeInquiry.anchor.scope === "document" ? <span className="source-excerpt">全文</span> : <button className="source-excerpt" type="button" title={activeInquiry.anchor.quote} aria-label={`定位原文：${activeInquiry.anchor.pdf?.kind === 'region' ? `第 ${activeInquiry.anchor.pdf.page} 页 · 所选区域` : activeInquiry.anchor.quote}`} onClick={() => locateInquiry(activeInquiry.id, true)}>{activeInquiry.anchor.pdf ? <span className="source-page">第 {activeInquiry.anchor.pdf.page} 页{activeInquiry.anchor.pdf.kind === 'region' ? ' · 所选区域' : ''}</span> : null}{activeInquiry.anchor.pdf?.kind !== 'region' ? <span>{activeInquiry.anchor.quote}</span> : null}</button>}</div> : null}
-        <nav hidden={!!activeInquiry} className="category-items" aria-label={`${INTENT_META[tabIntent].label}条目`}>
-          <div className="category-heading"><strong>本文的{tabIntent === "ask" ? "问题" : INTENT_META[tabIntent].shortLabel}</strong><div className="category-heading-actions"><span>{categoryItems.length} 条</span>
+        {activeInquiry ? <div className="result-navigation">{activeInquiry.anchor.translation ? <button type="button" className="source-excerpt" onClick={()=>{if(activeInquiry.anchor.translation?.translationId!==workspace.webTranslation?.id || activeInquiry.anchor.translation?.version!==workspace.webTranslation?.version){showToast("旧译文摘录仍保留；当前译文版本不同，请用对应原文段落回看。");return;}updateWorkspace(current=>({...current,readingSide:"translated"}));requestAnimationFrame(()=>locateInquiry(activeInquiry.id,true));}}>译文摘录：{activeInquiry.anchor.translation.quote}</button> : null}<button className="return-to-list" type="button" onClick={() => switchTab(tabIntent, true)}><ChevronLeft size={16} aria-hidden="true" />返回</button>{activeInquiry.anchor.scope === "document" ? <span className="source-excerpt">全文</span> : <button className="source-excerpt" type="button" title={activeInquiry.anchor.quote} aria-label={`定位原文：${activeInquiry.anchor.pdf?.kind === 'region' ? `第 ${activeInquiry.anchor.pdf.page} 页 · 所选区域` : activeInquiry.anchor.quote}`} onClick={() => { if(activeInquiry.anchor.translation)updateWorkspace(current=>({...current,readingSide:"original"}));requestAnimationFrame(()=>locateInquiry(activeInquiry.id, true)); }}>{activeInquiry.anchor.pdf ? <span className="source-page">第 {activeInquiry.anchor.pdf.page} 页{activeInquiry.anchor.pdf.kind === 'region' ? ' · 所选区域' : ''}</span> : null}{activeInquiry.anchor.pdf?.kind !== 'region' ? <span>{activeInquiry.anchor.translation?"对应原文段落：":""}{activeInquiry.anchor.quote}</span> : null}</button>}</div> : null}
+          <div hidden={!!activeInquiry} className="category-heading category-toolbar"><strong>本文的{tabIntent === "ask" ? "问题" : INTENT_META[tabIntent].shortLabel}</strong><div className="category-heading-actions"><span>{categoryItems.length} 条</span>
             <button id="inquiry-delete-toggle" className="category-delete-toggle" type="button" aria-label={deleteMode ? "退出删除模式" : "删除知识贴"} title={deleteMode ? "退出删除模式（Esc）" : "删除知识贴"} aria-pressed={deleteMode}
               disabled={!categoryItems.length || library.readOnly || library.busy || !library.ready}
               onClick={() => { setDeleteMode(value => !value); setPendingDeleteId(null); }}><Trash2 size={16} aria-hidden="true" /></button>
           </div></div>
+        <nav hidden={!!activeInquiry} className="category-items" aria-label={`${INTENT_META[tabIntent].label}条目`}>
           {categoryItems.length ? categoryItems.map(item => <div className="category-row" key={item.id}>
             <button className="category-open" type="button" data-inquiry-id={item.id} aria-current={activeInquiry?.id === item.id ? "true" : undefined} onFocus={() => setFocusedInquiryId(item.id)} onBlur={() => setFocusedInquiryId(null)} onClick={() => jumpToInquiry(item.id)}>
-              <span>{item.intent === "ask" ? item.question : item.anchor.quote}{item.intent === "ask" ? <small className="question-anchor">{item.anchor.quote}</small> : null}</span><small>{inquiryCategoryStatus(item)}</small>{categoryItems.filter(other => other.anchor.quote === item.anchor.quote).length > 1 ? <small className="inquiry-identity">{new Date(item.messages.at(-1)?.createdAt ?? item.updatedAt).toLocaleDateString()} · {(item.messages.filter(message => message.role === "assistant").at(-1)?.content || item.question).replace(/[#*_`]/g, "").slice(0, 56)}</small> : null}
+              <span>{item.intent === "ask" ? item.question : selectedQuote(item.anchor)}{item.intent === "ask" ? <small className="question-anchor">{selectedQuote(item.anchor)}</small> : null}</span><small>{inquiryCategoryStatus(item)}</small>{categoryItems.filter(other => other.anchor.quote === item.anchor.quote).length > 1 ? <small className="inquiry-identity">{new Date(item.messages.at(-1)?.createdAt ?? item.updatedAt).toLocaleDateString()} · {(item.messages.filter(message => message.role === "assistant").at(-1)?.content || item.question).replace(/[#*_`]/g, "").slice(0, 56)}</small> : null}
             </button>
             {deleteMode ? <button className={`category-delete${pendingDeleteId === item.id ? " confirming" : ""}`} type="button" data-delete-inquiry-id={item.id}
               aria-label={`${pendingDeleteId === item.id ? "确认删除知识贴" : "删除知识贴"}：${item.anchor.quote}`}
@@ -1222,7 +1237,7 @@ function SelectionToolbar({
       style={{ left, top }}
       onMouseDown={(event) => { if (!(event.target instanceof HTMLTextAreaElement)) event.preventDefault(); }}
     >
-      <div className="selection-quote">“{draft.anchor.quote}”</div>
+      <div className="selection-quote">“{selectedQuote(draft.anchor)}”</div>
       <SelectionActions onSelect={onSelect} onClose={onClose} disabled={disabled}/>
     </div>
   );

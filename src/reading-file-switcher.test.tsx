@@ -37,3 +37,37 @@ it('keeps ten files in a dismissible popup with stable ordering across switches'
   expect(document.activeElement).toBe(trigger);
   await act(async()=>root.unmount());host.remove();
 });
+
+it('offers a single add menu and independent source copying/open-original actions',async()=>{
+ (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;const host=document.body.appendChild(document.createElement('div')),root=createRoot(host);const choose=vi.fn(),showWebImport=vi.fn(),open=vi.fn();const library={recoveries:[],ready:true,list:{entries:[{id:'web',filename:'网页',kind:'web',url:'https://claude.dev/article',importedAt:'2026-10-10'}],warnings:[],nativePicker:true},entry:null,choose,showWebImport,open}as unknown as ReturnType<typeof useReadingLibrary>;
+ await act(async()=>root.render(<ReadingLibraryNavigation library={library} importCopy={vi.fn()}/>));expect(host.querySelector('.library-add-link')).toBeNull();const add=host.querySelector<HTMLButtonElement>('.library-add')!;await act(async()=>add.click());expect([...host.querySelectorAll('[role=menuitem]')].map(e=>e.textContent)).toEqual(['本地文件','网页链接']);await act(async()=>host.querySelector<HTMLElement>('[role=menuitem]')!.click());expect(choose).toHaveBeenCalledOnce();await act(async()=>add.click());await act(async()=>(host.querySelectorAll<HTMLElement>('[role=menuitem]')[1]).click());expect(showWebImport).toHaveBeenCalledOnce();await act(async()=>add.click());await act(async()=>add.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));expect(host.querySelector('[role=menu]')).toBeNull();expect(document.activeElement).toBe(add);
+ await act(async()=>host.querySelector<HTMLButtonElement>('.library-current')!.click());const copy=vi.fn().mockResolvedValue(undefined);Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:copy}});await act(async()=>host.querySelector<HTMLButtonElement>('.library-copy-url')!.click());expect(copy).toHaveBeenCalledWith('https://claude.dev/article');expect(open).not.toHaveBeenCalled();expect(host.querySelector('a')?.getAttribute('href')).toBe('https://claude.dev/article');expect(host.querySelector('a')?.textContent).toBe('https://claude.dev/article');expect(host.textContent).not.toContain('打开原网页');expect(host.textContent).not.toContain('导入于');copy.mockRejectedValueOnce(Error('denied'));await act(async()=>host.querySelector<HTMLButtonElement>('.library-copy-url')!.click());expect(host.textContent).toContain('复制失败，请选中链接手动复制');expect(open).not.toHaveBeenCalled();await act(async()=>root.unmount());host.remove();
+});
+
+it('filters without opening, keeps keyboard focus and resets the query when dismissed',async()=>{
+ (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
+ const host=document.body.appendChild(document.createElement('div')),root=createRoot(host),open=vi.fn();
+ const library={recoveries:[],ready:true,list:{entries:[{id:'a',filename:'报告.md',path:'/files/a.md'},{id:'b',filename:'Plan2.pdf',path:'/files/b.pdf'},{id:'c',filename:'Plan10.md',path:'/files/c.md'}],warnings:[]},entry:{id:'a',workspace:{document:{filename:'报告.md'}}},open} as unknown as ReturnType<typeof useReadingLibrary>;
+ await act(async()=>root.render(<ReadingLibraryNavigation library={library} importCopy={vi.fn()}/>));
+ const trigger=host.querySelector<HTMLButtonElement>('.library-current')!;
+ await act(async()=>trigger.click());
+ const input=host.querySelector<HTMLInputElement>('input[type=search]')!;
+ const fill=async(value:string)=>act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));});
+ await fill('pLaN');expect([...host.querySelectorAll('.library-open')].map(e=>e.textContent)).toEqual(['Plan2.pdf','Plan10.md']);
+ expect(open).not.toHaveBeenCalled();expect(trigger.textContent).toContain('报告.md');expect(host.querySelector('[aria-current=page]')).toBeNull();
+ await act(async()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true})));
+ expect(document.activeElement?.textContent).toBe('Plan2.pdf');
+ await act(async()=>document.activeElement!.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true})));
+ expect(document.activeElement?.textContent).toBe('Plan10.md');
+ await act(async()=>document.activeElement!.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true})));
+ expect(document.activeElement?.textContent).toBe('Plan2.pdf');
+ await act(async()=>document.activeElement!.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true})));
+ expect(document.activeElement).toBe(input);
+ await fill('不存在');expect(host.textContent).toContain('没有匹配的文件名称');expect(host.querySelector('.library-open')).toBeNull();
+ expect(host.querySelector('[aria-label="清除名称搜索"]')).toBeNull();await act(async()=>input.focus());await fill('');expect(input.value).toBe('');expect(host.querySelectorAll('.library-open')).toHaveLength(3);expect(document.activeElement).toBe(input);
+ await fill('plan');await act(async()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+ expect(host.querySelector('.library-popup')).toBeNull();expect(document.activeElement).toBe(trigger);
+ await act(async()=>trigger.click());expect(host.querySelector<HTMLInputElement>('input')!.value).toBe('');expect(host.querySelectorAll('.library-open')).toHaveLength(3);
+ await act(async()=>host.querySelector<HTMLButtonElement>('.library-open')!.click());expect(open).toHaveBeenCalledOnce();
+ await act(async()=>root.unmount());host.remove();
+});

@@ -103,6 +103,7 @@ export function workspaceToMarkdown(workspace: Workspace): string {
     `- 文档 ID：${inlineCode(safe.document.id)}`,
     `- 导入时间：${safe.document.importedAt}`,
     `- 最近更新：${safe.updatedAt}`,
+    ...(safe.document.kind === "web" && safe.document.web.coverage === "public-excerpt" ? ["- 阅读范围：仅保存公开部分，付费内容未导入；知识贴仅针对已保存正文。", `- 原始文章：${safe.document.web.originalUrl}`] : []),
     "",
     cards || "暂无知识贴。",
     "",

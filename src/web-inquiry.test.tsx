@@ -1,0 +1,27 @@
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, expect, it, vi } from "vitest";
+import App from "./App";
+import { webWorkspace } from "./test-support/web";
+import { TEST_MODELS } from "../server/test-support/model-catalog";
+import { renderMarkdown } from "./lib/markdown";
+import type { InquiryRequest, InquiryEvent } from "./types";
+const {request,stream}=vi.hoisted(()=>({request:vi.fn(),stream:vi.fn()}));
+vi.mock("./lib/library-client",()=>({libraryRequest:request,libraryBinary:vi.fn(async()=>{throw Error('missing fixture image');})}));
+vi.mock("./lib/inquiry-stream",async original=>({...await original<typeof import("./lib/inquiry-stream")>(),readInquiryStream:stream}));
+let root:Root;afterEach(async()=>{await act(async()=>root?.unmount());document.body.innerHTML='';localStorage.clear();vi.unstubAllGlobals();vi.restoreAllMocks();});
+it('web reopening generates zero requests; explicit question sends finite text and switches isolate late events',async()=>{
+ Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});localStorage.clear();HTMLElement.prototype.scrollIntoView=vi.fn();HTMLElement.prototype.scrollTo=vi.fn();
+ vi.stubGlobal('fetch',vi.fn(async()=>({ok:true,json:async()=>({models:TEST_MODELS,providers:[{id:'codex',name:'Codex',availability:'connected',supportsWebSearch:true}],defaultProviderId:'codex'})})));
+ const w=webWorkspace();if(w.document.kind!=='web')throw Error();w.document.markdown='# Article\n\nThe selected sentence.\n\n'+('Unrelated distant text.\n\n'.repeat(2000));
+ const el=document.createElement('div');el.innerHTML=renderMarkdown(w.document.markdown,w.document.web).html;const p=el.querySelector('p')!;
+ w.inquiries=[{id:'web-inquiry',intent:'ask',question:'原问题',anchor:{documentId:w.document.id,blockId:p.dataset.blockId!,headingPath:['Article'],quote:'selected',prefix:'The ',suffix:' sentence.',start:4,end:12,textVersion:2,matchStatus:'matched'},status:'ready',messages:[],understanding:'',createdAt:'2026',updatedAt:'2026'}];w.activeInquiryId='web-inquiry';w.activeTab={intent:'ask'};
+ let current={id:'web',creationKey:'key',version:1,revisionId:'rev',workspace:w,position:{ratio:0},source:null,history:[],updatedAt:'2026',lastOpenedAt:'2026'};
+ request.mockImplementation(async(path='',body)=>{if(!path)return{entries:[{id:current.id,version:current.version,filename:current.workspace.document.filename,path:null,lastOpenedAt:'2026',historyCount:0}],activeId:current.id,warnings:[],nativePicker:true};if(path==='/recoveries')return[];if(path==='/entries'){current={...current,id:'markdown',workspace:body.workspace};return current;}if(path.endsWith('/save'))current={...current,workspace:body.workspace,version:current.version+1};if(path.endsWith('/check'))return{status:'unlinked',message:'fixture'};return current;});
+ let emit!:(e:InquiryEvent)=>void,signal!:AbortSignal,finish!:()=>void;stream.mockReset().mockImplementation((_r:InquiryRequest,cb,s)=>{emit=cb;signal=s;return new Promise<void>(r=>finish=r);});
+ const host=document.body.appendChild(document.createElement('div'));root=createRoot(host);await act(async()=>root.render(<App/>));await act(async()=>{await new Promise(r=>setTimeout(r,20));});expect(stream).not.toHaveBeenCalled();
+ await act(async()=>host.querySelector<HTMLButtonElement>('.question-toggle')!.click());await act(async()=>{const t=host.querySelector('textarea')!;Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(t,'解释所选句子');t.dispatchEvent(new Event('input',{bubbles:true}));});await act(async()=>host.querySelector<HTMLButtonElement>('.question-composer [type=submit]')!.click());
+ expect(stream).toHaveBeenCalledOnce();const payload=stream.mock.calls[0][0] as InquiryRequest;expect(payload.quote).toBe('selected');expect(payload.context.length).toBeLessThan(15000);expect(payload.context).not.toContain('resourceId');expect(payload.context).not.toContain('<img');expect(payload.context.length).toBeLessThan(w.document.markdown.length/2);
+ await act(async()=>emit({type:'answer-delta',delta:'已收到的网页回答',requestId:payload.requestId!,sequence:1}));
+ const file=new File([],'other.md');Object.defineProperty(file,'text',{value:async()=>'# Other\n\nDifferent body'});await act(async()=>{const input=host.querySelector('input[type=file]')!;Object.defineProperty(input,'files',{value:[file],configurable:true});input.dispatchEvent(new Event('change',{bubbles:true}));});expect(signal.aborted).toBe(true);const savedWeb=request.mock.calls.filter(([path])=>String(path).endsWith('/save')).map(([,body])=>body.workspace).find(snapshot=>snapshot.document.kind==='web'&&snapshot.inquiries.some((i:any)=>i.messages.some((m:any)=>m.content==='已收到的网页回答'&&m.completion==='interrupted')));expect(savedWeb).toBeTruthy();await act(async()=>{emit({type:'answer-delta',delta:'late web response',requestId:payload.requestId!,sequence:2});finish();});expect(host.textContent).not.toContain('late web response');expect(host.querySelector('.markdown-article h1')?.textContent).toBe('Other');
+});

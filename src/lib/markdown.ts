@@ -1,5 +1,6 @@
 import DOMPurify from "dompurify";
-import { marked } from "marked";
+import { marked, Renderer } from "marked";
+import type { WebDocumentData } from "./web-data";
 import type { OutlineItem, RenderedMarkdown } from "../types";
 import { stableHash } from "../sample";
 
@@ -9,16 +10,29 @@ function cleanText(value: string | null | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();
 }
 
-export function renderMarkdown(markdown: string): RenderedMarkdown {
+const escapeHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+export function renderMarkdown(markdown: string, web?: WebDocumentData): RenderedMarkdown {
+  const mediaById = new Map(web?.media.map(media => [media.id, media]));
+  const renderer = web ? new Renderer() : undefined;
+  if (renderer) renderer.image = ({ href, text }) => {
+    const id = href.startsWith("got-it-media:") ? href.slice("got-it-media:".length) : "";
+    const media = mediaById.get(id);
+    if (!media) return `<span class="image-unavailable">图片未获授权：${escapeHtml(text)}</span>`;
+    if (media.status !== "saved") return `<span class="image-unavailable">${escapeHtml(media.alt || "图片")}：${escapeHtml(media.reason || "未导入")}</span>`;
+    return `<img data-web-media="${escapeHtml(media.id)}" tabindex="0" role="button" aria-label="放大查看：${escapeHtml(media.alt || "静态图片或图表")}" alt="${escapeHtml(media.alt)}"${media.width ? ` width="${media.width}"` : ""}${media.height ? ` height="${media.height}"` : ""}>`;
+  };
   const rawHtml = marked.parse(markdown, {
     async: false,
     gfm: true,
     breaks: false,
+    ...(renderer ? { renderer } : {}),
   }) as string;
 
   const safeHtml = DOMPurify.sanitize(rawHtml, {
     USE_PROFILES: { html: true },
     ADD_ATTR: ["target", "rel"],
+    ...(web ? { FORBID_ATTR: ["src", "srcset", "style"], FORBID_TAGS: ["video", "audio", "iframe", "object", "embed", "source", "svg", "style", "link"] } : {}),
   });
 
   const container = document.createElement("div");
@@ -74,6 +88,12 @@ export function renderMarkdown(markdown: string): RenderedMarkdown {
     node.replaceWith(fragment);
   }
   container.querySelectorAll<HTMLImageElement>("img").forEach(img => {
+    if (web) {
+      const media = mediaById.get(img.dataset.webMedia ?? "");
+      img.removeAttribute("src"); img.removeAttribute("srcset");
+      if (media?.status === "saved") { img.classList.add("web-static-image"); return; }
+      const notice = document.createElement("span"); notice.className = "image-unavailable"; notice.textContent = "图片未获本机资源授权。"; img.replaceWith(notice); return;
+    }
     const src = img.getAttribute("src") ?? "";
     if (!/^(https?:\/\/|data:image\/(?:png|jpeg|gif|webp);base64,)/i.test(src)) {
       const notice = document.createElement("span");
@@ -83,6 +103,11 @@ export function renderMarkdown(markdown: string): RenderedMarkdown {
     }
   });
 
+  if (web) container.querySelectorAll<HTMLAnchorElement>('a[href^="#"]').forEach(link => {
+    let fragment: string; try { fragment = decodeURIComponent(link.hash.slice(1)); } catch { return; }
+    const match = web.fragments.find(item => item.fragment === fragment);
+    if (match && outline[match.headingIndex]) link.href = `#${outline[match.headingIndex].id}`;
+  });
   return { html: container.innerHTML, outline };
 }
 

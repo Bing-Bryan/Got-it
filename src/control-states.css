@@ -1,0 +1,173 @@
+/* Keep interaction colors above component/layout rules, including lazy PDF CSS.
+   :active means a held pointer/key; aria-pressed/selected/current means selection. */
+@layer reader-base, controls;
+
+@layer controls {
+  :root {
+    --control-radius: 8px;
+    --control-font-size: 12px;
+    --control-pressed: #b8c2fa;
+    --control-primary-pressed: #343ba0;
+    --control-disabled-bg: var(--soft);
+    --control-disabled-fg: var(--muted-2);
+    --control-disabled-border: var(--line);
+    --control-danger-soft: #fff0f0;
+    --control-danger-hover: #fbe0e2;
+    --control-danger-pressed: #f4c6cb;
+    --control-danger-border: #eec4c7;
+  }
+
+  :where(button, summary):not(:where(.mobile-scrim, .markdown-article *, .answer-markdown *)) {
+    --control-bg: var(--paper);
+    --control-fg: var(--muted);
+    --control-border: var(--line-strong);
+    --control-hover-bg: var(--blue-soft);
+    --control-hover-fg: var(--blue-strong);
+    --control-hover-border: var(--blue-line);
+    --control-active-bg: var(--blue-line);
+    --control-active-fg: var(--blue-strong);
+    --control-active-border: var(--blue);
+    color: var(--control-fg);
+    background: var(--control-bg);
+    border-color: var(--control-border);
+    opacity: 1;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+
+  /* Scrims retain their backdrop; document/answer HTML is not application UI. */
+
+  /* Boxed actions share typography and corners; tabs, text links and round send
+     icons keep their intentional shapes rather than inheriting a browser bevel. */
+  :is(.provider-trigger, .toolbar-button, .reading-adjustment-trigger, .library-add,
+      .primary-action, .secondary-action, .document-question-trigger):not(:where(.markdown-article *, .answer-markdown *)),
+  :is(.translation-actions, .translation-permission, .question-composer-actions,
+      .codex-login-actions, .web-import-dialog, .web-image-dialog, .recovery-dialog,
+      .pdf-toolbar, .pdf-source-preview, .pdf-outline-error) button:not(:where(.markdown-article *, .answer-markdown *)) {
+    border-radius: var(--control-radius);
+    border-style: solid;
+    font-size: var(--control-font-size);
+    line-height: 1.4;
+  }
+
+  /* Ghost controls keep their existing border widths and geometry. */
+  :where(summary, .icon-button, .outline-item, .provider-option, .library-current,
+      .library-open, .library-copy-path, .library-copy-url, .category-open,
+      .category-delete-toggle, .category-delete, .markdown-width-reset, .pdf-zoom-reset,
+      .library-recovery-link, .question-back, .refresh-models),
+  :where(.inquiry-tabs, .library-add-options, .result-navigation, .source-actions,
+      .library-state, .selection-actions, .export-options, .model-catalog-status,
+      .demo-document-note, .library-recovery-state) :where(button) {
+    --control-bg: transparent;
+    --control-border: transparent;
+  }
+
+  /* Menu-open is not a selected mode: e.g. width opens on hover, Codex on click. */
+  button[aria-expanded="true"] {
+    --control-bg: var(--blue-soft);
+    --control-fg: var(--blue-strong);
+    --control-border: var(--blue-line);
+  }
+
+  button:is([aria-pressed="true"], [aria-selected="true"], [aria-current="true"], [aria-current="location"]),
+  button.provider-option.active,
+  .library-item.current .library-open {
+    --control-bg: var(--blue-soft);
+    --control-fg: var(--blue-strong);
+    --control-border: var(--blue-line);
+    --control-hover-bg: var(--blue-line);
+    --control-hover-border: var(--blue);
+    --control-active-bg: var(--control-pressed);
+    --control-active-fg: #30368f;
+  }
+
+  :is(.primary-action, .recovery-primary, .question-send),
+  :is(.web-import-form, .question-composer-actions) button[type="submit"],
+  .followup-composer > button {
+    --control-bg: var(--blue);
+    --control-fg: var(--paper);
+    --control-border: var(--blue);
+    --control-hover-bg: var(--blue-strong);
+    --control-hover-fg: var(--paper);
+    --control-hover-border: var(--blue-strong);
+    --control-active-bg: var(--control-primary-pressed);
+    --control-active-fg: var(--paper);
+    --control-active-border: var(--control-primary-pressed);
+  }
+
+  button.category-delete.confirming {
+    --control-bg: var(--control-danger-soft);
+    --control-fg: var(--red);
+    --control-border: var(--control-danger-border);
+    --control-hover-bg: var(--control-danger-hover);
+    --control-hover-fg: var(--red);
+    --control-hover-border: var(--red);
+    --control-active-bg: var(--control-danger-pressed);
+    --control-active-fg: #922e35;
+    --control-active-border: var(--red);
+  }
+
+  @media (hover: hover) {
+    :where(button, summary):not(:where(.mobile-scrim, .markdown-article *, .answer-markdown *)):not(:disabled):not([aria-disabled="true"]):hover {
+      color: var(--control-hover-fg);
+      background: var(--control-hover-bg);
+      border-color: var(--control-hover-border);
+    }
+  }
+
+  :where(button, summary):not(:where(.mobile-scrim, .markdown-article *, .answer-markdown *)):not(:disabled):not([aria-disabled="true"]):active {
+    color: var(--control-active-fg);
+    background: var(--control-active-bg);
+    border-color: var(--control-active-border);
+    transition: none;
+  }
+
+  :where(button, summary):not(:where(.mobile-scrim, .markdown-article *, .answer-markdown *)):focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+  }
+
+  :where(button, summary):not(:where(.mobile-scrim, .markdown-article *, .answer-markdown *)):is(:disabled, [aria-disabled="true"]) {
+    color: var(--control-disabled-fg);
+    background: var(--control-disabled-bg);
+    border-color: var(--control-disabled-border);
+    box-shadow: none;
+    text-decoration: none;
+    opacity: 1;
+    cursor: not-allowed;
+    transition: none;
+  }
+
+  button:not(:where(.markdown-article *, .answer-markdown *)) > svg { color: inherit; }
+  .provider-option-icon { color: inherit; border-color: currentColor; }
+  .inquiry-tabs [aria-selected="true"]::after { background: var(--blue); }
+  .inquiry-tabs :is(:disabled, [aria-disabled="true"])::after { background: var(--control-disabled-fg); }
+
+  .library-item { background: transparent; }
+  .library-item.current { background: var(--blue-soft); }
+  @media (hover: hover) {
+    .library-item:has(button:enabled):hover { background: var(--blue-soft); }
+    .library-item.current:has(button:enabled):hover { background: var(--blue-line); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :where(button, summary):not(:where(.mobile-scrim, .markdown-article *, .answer-markdown *)) { transition: none; }
+  }
+
+  /* Small glyphs keep their visual size inside comfortable hit targets. */
+  .selection-actions .selection-close { min-width: 32px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+  .pdf-mark button { width: 28px; height: 28px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+  .demo-document-note button { min-height: 28px; padding: 4px 6px; }
+  @media (pointer: coarse) {
+    .selection-actions .selection-close { min-width: 44px; min-height: 44px; }
+    .pdf-mark button::before { content: ""; position: absolute; inset: -8px; }
+    .demo-document-note button { min-height: 44px; }
+  }
+
+  /* Image enlargement is also an action, but must not tint the source image. */
+  .web-static-image[role="button"] { outline: 2px solid transparent; outline-offset: 4px; }
+  @media (hover: hover) {
+    .web-static-image[role="button"]:hover { outline-color: var(--blue-line); }
+  }
+  .web-static-image[role="button"]:is(:active, :focus-visible) { outline-color: var(--blue); }
+}

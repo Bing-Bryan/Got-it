@@ -1,0 +1,9 @@
+import{createHash,randomUUID}from'node:crypto';import{mkdir,open,readFile,rename,rm}from'node:fs/promises';import{join}from'node:path';import{validateTranslationBatch,type TranslationUnit,type TranslationBatchResult}from'../src/lib/web-translation';import{WebError}from'./web-fetch';
+const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
+/** Server-owned sidecar: validated translated text only, never prompt/source/trace. */
+export class TranslationCache {
+ constructor(private root:string){}
+ private path(key:string){return join(this.root,hash(key)+'.json');}
+ async read(key:string,units:TranslationUnit[]):Promise<TranslationBatchResult|undefined>{let raw:string;try{raw=await readFile(this.path(key),'utf8');}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return;throw new WebError('无法核对已完成翻译，请检查本机存储后重试。','translation_cache',503);}try{const record=JSON.parse(raw);if(record.key!==hash(key)||record.digest!==hash(JSON.stringify(record.result)))throw new Error();const result=record.result as TranslationBatchResult;validateTranslationBatch(units,Object.entries(result.units).map(([id,text])=>({id,text})));return result;}catch{throw new WebError('已完成翻译缓存损坏，未自动重复调用模型。','translation_cache',503);}}
+ async write(key:string,result:TranslationBatchResult){await mkdir(this.root,{recursive:true,mode:0o700});const path=this.path(key),temp=path+'.'+randomUUID()+'.tmp';try{const file=await open(temp,'wx',0o600);try{await file.writeFile(JSON.stringify({key:hash(key),result,digest:hash(JSON.stringify(result))}));await file.sync();}finally{await file.close();}await rename(temp,path);if(process.platform!=='win32'){const dir=await open(this.root,'r');try{await dir.sync();}finally{await dir.close();}}}catch{throw new WebError('翻译结果未能可靠保存，已验证批次保留在本次服务中，请重试保存。','translation_cache_write',503);}finally{await rm(temp,{force:true}).catch(()=>{});}}
+}

@@ -1,3 +1,5 @@
+import { WebTranslations } from "./web-translations";
+import { WebImports } from "./web-imports";
 import { randomBytes } from "node:crypto";
 import { CodexLoginService, codexLoginRouter } from "./codex-login";
 import { openReadingPage } from "./open-browser";
@@ -33,7 +35,7 @@ export function createApp(options: AppOptions = {}) {
   app.use(localOriginGuard);
   const library=options.library ?? new ReadingLibrary();
   const sessionToken=randomBytes(32).toString("hex");
-  app.use("/api/library", libraryRouter(library,sessionToken));
+  app.use("/api/library", libraryRouter(library,sessionToken,new WebImports(library),new WebTranslations(library,providerService)));
   async function imageInput(req: Request, inquiry: import("../src/types").InquiryRequest) {
     if(!inquiry.image)return undefined;
     if(req.headers["x-got-it-session"]!==sessionToken)throw new ProviderError("阅读会话已过期，请重新打开材料后重试。",401,"image_session_expired");

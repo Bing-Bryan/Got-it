@@ -1,3 +1,4 @@
+@layer reader-base {
 .pdf-reader { min-width:0; position:relative; padding-bottom:40px; }
 .pdf-toolbar { position:sticky; top:0; left:0; z-index:12; display:flex; align-items:center; flex-wrap:wrap; gap:7px; padding:10px 16px; background:#fafaf8f5; border-bottom:1px solid var(--line); }
 .pdf-toolbar button,.pdf-toolbar select,.pdf-status button { border:1px solid #d8d8df; border-radius:6px; background:white; padding:6px 9px; font-size:12px; cursor:pointer; }
@@ -98,3 +99,4 @@
 }
 .pdf-zoom-label, .pdf-zoom-value { flex:none; white-space:nowrap; }
 .pdf-zoom-value { display:flex; align-items:center; gap:0; }
+}

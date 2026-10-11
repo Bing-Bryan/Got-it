@@ -1,3 +1,6 @@
+import { WebTranslations } from "./web-translations";
+import { ProviderService, ProviderError, toProviderErrorBody } from "./providers";
+import { WebImports } from "./web-imports";
 import { PdfOutlineStore } from "./pdf-outline";
 import { randomBytes } from "node:crypto";
 import express, { type Request, type Response, type NextFunction } from "express";
@@ -18,7 +21,7 @@ export function localOriginGuard(request: Request, response: Response, next: Nex
   next();
 }
 
-export function libraryRouter(library: ReadingLibrary, token = randomBytes(32).toString("hex")) {
+export function libraryRouter(library: ReadingLibrary, token = randomBytes(32).toString("hex"), web = new WebImports(library), translations = new WebTranslations(library,new ProviderService())) {
   const router = express.Router();
   const outlines = new PdfOutlineStore(library);
   router.use((_req, res, next) => { res.setHeader("Cache-Control", "no-store"); next(); });
@@ -37,6 +40,19 @@ export function libraryRouter(library: ReadingLibrary, token = randomBytes(32).t
     try { res.json(await fn(req)); } catch (error) { const e = libraryFailure(error); res.status(e.status).json({ error: e.message, code: e.code }); }
   };
   const id = (req: Request) => String(req.params.id);
+  router.post("/entries/:id/translation-batches/:operationId/cancel",action(async req=>translations.cancel(id(req),String(req.params.operationId))));
+  router.post("/entries/:id/translation-batches",async(req,res)=>{const controller=new AbortController();res.on("close",()=>{if(!res.writableEnded)controller.abort();});try{res.json(await translations.batch(id(req),req.body,controller.signal));}catch(error){if(error instanceof ProviderError){const e=toProviderErrorBody(error);res.status(e.statusCode).json(e.body);}else{const e=libraryFailure(error);res.status(e.status).json({error:e.message,code:e.code});}}});
+  router.post("/web-imports", action(req=>web.start(req.body?.url,req.body?.operationId)));
+  router.get("/web-imports/:operationId", action(async req=>web.status(String(req.params.operationId))));
+  router.post("/web-imports/:operationId/cancel", action(async req=>web.cancel(String(req.params.operationId))));
+  router.post("/web-imports/:operationId/confirm", action(req=>web.confirm(String(req.params.operationId),req.body?.candidateId,req.body?.creationKey,req.body?.allowPartial)));
+  router.get("/web-imports/:operationId/resources/:resourceId", async(req,res)=>{
+    try{const r=web.resource(String(req.params.operationId),String(req.params.resourceId));res.setHeader("X-Content-Type-Options","nosniff");res.setHeader("Content-Security-Policy","default-src 'none'; sandbox");res.type(r.mime).send(r.bytes)}catch(error){const e=libraryFailure(error);res.status(e.status).json({error:e.message,code:e.code})}
+  });
+  router.get("/entries/:id/web-resources/:revisionId/:resourceId",async(req,res)=>{
+    try{const r=await library.readWebResource(String(req.params.id),String(req.params.revisionId),String(req.params.resourceId));res.setHeader("X-Content-Type-Options","nosniff");res.setHeader("Content-Security-Policy","default-src 'none'; sandbox");res.type(r.mime).send(r.bytes)}catch(error){const e=libraryFailure(error);res.status(e.status).json({error:e.message,code:e.code})}
+  });
+
   router.post("/pdf", express.raw({type:"application/pdf",limit:"50mb"}), action(req=>library.uploadPdf(String(req.query.filename||"document.pdf"),req.body)));
   router.post("/entries/:id/ocr", action(req=>library.resources.ocr(id(req),req.body)));
   router.post("/entries/:id/crops", express.raw({type:"image/png",limit:"8mb"}), action(req=>library.resources.crop(id(req),String(req.query.fileHash),Number(req.query.page),JSON.parse(String(req.query.rect)),req.body)));

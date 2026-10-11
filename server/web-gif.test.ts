@@ -1,0 +1,14 @@
+// @vitest-environment node
+import{it,expect,vi}from'vitest';import{validateGif}from'./web-gif';import{validateStaticImage}from'./web-media';
+const header=Buffer.from('47494638396101000100800000000000ffffff','hex');
+const frame=Buffer.from('21f90400010000002c0000000001000100000202440100','hex');
+const gif=(frames=1)=>Buffer.concat([header,...Array.from({length:frames},()=>frame),Buffer.from([0x3b])]);
+it('preserves complete GIF bytes, animation frame count and delays without first-frame conversion',async()=>{const b=gif(2);expect(validateGif(b)).toMatchObject({width:1,height:1,frames:2,durationMs:20,framePixels:2});const saved=await validateStaticImage(b);expect(saved.mime).toBe('image/gif');expect(saved.bytes.equals(b)).toBe(true);});
+it('rejects truncation, missing trailer, appended data and unknown extension',()=>{for(const b of[gif().subarray(0,-2),gif().subarray(0,-1),Buffer.concat([gif(),Buffer.from([0])]),Buffer.concat([header,Buffer.from([0x21,1,0]),frame,Buffer.from([0x3b])])])expect(()=>validateGif(b)).toThrow();});
+it('rejects offcanvas, oversized canvas/file and excessive frames',()=>{const off=gif();off.writeUInt16LE(1,header.length+9);const huge=gif();huge.writeUInt16LE(4097,6);for(const b of[off,huge,gif(513),Buffer.alloc(32*1024*1024+1)])expect(()=>validateGif(b)).toThrow();});
+it('rejects corrupt LZW, pixel expansion and excessive animation duration',()=>{const corrupt=gif();corrupt[header.length+20]=0xff;const duration=gif();duration.writeUInt16LE(3001,header.length+4);for(const b of[corrupt,duration])expect(()=>validateGif(b)).toThrow();});
+it('skips many tiny comment subblocks without allocating an object per block',()=>{const blocks=Buffer.alloc(1_000_001);for(let i=0;i<1_000_000;i+=2){blocks[i]=1;blocks[i+1]=65;}const b=Buffer.concat([header,Buffer.from([0x21,0xfe]),blocks,frame,Buffer.from([0x3b])]);expect(validateGif(b)).toMatchObject({frames:1});});
+
+it('enforces cumulative frame-pixel budget before raster decoding',()=>{const h=Buffer.from(header);h.writeUInt16LE(2000,6);h.writeUInt16LE(2000,8);const f=Buffer.from(frame);f.writeUInt16LE(2000,13);f.writeUInt16LE(2000,15);const b=Buffer.concat([h,...Array.from({length:31},()=>f),Buffer.from([0x3b])]);expect(()=>validateGif(b)).toThrow('1.2');});
+it('checks wall time within extension-subblock scanning',()=>{const blocks=Buffer.alloc(20001);for(let i=0;i<20000;i+=2){blocks[i]=1;blocks[i+1]=65;}const b=Buffer.concat([header,Buffer.from([0x21,0xfe]),blocks,frame,Buffer.from([0x3b])]);let tick=0;const clock=vi.spyOn(performance,'now').mockImplementation(()=>tick++*10000);try{expect(()=>validateGif(b)).toThrow('时间限制');}finally{clock.mockRestore();}});
+it('accepts the exact 512-frame limit and rejects the next complete frame',()=>{expect(validateGif(gif(512)).frames).toBe(512);expect(()=>validateGif(gif(513))).toThrow('512');});

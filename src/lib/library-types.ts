@@ -8,7 +8,7 @@ export interface LibraryEntry {
   workspace: Workspace; position: ReadingPosition; history: ReadingRevision[];
   updatedAt: string; lastOpenedAt: string; creationKey: string;
 }
-export type LibrarySummary = Pick<LibraryEntry, "id" | "version" | "lastOpenedAt"> & { filename: string; path: string | null; historyCount: number };
+export type LibrarySummary = Pick<LibraryEntry, "id" | "version" | "lastOpenedAt"> & { filename: string; path: string | null; historyCount: number; kind?: "markdown" | "pdf" | "web"; url?: string; importedAt?: string };
 export interface LibraryList { entries: LibrarySummary[]; activeId: string | null; warnings: string[]; nativePicker: boolean }
 export type SourceStatus = "unlinked" | "available" | "missing" | "permission" | "unreadable" | "changed" | "reselect";
 export interface SourceCheck { status: SourceStatus; message: string; candidateId?: string }

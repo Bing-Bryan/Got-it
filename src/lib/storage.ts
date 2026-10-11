@@ -1,3 +1,5 @@
+import { buildTranslationSource, copyWebTranslation, copyTranslationSelection } from "./web-translation";
+import { copyWebDocument } from "./web-data";
 import { copyPdfDocument, copyPdfLocation, insidePage } from "./pdf-data";
 import { copyActiveTab, copyVisitedIds } from "./inquiry-tabs";
 import { copyModelPreferences } from "./model-routing";
@@ -61,7 +63,7 @@ function isDocument(value: unknown): value is DocumentSnapshot {
   return (
     stringField(value.id) &&
     stringField(value.filename) &&
-    (value.kind === "pdf" ? !!copyPdfDocument(value.pdf) && value.contentHash === (value.pdf as {resourceId:string}).resourceId : (value.kind === undefined || value.kind === "markdown") && stringField(value.markdown)) &&
+    (value.kind === "pdf" ? !!copyPdfDocument(value.pdf) && value.contentHash === (value.pdf as {resourceId:string}).resourceId : (value.kind === "web" ? !!copyWebDocument(value.web) && value.contentHash === (value.web as {contentVersion:string}).contentVersion && stringField(value.markdown) : (value.kind === undefined || value.kind === "markdown") && stringField(value.markdown))) &&
     stringField(value.importedAt) &&
     stringField(value.contentHash) &&
     typeof value.isDemo === "boolean"
@@ -153,6 +155,7 @@ function optionalString(value: string | undefined): string | undefined {
 
 function copyAnchor(anchor: Anchor): Anchor {
   return {
+    ...(copyTranslationSelection(anchor.translation) ? {translation:copyTranslationSelection(anchor.translation)} : {}),
     ...(anchor.scope === "document" ? {scope: "document" as const} : {}),
     ...(anchor.pdf ? { pdf: copyPdfLocation(anchor.pdf)! } : {}),
     ...(anchor.textVersion === 2 ? { textVersion: 2 as const } : {}),
@@ -228,11 +231,14 @@ function copyInquiry(inquiry: Inquiry): Inquiry {
 export function sanitizeWorkspace(workspace: Workspace): Workspace {
   return {
     schemaVersion: SCHEMA_VERSION,
+    ...(workspace.document.kind === "web" && copyWebTranslation(workspace.webTranslation, workspace.document.id, workspace.document.web.contentVersion, buildTranslationSource(workspace.document.markdown, workspace.document.web)) ? {webTranslation:copyWebTranslation(workspace.webTranslation, workspace.document.id, workspace.document.web.contentVersion, buildTranslationSource(workspace.document.markdown, workspace.document.web))} : {}),
+    ...(workspace.readingSide === "translated" ? {readingSide:"translated" as const} : {}),
+    ...(typeof workspace.translationNotice === "string" ? {translationNotice:workspace.translationNotice.slice(0,300)} : {}),
     ...(workspace.modelDefaultsVersion === 2 || workspace.modelDefaultsVersion === 3 || workspace.modelDefaultsVersion === 4 ? { modelDefaultsVersion: workspace.modelDefaultsVersion } : {}),
     document: {
       id: workspace.document.id, filename: workspace.document.filename,
       importedAt: workspace.document.importedAt, contentHash: workspace.document.contentHash, isDemo: workspace.document.isDemo,
-      ...(workspace.document.kind === 'pdf' ? {kind:'pdf' as const,pdf:copyPdfDocument(workspace.document.pdf)!} : {markdown:workspace.document.markdown}),
+      ...(workspace.document.kind === 'pdf' ? {kind:'pdf' as const,pdf:copyPdfDocument(workspace.document.pdf)!} : workspace.document.kind === 'web' ? {kind:'web' as const,markdown:workspace.document.markdown,web:copyWebDocument(workspace.document.web)!} : {markdown:workspace.document.markdown}),
     },
     inquiries: workspace.inquiries.map(copyInquiry),
     activeInquiryId: workspace.activeInquiryId,
@@ -265,6 +271,7 @@ export function restoreWorkspace(value: unknown): Workspace | null {
     return !a || a.fileHash !== value.document.contentHash || !page || !a.rects.every(r=>insidePage(r,page));
   })) return null;
   const workspace = sanitizeWorkspace(value);
+  if (value.webTranslation && !workspace.webTranslation) { workspace.readingSide = "original"; workspace.translationNotice = (value.webTranslation as {version?:unknown}).version === 1 ? "旧版片段译文不能用于新版段落翻译；原文和知识贴仍保留，可主动重新译中。" : "译文记录不完整或版本不匹配，原文和知识贴仍保留；可主动重新翻译。"; }
   workspace.inquiries = workspace.inquiries.map(inquiry => {
     const interrupted = inquiry.status === "answering" || inquiry.messages.some(m => m.completion === "provisional" || m.verification?.completion === "provisional");
     return interrupted ? { ...inquiry, status: "ready", lastError: "上次请求已中断；结果已保留，可手动重试。", messages: inquiry.messages.map(interruptMessage) } : inquiry;

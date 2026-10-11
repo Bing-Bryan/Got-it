@@ -35,15 +35,15 @@ export function inquiryContent({ updatedAt: _updated, createdAt: _created, compl
 /** The complete safe reading content, without navigation or bookkeeping timestamps. */
 export function readingContent(workspace: Workspace): string {
   const w = restoreWorkspace(workspace)!;
-  return canonical({ document: { id: w.document.id, filename: w.document.filename, ...(w.document.kind === "pdf" ? {kind:"pdf",pdf:w.document.pdf} : {markdown: w.document.markdown}) },
-    inquiries: w.inquiries.map(inquiryContent) });
+  return canonical({ document: { id: w.document.id, filename: w.document.filename, ...(w.document.kind === "pdf" ? {kind:"pdf",pdf:w.document.pdf} : w.document.kind === "web" ? {kind:"web",markdown:w.document.markdown,web:w.document.web} : {markdown: w.document.markdown}) },
+    webTranslation: w.webTranslation, inquiries: w.inquiries.map(inquiryContent) });
 }
 export function viewKey(w: Workspace, p: ReadingPosition): string {
-  return canonical({ activeInquiryId: w.activeInquiryId, activeTab: w.activeTab, position: p });
+  return canonical({ readingSide: w.readingSide, activeInquiryId: w.activeInquiryId, activeTab: w.activeTab, position: p });
 }
 export function readingKey(w: Workspace, p: ReadingPosition): string { return readingContent(w) + viewKey(w, p); }
 export function sameOriginal(e: LibraryEntry | RecoverySnapshot, d: ReadingDraft): boolean {
-  return e.revisionId === d.revisionId && e.workspace.document.id === d.workspace.document.id && e.workspace.document.contentHash === d.workspace.document.contentHash && e.workspace.document.kind === d.workspace.document.kind && e.workspace.document.markdown === d.workspace.document.markdown;
+  return e.revisionId === d.revisionId && e.workspace.document.id === d.workspace.document.id && e.workspace.document.contentHash === d.workspace.document.contentHash && e.workspace.document.kind === d.workspace.document.kind && e.workspace.document.markdown === d.workspace.document.markdown && (e.workspace.document.kind !== "web" || d.workspace.document.kind === "web" && canonical(e.workspace.document.web) === canonical(d.workspace.document.web));
 }
 export function withPreferences(w: Workspace, preferences: Workspace): Workspace {
   return { ...w, activeProviderId: preferences.activeProviderId, modelPreferences: preferences.modelPreferences, modelDefaultsVersion: preferences.modelDefaultsVersion };

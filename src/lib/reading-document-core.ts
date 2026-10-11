@@ -35,6 +35,7 @@ export function readingDocumentFilename(workspace: Workspace): string {
 
 export function workspaceToReadingDocument(workspace: Workspace): string {
   if (workspace.document.kind === "pdf") throw new Error("PDF 阅读记录通过本机保存恢复，暂不支持独立阅读备份。");
+  if (workspace.document.kind === "web") throw new Error("网页阅读记录依赖本机图片与图表，请通过本机阅读列表保存恢复，不支持独立阅读备份。");
   // Restore a copy so a running response is interrupted only in the saved file.
   const snapshot = restoreWorkspace(sanitizeWorkspace(workspace));
   if (!snapshot || !validLinks(snapshot)) throw new Error("当前阅读数据不完整，无法保存阅读文档。");
@@ -62,6 +63,7 @@ export function parseReadingDocument(content: string, allowLegacy = false, inter
   const workspace = restoreWorkspace(value);
   if (!workspace || !validLinks(workspace)) throw new Error("阅读文档的数据或关联不完整，当前文档未替换。");
   if (!internal && workspace.document.kind === "pdf") throw new Error("PDF 记录缺少可携带文件，请从本机阅读列表打开。");
+  if (!internal && workspace.document.kind === "web") throw new Error("网页记录缺少可携带的本机资源，请从本机阅读列表打开。");
   if (workspace.activeInquiryId && !workspace.inquiries.some(inquiry => inquiry.id === workspace.activeInquiryId)) workspace.activeInquiryId = null;
   return { ...workspace, hasUnexportedChanges: false };
 }

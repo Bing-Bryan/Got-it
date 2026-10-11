@@ -18,5 +18,5 @@ it('describes inclusion, exclusive content, changed answers and different origin
  before.inquiries.push({...structuredClone(before.inquiries[0]),id:'old'});
  expect(describeRecoveryDifference(before,after)).toContain('之前记录中有 1 条知识贴未包含在当前记录里');
  after.inquiries[0].messages[0].content='改动回答';after.document.markdown='不同原文';
- expect(describeRecoveryDifference(before,after)).toContain('有 1 条知识贴内容或状态不同');expect(describeRecoveryDifference(before,after)).toContain('两份文章正文不同');
+ expect(describeRecoveryDifference(before,after)).toContain('有 1 条知识贴内容或状态不同');expect(describeRecoveryDifference(before,after)).toContain('两份文章正文或依赖资源不同');
 });
