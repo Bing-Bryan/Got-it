@@ -2,68 +2,96 @@
 
 [简体中文](README.md) · **English**
 
-**Make sense of it. Keep reading.**
+**Make sense of it without leaving the page.**
 
-Got it is a local-first Markdown and PDF reader. Select an unfamiliar passage, explain it or find sources beside the original, and keep useful answers linked to the text. Your reading records stay in a local library, ready to reopen.
+Got it is a local-first reader for Markdown, PDF, and static web articles. Add material to your reading library, select the original text, then explain a concept, check sources, or ask a specific question. Answers stay beside the passage as knowledge cards, ready to revisit after a refresh or in a later reading session.
 
-> **v0.1.0 · Early preview.** Requires a locally installed, signed-in Codex. macOS Apple Silicon has been tested; Windows/Linux remain experimental pending native UI validation. No accounts, cloud sync or collaboration inside Got it.
+AI normally runs only after you choose an action or send a question. If you previously enabled automatic translation, a newly confirmed English web entry starts translation under that preference. Original files remain unchanged; reading copies, cards, translations, and progress are stored locally.
 
-## See it in action
+> **v0.1.0 · Early preview.** Best suited to readers already familiar with Codex. macOS Apple Silicon has been tested; Windows and Linux have not yet received native UI validation. Got it has no accounts, cloud sync, or collaboration.
 
-All six screenshots were newly captured after the UI fixes on **October 10, 2026**, following the reading flow below; they are not audit screenshots. The Markdown example is an AI companion product analysis; the PDF is WGSN’s report on silver-generation consumers. Only excerpts are shown, and the complete reports are not distributed. Report figures are unverified input, not endorsed conclusions. Markdown answers are previously saved real model responses, not newly generated for this refresh.
+## A complete reading journey
 
-### 1. Keep reading in context
+The screenshots below were captured on **October 12, 2026** with an isolated library. Samples include an AI companion product analysis, WGSN’s report on silver-generation consumers, and a Claude article about evaluation design. Only excerpts are shown; the complete materials are not distributed. AI content shown is made of previously saved real responses, and capturing the screenshots did not start new model requests. Screenshots introduce the interface rather than serving as feature validation. Treat figures, forecasts, and AI answers in the samples as claims to assess.
 
-Navigate the full chapter outline on the left, read in the center, and revisit knowledge cards on the right. The current chapter stays highlighted; the outline search box is removed, with consistent spacing around headings. Markdown keeps headings, lists and tables; PDFs retain their original layout. Switching documents or reopening an answer does not call a model or change the original file.
+### 1. Keep every format in one library
 
-![Current Markdown reader with the AI companion report and knowledge cards](docs/images/reading.png)
+Markdown files, PDFs, and imported web articles coexist in the local library. Search by filename or web article title. Switching to an existing item does not generate an answer. Web entries retain their original URL, while local files show their source path or association state.
 
-### 2. Explain an unfamiliar concept or product
+![A local library containing Markdown, PDF, and web articles with name search](docs/images/library.png)
 
-Select a term such as CAGR, a product name, or a difficult passage and choose **Explain**. Concepts, people, companies and products share this entry point. Missing background can be searched when needed. Use **Ask** to submit a more specific question.
+### 2. Read beside the original
 
-![A CAGR explanation beside the original passage](docs/images/explain.png)
+Use the outline on the left, read in the center, and revisit cards linked to selected passages on the right. Markdown keeps headings, lists, and tables; PDF retains its original page layout; imported web articles keep readable text, links, code, and required static images.
 
-### 3. Find sources for a claim
+![Markdown reading view with the original, outline, and knowledge cards](docs/images/reading.png)
 
-Select a claim or figure to start one bounded lookup. Results explain the material found, its relation to the passage and specific limitations. Source cards show excerpts without expanding details. “片段已核对” means the excerpt was matched to retrieved text; “片段未核对” identifies an AI-provided quotation lead. A single “打开来源” link opens the source, with text positioning when supported. A completed lookup may have no references; failure and interruption remain explicit. **Finding a link does not establish that a claim is true.** Search execution, page access, quotation checks and evidential support are separate states.
+Each sidebar can be pinned or collapsed independently, and the card panel can be resized. Adjust Markdown content width or PDF zoom; reset PDF pages to automatic fitting when needed. Sidebars become drawers on narrow screens.
 
-![A related source for the market forecast around the selected CAGR](docs/images/sources.png)
+### 3. Select a passage and choose how to understand it
 
-This saved historical record has a checked excerpt but cannot establish whether search ran. The interface preserves that distinction; a checked excerpt does not establish the claim.
+- **Explain:** clarify a term, person, company, product, or difficult passage, consulting outside material when necessary.
+- **Find sources:** run one time-bounded lookup for a figure or claim, keeping search execution, excerpt checking, and evidential support as separate states.
+- **Ask:** pose your own question about the selection, such as recalculating a growth rate or comparing two ideas.
 
-### 4. Ask your own question
+![A CAGR explanation beside the selected passage](docs/images/explain.png)
 
-Ask about the selected passage—for example, recalculate a growth rate from the report’s numbers. Explanations, sources and questions remain separate and can be switched without regenerating answers. Click the excerpt above an answer to return to its original location.
+![Sources, excerpts, and checking status for a claim in the original](docs/images/sources.png)
 
-![A specific question and CAGR calculation using the report's figures](docs/images/question.png)
+This screenshot shows a saved historical record: its quotation excerpt was checked, but the old record cannot establish whether search ran at the time. The interface preserves that distinction; a checked excerpt does not establish the claim.
 
-**Ask about the whole document** sits below the My questions list. Short documents use all available text; long documents provide up to 16,000 characters of structure and relevant excerpts, with coverage disclosed. PDFs need sufficient native text; this feature does not automatically run OCR.
+![A specific question answered from figures in the original](docs/images/question.png)
 
-### 5. Read and select directly on PDF pages
+Explanations, sources, and questions for the same passage remain separate. Click the excerpt above a card to return to the original location. Finding a link does not establish a claim. Missing or unchecked excerpts stay explicit, and failures, interruptions, and completed lookups with no useful sources are never presented as success.
 
-WGSN’s original case-study page is shown below. PDFs scroll continuously, and the sidebar shows the full chapter outline with click-to-jump navigation. Collapse the sidebars for more reading space.
+Use **Ask about the whole document** when the question concerns the broader material. Short documents provide all available text; long documents provide up to 16,000 characters of structure and relevant excerpts, with the coverage disclosed. A PDF without enough native text does not silently substitute OCR as document-wide input.
 
-![WGSN report with original images, layout and chapter navigation](docs/images/pdf-reading.png)
+### 4. Select text or regions on the original PDF page
 
-Select native text directly, or use **Select region** for images, scans and complex layouts. Include the image and necessary captions, then choose Explain, Find sources or Ask. Local recognition and the model request begin only after choosing a function. This screenshot shows the selection menu before an answer is requested.
+PDFs scroll continuously. The outline uses embedded bookmarks when available and otherwise detects headings locally. Select native text directly, or use **Select region** for scans, images, and complex layouts. Local recognition and the model request begin only after you choose Explain, Find sources, or Ask.
 
-![A WGSN image and caption selected with the available question actions](docs/images/pdf-selection.png)
+![A PDF preserving its original layout and chapter outline](docs/images/pdf-reading.png)
 
-### Reading controls
+![An image and caption selected on the original PDF page](docs/images/pdf-selection.png)
 
-- Pin or collapse either sidebar independently. Drag the right panel to resize it; navigation uses a drawer at ≤1080px and knowledge cards at ≤780px. Mirrored sidebar icons keep one opening control per side.
-- Adjust Markdown content width from 50–100% (default 80%), or PDF zoom from 25–400%, using the fixed toolbar control outside the document. Hover to open it and move away to close; keyboard and touch operation remain available. PDF can reset to automatic fitting. Preferences stay local.
-- Wait for **Saved locally** before closing. Reopen to continue reading and revisit cards. Save failures offer retry; conflicting records retain both versions for your choice.
-- Delete cards through the category’s trash control and an explicit second confirmation. Duplicate entries show dates and answer previews. The original passage and other cards remain intact.
-- Failed imports offer file reselection; PDF load failures offer reload. Intentional stops and request failures have distinct feedback, and a single recovery difference opens directly.
-- Opening a question input does not call a model. Enter sends; Shift+Enter adds a line. Stopping, timing out or failing preserves received content and allows retry.
+### 5. Import a static article and translate it when needed
 
-All functions currently default to **GPT-6.1 SOL / medium**. AI settings read the installed Codex model catalog; unavailable configurations are reported rather than silently replaced. Reading-time estimates are computed locally without model calls. See the [UI update and validation scope](docs/updates/2026-10-10-reader-ui.md).
+Choose **Add file → Web link** and paste a public HTTPS article URL. Got it extracts the static body and required images, then opens the article only after saving a complete copy. Importing does not call a model. A saved copy remains readable when the source is temporarily unavailable. Adding the same URL again opens the existing entry without updating or translating it automatically.
 
-## Run locally
+![A Chinese translation of an English web article with a knowledge card beside the text](docs/images/web-reading.png)
 
-Requires **Node.js 24.14.1 / Node 24** and **npm 11.x**. If using nvm, run `nvm install` and `nvm use` first.
+For a saved English web article, start **Translate full text to Chinese** explicitly. The first run explains what will be sent. Translation is saved in batches, and stopping or failing preserves checked batches. Once translated text exists, one language icon in the toolbar switches between the original and Chinese views. The icon only changes the saved reading side; it never starts translation. The original is retained, and a Chinese card can return to both its translated excerpt and corresponding source paragraph.
+
+Translation currently covers **English web article text to Chinese**. Code blocks, inline code, link destinations, images, image alt text, and text inside images remain unchanged and are not sent for translation; an ordinary figure caption in the article body may still be translated as body text. Full-text translation is not available for Markdown, PDF, or other languages. The automatic translation preference applies only to newly confirmed English web entries added afterward.
+
+Web import targets directly readable static articles and cannot support every website. Signed-in content, access challenges, JavaScript-only bodies, videos, site interactions, and required media that cannot be retrieved fail explicitly. For paid content, only the designated [Lenny article](https://www.lennysnewsletter.com/p/how-to-turn-your-ai-into-a-world) is allowed to save its public pre-paywall excerpt; the interface continuously discloses that scope. Other paywalled articles are rejected.
+
+### 6. Wait for confirmed saving before leaving
+
+The interface reports the actual persistence state: **Saving** while a write is pending and **Saved** after it succeeds, with some locations using the fuller **Saved locally** label. Translation progress and errors remain separate, so a completed translation cannot hide a pending or failed save. Failed saves can be retried. When records conflict, both versions are retained for review.
+
+Buttons share consistent default, hover, pressed, disabled, selected, and keyboard-focus states while preserving the hierarchy among primary, secondary, and destructive actions. See the [UI guidelines](docs/ui-guidelines.md). To use the [button-state reference](docs/ui/button-states.html), download the repository and open the HTML file in a browser; GitHub does not run it directly on the page.
+
+## AI, sources, and reader control
+
+- Opening material, switching reading sides, expanding an input, or revisiting a saved card does not call a model. A previously enabled automatic-translation preference triggers only after a new English web entry is confirmed.
+- Enter sends a question; Shift+Enter adds a line. Stopping, timing out, or failing preserves received content and offers retry.
+- Selection requests send the selection, bounded nearby context, the title, and necessary card history. Only an explicit document-wide question or web translation prepares a broader corresponding input.
+- Source checking reads a limited number of public pages without browser login credentials. It cannot guarantee the original source and does not add search rounds automatically.
+- Code sets the default configuration to **GPT-6.1 SOL / medium**. AI settings read the model catalog returned by local Codex. An unavailable selection is reported instead of silently replaced.
+- Reading-time estimates are computed locally. **Local storage does not mean offline AI.**
+
+## Quick start
+
+| Item | Current baseline |
+| --- | --- |
+| Node.js | **24.14.1, Node 24** (see `.nvmrc`) |
+| npm | **11.x** |
+| System | Tested on macOS Apple Silicon; Windows/Linux experimental |
+| AI | A locally installed, signed-in Codex; model catalog supplied by Codex |
+| Network | Required for installation, AI, web import, and source lookup |
+
+Clone or download the repository and enter its directory. With nvm, run `nvm install` and `nvm use` first.
 
 ```bash
 npm ci
@@ -71,14 +99,14 @@ npm run build
 npm start
 ```
 
-The browser opens <http://127.0.0.1:8787/>. Keep the terminal running; Ctrl+C stops the service. Use `npm start` for subsequent launches, and reinstall/rebuild after updating the code. Do not install with `--omit=dev`: the local launcher uses `tsx`.
+The browser opens <http://127.0.0.1:8787/>. Keep the terminal running and press Ctrl+C to stop. Later launches only need `npm start`; reinstall and rebuild after updating the code. Keep development dependencies because the local launcher uses `tsx`.
 
-1. Open AI settings and check the Codex connection. If needed, choose Log in to Codex and complete official authorization, or run `codex login` in a terminal.
-2. Add a Markdown or PDF file, or try the built-in example.
-3. Select a passage or PDF region and choose an action.
-4. Wait for the saved status before closing.
+1. Open **AI settings** and check the Codex connection. If needed, follow the interface to official authorization or run `codex login` in a terminal.
+2. Add a local Markdown/PDF file or a web link, or begin with the built-in example.
+3. Select a passage or PDF region and choose Explain, Find sources, or Ask.
+4. Wait until the interface confirms saving before closing; the next launch restores the reading record.
 
-Got it does not read, copy or store Codex tokens. On macOS it prefers the Codex.app / ChatGPT.app executable, then `codex` on PATH; `CODEX_CLI_PATH` can override it. See [validation results](docs/release-results.md) for the tested setup.
+Got it does not read, copy, or store Codex tokens. On macOS it prefers the executable from Codex.app / ChatGPT.app, then `codex` on PATH. `CODEX_CLI_PATH` can specify another executable.
 
 For development:
 
@@ -86,28 +114,25 @@ For development:
 npm run dev
 ```
 
-The frontend runs at `127.0.0.1:5173` and the API at `127.0.0.1:8787`. Set `BROWSER=none` to suppress automatic opening; PowerShell uses `$env:BROWSER="none"`. Pass environment variables through the launching shell; `.env.example` documents configuration but `.env` is not loaded automatically.
+The frontend runs at `127.0.0.1:5173` and the API at `127.0.0.1:8787`. Set `BROWSER=none` to suppress automatic opening; PowerShell uses `$env:BROWSER="none"`. The app does not load `.env` automatically; `.env.example` documents configuration.
 
 ## Storage and privacy
 
-- Markdown snapshots, PDF copies, OCR resources, crops, cards and answers are stored on disk. Original files remain unchanged. Browser storage keeps preferences and emergency recovery data.
-- Default data directories: macOS `~/Library/Application Support/Got-it`; Windows `%LOCALAPPDATA%/Got-it`; Linux `$XDG_DATA_HOME/got-it` or `~/.local/share/got-it`. Override with `GOT_IT_DATA_DIR`; run only one service per data directory.
-- PDF outlines prefer embedded bookmarks, otherwise extracting headings locally. Saved outlines are restored on reopening; recognition or save failures offer retry.
-- OCR runs locally using assets prepared during installation. Image questions send the selected crop and auxiliary text to the model. Selection requests send bounded context; only explicit document-wide questions prepare broader document material.
-- **Local storage does not mean offline AI.** Model calls require network access, your own Codex account and available quota. Source checking reads a limited number of public pages without your browser login credentials.
-- Local saving is not an off-device backup. Stop the service and back up the complete application data directory for important reading records. Do not clear browser data to resolve a save error.
+- Markdown and web text copies, static web media, PDF copies, recognition assets, crops, cards, translations, answers, and learning state are stored on disk. Original files remain unchanged. Browser storage holds preferences and emergency recovery data only.
+- Default data directories: macOS `~/Library/Application Support/Got-it`; Windows `%LOCALAPPDATA%/Got-it`; Linux `$XDG_DATA_HOME/got-it` or `~/.local/share/got-it`. Override with `GOT_IT_DATA_DIR`, and run only one service per data directory.
+- PDF OCR runs locally with Simplified Chinese and English assets prepared during installation. Image explanations send the crop you confirmed to the model.
+- Local saving is not an off-device backup. Stop the service and back up the complete application data directory for important work. Do not clear browser data to address a save problem.
+- The local API listens on loopback by default. **Do not expose it to the public internet.** GitHub Pages cannot replace the local API.
 
 ## Current limitations
 
-- Codex only. One active document at a time; no Word, original-text editing, cloud sync or collaboration.
-- PDFs must be unencrypted, at most 50 MiB and 200 pages. Their fixed layout does not reflow like Markdown. Image explanations require an image-capable model.
-- OCR covers Simplified Chinese and English, with a 60-second limit per recognition task. Complex layouts, numbers and small text can be misread; return to the original page to check. The current UI does not edit OCR text. Crops are at most 8 MiB with a longest side of 4096 pixels.
-- Automatically inferred PDF outlines may omit or misread headings; there is no manual outline editor. Switching materials interrupts generation, and reopening a document without an outline tries again.
-- Document-wide questions may not cover every part of a long document. PDFs without sufficient native text report the limitation instead of silently using OCR.
-- There is no current backup-download button. PDFs require the full data directory; legacy Focus Stickies, `.focus` and complete JSON workspaces can still be imported. Older app versions cannot read PDF workspaces.
-- Markdown relative local images and cross-paragraph selections are not supported. Substantial source changes may require relocating anchors. Browser imports do not receive original file paths; the macOS native picker can establish an association. Source updates require confirmation and retain old versions/cards.
-- Existing answers do not imply understanding or verified facts. Cancellation, disconnection and timeouts are not replaced with demo answers.
-- **Do not expose the local API to the public internet.** GitHub Pages cannot replace it.
+- Codex only, requiring your own account, network access, and available quota. One document is expanded at a time. No Word support, source-text editing, accounts, cloud sync, or collaboration.
+- PDFs must be unencrypted, at most 50 MiB and 200 pages. OCR initially covers Simplified Chinese and English with a 60-second limit per task. Complex layouts, figures, and small text can be misread; check the original page. Crops are limited to 8 MiB and 4096 pixels on the longest side.
+- Generated PDF outlines can omit or misread headings and cannot currently be edited. Document-wide questions may also miss parts of long material.
+- Web import saves only reliably extracted static text and supported media; it does not run source-site interactions. Dynamic WebP, APNG, and video are unsupported, and ambiguous structures may be rejected. Media limits fail explicitly rather than silently truncating content.
+- Local relative images in Markdown are not yet supported, and selections cannot cross paragraphs. Major source changes may require relocating existing card anchors.
+- There is no backup-download button. PDF and web records require the full application data directory. Legacy Focus Stickies workspaces, `.focus` files, and complete JSON exports remain importable.
+- A saved answer does not imply understanding or verification. Cancellation, disconnection, and timeout are never replaced with demo answers.
 
 ## Development and release checks
 
@@ -118,12 +143,10 @@ npm run test:release
 npm audit --audit-level=high
 ```
 
-The build includes type checking. Release smoke tests use isolated data to check built assets, API boundaries, missing Codex and restart behavior without model calls. GitHub Actions runs checks on macOS, Linux and Windows; this is distinct from native UI validation.
+`build` includes TypeScript checking. `test:release` uses temporary data to verify the built page, static assets, local service, and API boundaries without model calls. See the [release checklist](docs/release-checklist.md), [recorded release results](docs/release-results.md), and [security notes](SECURITY.md).
 
-See the [release checklist](docs/release-checklist.md), [recorded validation](docs/release-results.md), and [security notes](SECURITY.md).
-
-Maintainers use `npm run release:prepare` to create an allowlisted public snapshot, then sync it to the existing public repository while preserving its independent history. Do not push the internal working repository. Snapshots exclude private reading data, internal evidence and development history; review screenshots separately from text scans.
+Maintainers use `npm run release:prepare` to create an allowlisted public snapshot, then sync it to the separate public repository. Do not push the internal development repository directly. Review screenshots and text separately before publishing.
 
 ## License
 
-Project code uses the [MIT License](LICENSE). Third-party names, logos and report excerpts appear only to illustrate the product; they imply neither endorsement nor a license to redistribute the underlying third-party material.
+Project code uses the [MIT License](LICENSE). Third-party names, marks, and material excerpts in screenshots illustrate the product and imply neither endorsement nor a license to redistribute the underlying content.

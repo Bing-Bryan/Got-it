@@ -1018,8 +1018,8 @@
     },
     {
       "path": "scripts/generate-button-showcase.mjs",
-      "bytes": 19155,
-      "sha256": "8976b6716a175e94727c09277421627fc517804f3d540d820452b40e0233511b"
+      "bytes": 19182,
+      "sha256": "98e92194f789ac89f251bfd0c4e4b4afce9fea42156aae2d62bb2273b15b685a"
     },
     {
       "path": "scripts/licenses/tessdata-LICENSE",
@@ -1038,8 +1038,8 @@
     },
     {
       "path": "scripts/prepare-public.mjs",
-      "bytes": 2135,
-      "sha256": "57d94344a80cc144c509f3d603b9cb62057805c8f15f900acb296d4c9fd01b67"
+      "bytes": 2305,
+      "sha256": "bcbd89b6a7c7dfdbf15bcd0d655482b8b61070b2ccd014520872ecb42adc4e21"
     },
     {
       "path": "scripts/release-smoke.mjs",
@@ -1092,41 +1092,6 @@
       "sha256": "0e5d0a405100bd4224bbc60650e44a6ee0f5a1e9925e4f2c3db48b117935b51c"
     },
     {
-      "path": "docs/images/explain.png",
-      "bytes": 721030,
-      "sha256": "03ecc73efc9953f31155a3e73eddff7a689b68f5a803a89ff4b5b291aa9e54a9"
-    },
-    {
-      "path": "docs/images/introduction.png",
-      "bytes": 392401,
-      "sha256": "a3ad20e730b6ae18fa1582e00dc3dc00a1098c143f04921744bfdcaa15ba2b27"
-    },
-    {
-      "path": "docs/images/pdf-reading.png",
-      "bytes": 2348296,
-      "sha256": "407e97864b670190f41f3e1f6bc3fc652efc73a1c2212b06de01b4ba6c5b28f6"
-    },
-    {
-      "path": "docs/images/pdf-selection.png",
-      "bytes": 2192998,
-      "sha256": "9c9e7db3314cc7e308196a6d4e0a6a978c72d1bbda424a7653822df7c6987a84"
-    },
-    {
-      "path": "docs/images/question.png",
-      "bytes": 627143,
-      "sha256": "fc4dd9f8b54e2270eb551ad66636822a9c88834417ee2afbdfba7ce370bd25be"
-    },
-    {
-      "path": "docs/images/reading.png",
-      "bytes": 586633,
-      "sha256": "0f5c41b7b8e17e22d323de9e264f1e3b7e1e3906584d95b8cfb4fcd2000a5225"
-    },
-    {
-      "path": "docs/images/sources.png",
-      "bytes": 580244,
-      "sha256": "a8e70df83cdbbd67a7657b9c0b97a9f820616544305171d95511667151620d29"
-    },
-    {
       "path": "docs/updates/2026-09-30.md",
       "bytes": 2923,
       "sha256": "191e14e32ac67820aa8340d335fdfbc12d586e9e2b9a418cb3816dae527f36c1"
@@ -1162,14 +1127,69 @@
       "sha256": "5ed9d8bcccf50cc0f6c32024d6f2fba7b6831fa4c956b12939da9751c1c5e07c"
     },
     {
+      "path": "docs/updates/2026-10-12-readme-and-ui-guidelines.md",
+      "bytes": 727,
+      "sha256": "bbf7110bc261f5a854f056ac25c654808c819f72272c7a67ea177a0284e859f0"
+    },
+    {
+      "path": "docs/images/reading.png",
+      "bytes": 650184,
+      "sha256": "9a7be7dccb913dab98b85e2f0711aa4767022b035246751064d58b5bf0a5953c"
+    },
+    {
+      "path": "docs/images/explain.png",
+      "bytes": 787514,
+      "sha256": "0569ca0ff686dc99d9054dd1f24ce8c3f47ac0d9cf6c3c8e69122fb7eb7c4339"
+    },
+    {
+      "path": "docs/images/sources.png",
+      "bytes": 648706,
+      "sha256": "d6b9f239d3d064265478f20af65ea95303bd66be44b7c59d3ba3d41129631f6e"
+    },
+    {
+      "path": "docs/images/question.png",
+      "bytes": 695964,
+      "sha256": "deebdc5f419053738f0c7b7490ded2173f96f1d6ff74688ad44e7e3d6bbd3f44"
+    },
+    {
+      "path": "docs/images/pdf-reading.png",
+      "bytes": 1919622,
+      "sha256": "75501c8e8296cb5dfdddf633c7e5a497fce3834997f2cf2d156ae562cfc9a6a5"
+    },
+    {
+      "path": "docs/images/pdf-selection.png",
+      "bytes": 2063375,
+      "sha256": "4a85ff3017937ff58c917b2b05e4c4e32d8ddf5ef80b84174f709d5c6542bcc3"
+    },
+    {
+      "path": "docs/images/library.png",
+      "bytes": 603483,
+      "sha256": "2d8410555713e4c901efe878e2c2824a6cee96ab1c90759a11900171e191f9b6"
+    },
+    {
+      "path": "docs/images/web-reading.png",
+      "bytes": 775046,
+      "sha256": "72d7d9fc4fa17663fd98b934a09a863d317d00fbed58f07c510587204b5a9eac"
+    },
+    {
       "path": "docs/release-checklist.md",
       "bytes": 3000,
       "sha256": "0d2ff1b8ee24cdc8bc3b17725a7bbb07682e193061fe554fe7193e41a77d53c6"
     },
     {
       "path": "docs/release-results.md",
-      "bytes": 10396,
-      "sha256": "9e5b1ea45b643a60c552323ffd79f273c82cea2926414874b037188058653996"
+      "bytes": 11505,
+      "sha256": "1bf82304fa80f289b62b13467e5f54f2779f086f9b89f0bf92201ec442fc6a19"
+    },
+    {
+      "path": "docs/ui-guidelines.md",
+      "bytes": 8971,
+      "sha256": "eb4b85863522e88b819a73602a41cc1078d46070af3b42a9a618304423025147"
+    },
+    {
+      "path": "docs/ui/button-states.html",
+      "bytes": 172544,
+      "sha256": "35cc49cd0c78b13dc9702476e63bd63e4606d8efa6f4af75c010f8b034f4579e"
     },
     {
       "path": "SECURITY.md",
@@ -1183,13 +1203,13 @@
     },
     {
       "path": "README.md",
-      "bytes": 17906,
-      "sha256": "a7bf1ee010f03cf8b1ab1c5aa9d7c9501b332d725d3801ec3d766f16ddb6ce17"
+      "bytes": 12124,
+      "sha256": "94acce18f8355e93dbb052acb66f1bea2ffe5e3ef21d844847d29e39b53ac512"
     },
     {
       "path": "README.en.md",
-      "bytes": 11431,
-      "sha256": "3745809a12dac957dab908873b2debb3363d2565ebe10fe36d9d10f780ead770"
+      "bytes": 13782,
+      "sha256": "4cd338711b2e1b55b626e687a13cb391b70671e5ec6fa5837932548e3dbc5309"
     },
     {
       "path": "package.json",
