@@ -703,8 +703,8 @@
     },
     {
       "path": "src/web-inquiry.test.tsx",
-      "bytes": 5231,
-      "sha256": "009a339a70a779fe3f1086552898401bc8931df623c6db0a3101f617c6dd0bda"
+      "bytes": 5639,
+      "sha256": "5d12da3d608d0a7338b80cc0a059c8253778f0603fe267482ecf609d2a486595"
     },
     {
       "path": "src/website-links.test.tsx",
@@ -1238,8 +1238,8 @@
     },
     {
       "path": "docs/release-results.md",
-      "bytes": 12747,
-      "sha256": "fc93d528928166604355e0e012a8649165df5da4e49cadfea64e8cd7f76f78c6"
+      "bytes": 13447,
+      "sha256": "41b2256ae3ff8edd537ddf4ff8dfd17697f60dd99240ce6117d0dec04f5f55bb"
     },
     {
       "path": "docs/ui-guidelines.md",
