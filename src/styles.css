@@ -2169,7 +2169,7 @@ a:focus-visible {
 /* The reading list contains only deliberately added materials, not directories. */
 .reading-library { padding: 10px 12px; flex-shrink: 0; border-bottom: 1px solid var(--border, #e6e7ed); position: relative; }
 .library-add-actions { display: flex; gap: 6px; align-items: center; }
-.library-add { flex-shrink: 0; font: inherit; font-size: 12px; border-radius: 7px; padding: 8px 6px; cursor: pointer; white-space: nowrap; background: #fff; color: #3d4350; border: 1px solid var(--line-strong); }
+.library-add { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; font: inherit; border-radius: 7px; padding: 0; cursor: pointer; white-space: nowrap; background: #fff; color: #3d4350; border: 1px solid var(--line-strong); }
 .library-switcher { min-width: 0; flex: 1; position: relative; }
 .library-current { display: flex; align-items: center; gap: 4px; width: 100%; border: 0; border-radius: 6px; padding: 8px 5px; background: transparent; color: #3d4350; font: inherit; font-size: 12px; cursor: pointer; }
 .library-current > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2726,8 +2726,10 @@ a:focus-visible {
 .web-image-viewport img { display: block; max-width: none; }
 
 .library-add-menu { position: relative; }
-.library-add-options { position: absolute; top: 100%; left: 0; z-index: 25; display: grid; gap: 4px; min-width: 150px; padding: 6px; border: 1px solid var(--border, #ddd); border-radius: 8px; background: var(--surface, #fff); box-shadow: 0 6px 20px #0002; }
-.library-add-options button { text-align: left; padding: 8px 12px; border: 0; border-radius: 5px; background: transparent; cursor: pointer; }
+.library-add-options { position: absolute; top: 100%; left: 0; z-index: 25; display: grid; gap: 4px; width: max-content; min-width: 220px; max-width: calc(100vw - 24px); padding: 6px; border: 1px solid var(--border, #ddd); border-radius: 8px; background: var(--surface, #fff); box-shadow: 0 6px 20px #0002; }
+.library-add-options button { display: flex; align-items: center; justify-content: space-between; gap: 20px; text-align: left; padding: 8px 12px; border: 0; border-radius: 5px; background: transparent; cursor: pointer; }
+.library-add-options button > span { white-space: nowrap; }
+.library-add-options button small { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .library-add-options button:hover, .library-add-options button:focus-visible { background: var(--blue-soft); color: var(--blue-strong); }
 .library-original-link { font-size: 11px; display: inline-block; padding: 3px 0; }
 
@@ -2746,6 +2748,17 @@ a:focus-visible {
 .translation-actions .translation-side-toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: 0 0 30px; padding: 5px; }
 .translation-side-toggle:hover { color: var(--blue-strong); border-color: var(--blue-line); }
 .translation-actions button:disabled { opacity: .5; cursor: default; }
+.translation-actions .translation-resume { white-space: nowrap; }
+.translation-actions .translation-stop { width: auto; flex-basis: auto; gap: 5px; padding: 5px 9px; white-space: nowrap; }
+.translation-live-progress { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; min-width: 0; max-width: 100%; }
+.translation-count-help { min-width: 0; max-width: 100%; }
+.translation-count { cursor: help; color: var(--ink); border-radius: 4px; }
+.translation-count:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+.translation-count-tooltip { position: fixed; z-index: 1000; width: min(320px, calc(100vw - 24px)); padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--paper); color: var(--ink); box-shadow: 0 4px 18px #0002; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+/* Keep the pointer path from the count to its floating explanation continuous. */
+.translation-count-tooltip::before { content: ""; position: absolute; left: 0; right: 0; top: -10px; height: 10px; }
+.translation-count-tooltip[hidden] { display: none; }
+.translation-phase, .translation-wait-time { overflow-wrap: anywhere; }
 .translation-progress { min-width: 0; overflow-wrap: anywhere; }
 .translation-status { margin-left: auto; overflow-wrap: anywhere; }
 .translation-permission { max-width: 640px; margin-top: 6px; padding: 10px 12px; border: 1px solid var(--blue-line); border-radius: 8px; background: var(--blue-soft); color: var(--ink); }

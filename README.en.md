@@ -12,11 +12,11 @@ AI normally runs only after you choose an action or send a question. If you prev
 
 ## A complete reading journey
 
-The screenshots below were captured on **October 12, 2026** with an isolated library. Samples include an AI companion product analysis, WGSN’s report on silver-generation consumers, and a Claude article about evaluation design. Only excerpts are shown; the complete materials are not distributed. AI content shown is made of previously saved real responses, and capturing the screenshots did not start new model requests. Screenshots introduce the interface rather than serving as feature validation. Treat figures, forecasts, and AI answers in the samples as claims to assess.
+The screenshots below were captured on **October 12, 2026** with an isolated library. Samples include an AI companion product analysis, a synthetic PDF chart created for demonstration, and a Claude article about evaluation design. Only excerpts are shown; the complete materials are not distributed. AI content shown is made of previously saved real responses, and capturing the screenshots did not start new model requests. Screenshots introduce the interface rather than serving as feature validation. Treat figures, forecasts, and AI answers in the samples as claims to assess.
 
 ### 1. Keep every format in one library
 
-Markdown files, PDFs, and imported web articles coexist in the local library. Search by filename or web article title. Switching to an existing item does not generate an answer. Web entries retain their original URL, while local files show their source path or association state.
+Markdown files, PDFs, and imported web articles coexist in the local library. The independent **+** button opens the add menu on hover; local files are labeled **MD / PDF** and web links **Static articles / X**. Click, keyboard, and touch remain supported, and leaving the combined button and menu area closes it. The adjacent library picker searches filenames or web article titles. Switching to an existing item does not generate an answer. Web entries retain their original URL, while local files show their source path or association state.
 
 ![A local library containing Markdown, PDF, and web articles with name search](docs/images/library.png)
 
@@ -56,7 +56,7 @@ PDFs scroll continuously. The outline uses embedded bookmarks when available and
 
 ### 5. Save a web article and translate it when needed
 
-Choose **Add file → Web link** and paste a public HTTPS article URL. For ordinary web pages, Got it extracts the static body and required images, then opens the article after saving a complete copy. Importing does not call a model. A saved copy remains readable when the source is temporarily unavailable. Adding the same URL again opens the existing entry without updating or translating it automatically.
+Choose **+ → Web link** and paste a public HTTPS article URL. For ordinary web pages, Got it extracts the static body and required images, then opens the article after saving a complete copy. Importing does not call a model. A saved copy remains readable when the source is temporarily unavailable. Adding the same URL again opens the existing entry without updating or translating it automatically.
 
 **X content:** Paste an X/Twitter post or article URL into the same input and select **Read article**. Public articles, regular posts, and long posts are retrieved through FxTwitter. The service receives the public content ID and, when locating an article requires it, the public account name in the link—not your library, cards, or credentials. Source details retain the retrieval channel and saved scope; a service response is not independent verification of the complete original. Existing copies open without replacing their cards.
 
@@ -64,7 +64,13 @@ Complete text, code, supported tables, and successfully retrieved images are sav
 
 ![A Chinese translation of an English web article with a knowledge card beside the text](docs/images/web-reading.png)
 
-Non-Chinese text in imported web/X content can be translated explicitly. A single language icon opens permission when no translation exists, switches complete original/Chinese views, offers continuation for partial results, and allows stopping an active translation. The first run explains what is sent. Checked batches survive stopping or failure. Switching saved reading views does not call a model; the original and card associations remain intact.
+Non-Chinese text in imported web/X content can be translated explicitly. The language icon opens permission when no translation exists and otherwise switches saved original/Chinese views. Partial results keep **Translated X / Y text blocks** and **Continue translation** visible; only missing blocks are generated. If all blocks have arrived but saving failed, **Retry saving translation** writes existing results without regenerating them. An active run offers **Stop translation**.
+
+Hover or keyboard focus on the count explains headings, paragraphs, list items, table cells, and split long paragraphs, without clicking. Counts increase only after validation; elapsed waiting time starts when this run begins and spans preparation, requests, and saving without resetting between batches. There is no simulated percentage. The first run explains what is sent. Checked batches survive stopping or failure. Switching saved reading views does not call a model; the original and card associations remain intact.
+
+New translations and the missing parts of an explicit continuation use dedicated **gpt-6-luna / medium**, independently of Explain and Find sources preferences. If unavailable, translation fails explicitly instead of substituting another model. The prompt asks for natural, contextual Chinese while retaining the original meaning, qualifications, and formatting. Previously saved translations remain unchanged, including partial results from older models. Internal provenance records the configurations that actually contributed saved text. Structural validation cannot guarantee perfect semantics; check important terms against the original.
+
+If a model drops formatting markers, only those failed text blocks are translated once more within the same batch deadline; valid blocks are not repeated. A failed repair preserves earlier results. Successful repairs show the count for the current run. Network errors, timeouts, and other detectable quality failures do not trigger this formatting repair, and user-facing errors do not expose internal diagnostic JSON.
 
 Code blocks, inline code, link destinations, images, image alt text, and text inside images remain unchanged and are not sent for translation; ordinary figure captions may be translated as body text. Full-text translation does not cover Markdown or PDF. The existing automatic preference still applies only to newly confirmed English web entries; support for other languages does not expand that permission. Other languages require an explicit action.
 
@@ -82,7 +88,7 @@ Buttons share consistent default, hover, pressed, disabled, selected, and keyboa
 - Enter sends a question; Shift+Enter adds a line. Stopping, timing out, or failing preserves received content and offers retry.
 - Selection requests send the selection, bounded nearby context, the title, and necessary card history. Only an explicit document-wide question or web translation prepares a broader corresponding input.
 - Source checking reads a limited number of public pages without browser login credentials. It cannot guarantee the original source and does not add search rounds automatically.
-- Code sets the default configuration to **GPT-6.1 SOL / medium**. AI settings read the model catalog returned by local Codex. An unavailable selection is reported instead of silently replaced.
+- Knowledge-card tasks such as Explain and Find sources default to **GPT-6.1 SOL / medium**; web translation independently uses **GPT-6 Luna / medium**. AI settings read the model catalog returned by local Codex. An unavailable selection is reported instead of silently replaced.
 - Reading-time estimates are computed locally. **Local storage does not mean offline AI.**
 
 ## Quick start

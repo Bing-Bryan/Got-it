@@ -1,6 +1,6 @@
 import {X_PUBLIC_SCOPE} from "./lib/x-article-url";
 import {X_CAPTURE_EXTRACTOR, X_CAPTURE_SCOPE} from "./lib/x-article-capture";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Plus } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { useReadingLibrary } from "./useReadingLibrary";
 import { ReadingRecoveryView } from "./ReadingRecoveryView";
@@ -35,6 +35,7 @@ export function ReadingLibraryNavigation({ library, importCopy }: { library: Lib
   const popupId = useId();
   const entries = useMemo(() => searchLibraryNames(library.list.entries, query), [library.list.entries, query]);
   const disabled = !library.ready || library.busy;
+  useEffect(()=>{if(disabled)setAddOpen(false);},[disabled]);
   useEffect(() => {
     if (!open) return;
     const close = (event: PointerEvent) => { if (!holder.current?.contains(event.target as Node)) closePopup(); };
@@ -49,7 +50,7 @@ export function ReadingLibraryNavigation({ library, importCopy }: { library: Lib
   }, [addOpen]);
   return <section className="reading-library" aria-label="阅读材料">
     <div className="library-add-actions">
-      <div className="library-add-menu" ref={addHolder} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setAddOpen(false); }} onKeyDown={event => {
+      <div className="library-add-menu" ref={addHolder} onMouseEnter={()=>{if(!disabled)setAddOpen(true);}} onMouseLeave={()=>setAddOpen(false)} onFocus={event=>{if(!disabled&&!event.currentTarget.contains(event.relatedTarget))setAddOpen(true);}} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setAddOpen(false); }} onKeyDown={event => {
         if (event.key === "Escape") { event.stopPropagation(); setAddOpen(false); addTrigger.current?.focus(); }
         if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) && addOpen) {
           event.preventDefault(); const buttons = [...(addHolder.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])];
@@ -57,10 +58,10 @@ export function ReadingLibraryNavigation({ library, importCopy }: { library: Lib
           buttons[event.key === "Home" ? 0 : event.key === "End" ? buttons.length-1 : (index + (event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length]?.focus();
         }
       }}>
-        <button ref={addTrigger} type="button" className="library-add" disabled={disabled} aria-haspopup="menu" aria-expanded={addOpen} aria-controls={addId} onClick={() => setAddOpen(value => !value)} onKeyDown={event => { if (event.key === "ArrowDown") { event.preventDefault(); setAddOpen(true); requestAnimationFrame(() => addHolder.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()); } }}>＋ 添加文件</button>
+        <button ref={addTrigger} type="button" className="library-add" aria-label="添加阅读材料" disabled={disabled} aria-haspopup="menu" aria-expanded={addOpen} aria-controls={addId} onClick={() => setAddOpen(true)} onKeyDown={event => { if (event.key === "ArrowDown") { event.preventDefault(); setAddOpen(true); requestAnimationFrame(() => addHolder.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()); } }}><Plus size={18} strokeWidth={2} aria-hidden="true" focusable="false" /></button>
         {addOpen ? <div className="library-add-options" role="menu" id={addId} aria-label="添加阅读材料">
-          <button type="button" role="menuitem" onClick={() => { setAddOpen(false); addTrigger.current?.focus(); if (library.list.nativePicker) void library.choose(); else importCopy(); }}>本地文件</button>
-          <button type="button" role="menuitem" onClick={() => { setAddOpen(false); addTrigger.current?.focus(); library.showWebImport(); }}>网页链接</button>
+          <button type="button" role="menuitem" disabled={disabled} onClick={() => { if(disabled)return; setAddOpen(false); addTrigger.current?.focus(); if (library.list.nativePicker) void library.choose(); else importCopy(); }}><span>本地文件</span><small>MD / PDF</small></button>
+          <button type="button" role="menuitem" disabled={disabled} onClick={() => { if(disabled)return; setAddOpen(false); addTrigger.current?.focus(); library.showWebImport(); }}><span>网页链接</span><small>静态文章 / X</small></button>
         </div> : null}
       </div>
       <div className="library-switcher" ref={holder}

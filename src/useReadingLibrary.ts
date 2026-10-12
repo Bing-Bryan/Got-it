@@ -1,7 +1,7 @@
 import {normalizeXArticleUrl} from "./lib/x-article-url";
 import {X_CAPTURE_MAX_BYTES, type XArticleCapture} from "./lib/x-article-capture";
 import { confidentlyEnglish } from "./lib/translation-policy";
-import { buildTranslationSource, copyWebTranslation, TRANSLATION_CONTRACT_VERSION, TRANSLATION_QUALITY_VERSION, TRANSLATION_LIMITS, type WebTranslationState } from "./lib/web-translation";
+import { buildTranslationSource, copyWebTranslation, translationModelConfig, isTranslationModelConfig, translationModelsUsed, unionTranslationModels, TRANSLATION_CONTRACT_VERSION, TRANSLATION_QUALITY_VERSION, TRANSLATION_LIMITS, TRANSLATION_BATCH_TARGET, type WebTranslationState } from "./lib/web-translation";
 import { modelConfig } from "./lib/model-routing";
 import { hasRecoveryDifference } from "./lib/recovery-diff";
 import { useEffect, useRef, useState } from "react";
@@ -13,6 +13,14 @@ import { libraryRequest as api, libraryBinary } from "./lib/library-client";
 import type { LibraryEntry, LibraryList, ReadingPosition, SelectedFile, SourceCheck } from "./lib/library-types";
 
 import { DraftStore, readingKey, readingContent, withPreferences, type StoredDraft, type RecoveryRecord, type RecoverySummary, type RecoveryResult } from "./lib/reading-recovery";
+export interface TranslationActivity {
+  phase: "preparing" | "waiting" | "saving";
+  completed: number;
+  total: number;
+  startedAt: number;
+  phaseStartedAt: number;
+}
+const translationCount = (completed: number, total: number) => `已翻译 ${completed} / ${total} 个文本块`;
 const MIGRATION_KEY = "got-it.library.migration.v1";
 const PREFS_KEY = "got-it.model-preferences.v1";
 
@@ -75,6 +83,12 @@ export function useReadingLibrary(options: Options) {
   const translationOperation = useRef<{id:string;entryId:string;cancelled:boolean} | null>(null);
   const [translationRunning, setTranslationRunning] = useState(false);
   const [translationProgress, setTranslationProgress] = useState("");
+  const [translationRepairCount,setTranslationRepairCount]=useState(0);
+  const [translationActivity, setTranslationActivity] = useState<TranslationActivity | null>(null);
+  const activityRef = useRef<TranslationActivity | null>(null);
+  function reportTranslationActivity(activity: TranslationActivity | null) {
+    activityRef.current = activity; setTranslationActivity(activity);
+  }
   const [autoTranslate, setAutoTranslate] = useState(() => { try { return localStorage.getItem("got-it.web-translation-auto.v1") === "true"; } catch { return false; } });
   function setAutoTranslation(value:boolean) { setAutoTranslate(value); try { localStorage.setItem("got-it.web-translation-auto.v1",String(value)); } catch { setNotice("自动翻译偏好未能保存，请检查浏览器存储。"); } }
   function updateTranslation(state:WebTranslationState) {
@@ -84,51 +98,64 @@ export function useReadingLibrary(options: Options) {
     return next;
   }
   function stopTranslation() {
+    setTranslationRepairCount(0);
     const operation=translationOperation.current; if (!operation) return;
-    operation.cancelled=true;translationOperation.current=null;setTranslationRunning(false);setTranslationProgress("翻译已中断，可主动续译");
+    const activity = activityRef.current;
+    operation.cancelled=true;translationOperation.current=null;setTranslationRunning(false);
+    reportTranslationActivity(null);setTranslationRepairCount(0);
+    setTranslationProgress(`${activity ? translationCount(activity.completed, activity.total) + "；" : ""}翻译已中断，可主动续译`);
     const state=latest.current.workspace.webTranslation;
     if(state) updateTranslation({...state,batchEpoch:(state.batchEpoch??0)+1,status:"interrupted",updatedAt:new Date().toISOString()});
     void api(`/entries/${operation.entryId}/translation-batches/${operation.id}/cancel`,{}).catch(()=>{});
   }
   async function translate() {
+    const startedAt=Date.now();
     if (translationOperation.current || busyRef.current || readonlyRef.current || blockedDraft.current || !ready) return;
     const e=entryRef.current, doc=latest.current.workspace.document;
     if (!e || doc.kind!=="web") return;
     const source=buildTranslationSource(doc.markdown,doc.web);
     let state=copyWebTranslation(latest.current.workspace.webTranslation,doc.id,doc.web.contentVersion,source);
     if(state?.status==="complete")return;
-    state=state ?? {version:TRANSLATION_CONTRACT_VERSION,id:crypto.randomUUID(),target:"zh",documentId:doc.id,sourceVersion:doc.web.contentVersion,status:"partial",modelConfig:modelConfig("explain",latest.current.workspace.modelPreferences),units:{},updatedAt:new Date().toISOString()};
+    setTranslationRepairCount(0);
+    const requestConfig=translationModelConfig();
+    state=state ?? {version:TRANSLATION_CONTRACT_VERSION,id:crypto.randomUUID(),target:"zh",documentId:doc.id,sourceVersion:doc.web.contentVersion,status:"partial",modelConfig:requestConfig,units:{},updatedAt:new Date().toISOString()};
     const operation:{id:string;roundId:string;entryId:string;cancelled:boolean}={id:crypto.randomUUID(),roundId:crypto.randomUUID(),entryId:e.id,cancelled:false};translationOperation.current=operation;setTranslationRunning(true);
+    reportTranslationActivity({phase:"preparing",completed:Object.keys(state.units).length,total:source.units.length,startedAt,phaseStartedAt:Date.now()});
+    setTranslationProgress("");
     const deadline=Date.now()+TRANSLATION_LIMITS.roundMs;
     try {
       const remaining=source.units.filter(unit=>state!.units[unit.id]===undefined);
       while(remaining.length && !operation.cancelled) {
         if(Date.now()>deadline)throw new Error("本轮翻译已到时间上限，已完成部分保留，请主动续译。");
         const batch:typeof remaining=[];let size=0;
-        while(remaining.length && batch.length<TRANSLATION_LIMITS.units && size+remaining[0].text.length<=TRANSLATION_LIMITS.inputChars) {const unit=remaining.shift()!;batch.push(unit);size+=unit.text.length;}
+        while(remaining.length && batch.length<TRANSLATION_BATCH_TARGET.units && size+remaining[0].text.length<=TRANSLATION_BATCH_TARGET.inputChars) {const unit=remaining.shift()!;batch.push(unit);size+=unit.text.length;}
         if(!batch.length)throw new Error("正文单元超过翻译预算，请检查分块。");
-        setTranslationProgress(`正在译中 ${Object.keys(state.units).length}/${source.units.length}`);
-        const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify({entryId:e.id,revisionId:e.revisionId,contractVersion:state.version,qualityVersion:TRANSLATION_QUALITY_VERSION,sourceVersion:doc.web.contentVersion,translationId:state.id,batchEpoch:state.batchEpoch??0,modelConfig:state.modelConfig,unitIds:batch.map(unit=>unit.id)})));
+        setTranslationProgress("");
+        reportTranslationActivity({phase:"preparing",completed:Object.keys(state.units).length,total:source.units.length,startedAt,phaseStartedAt:Date.now()});
+        const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify({entryId:e.id,revisionId:e.revisionId,contractVersion:state.version,qualityVersion:TRANSLATION_QUALITY_VERSION,sourceVersion:doc.web.contentVersion,translationId:state.id,batchEpoch:state.batchEpoch??0,modelConfig:requestConfig,unitIds:batch.map(unit=>unit.id)})));
         operation.id=`${state.id}-${Array.from(new Uint8Array(digest)).map(byte=>byte.toString(16).padStart(2,"0")).join("").slice(0,32)}`;
         if(operation.cancelled || translationOperation.current!==operation)return;
-        const result=await api<{operationId:string;translationId:string;sourceVersion:string;modelConfig:WebTranslationState['modelConfig'];units:Record<string,string>}>(`/entries/${e.id}/translation-batches`,{qualityVersion:TRANSLATION_QUALITY_VERSION,operationId:operation.id,roundId:operation.roundId,revisionId:e.revisionId,sourceVersion:doc.web.contentVersion,translationId:state.id,unitIds:batch.map(u=>u.id),modelConfig:state.modelConfig});
+        reportTranslationActivity({phase:"waiting",completed:Object.keys(state.units).length,total:source.units.length,startedAt,phaseStartedAt:Date.now()});
+        const result=await api<{repairCount?:number;operationId:string;translationId:string;sourceVersion:string;modelConfig:WebTranslationState['modelConfig'];units:Record<string,string>}>(`/entries/${e.id}/translation-batches`,{qualityVersion:TRANSLATION_QUALITY_VERSION,operationId:operation.id,roundId:operation.roundId,revisionId:e.revisionId,sourceVersion:doc.web.contentVersion,translationId:state.id,unitIds:batch.map(u=>u.id),modelConfig:requestConfig});
         if(operation.cancelled || translationOperation.current!==operation || latest.current.workspace.document.id!==doc.id) return;
-        if(result.operationId!==operation.id || result.translationId!==state.id || result.sourceVersion!==doc.web.contentVersion || Object.keys(result.units).length!==batch.length || batch.some(u=>typeof result.units[u.id]!=="string"))throw new Error("翻译结果与正文批次不匹配。");
-        const candidate={...state,modelConfig:result.modelConfig,units:{...state.units,...result.units},status:remaining.length?"partial" as const:"complete" as const,updatedAt:new Date().toISOString(),error:undefined};
+        if(!isTranslationModelConfig(result.modelConfig) || result.operationId!==operation.id || result.translationId!==state.id || result.sourceVersion!==doc.web.contentVersion || Object.keys(result.units).length!==batch.length || batch.some(u=>typeof result.units[u.id]!=="string"))throw new Error("翻译结果与正文批次不匹配。");
+        const candidate={...state,modelConfig:result.modelConfig,modelConfigsUsed:unionTranslationModels(translationModelsUsed(state),result.modelConfig),units:{...state.units,...result.units},status:remaining.length?"partial" as const:"complete" as const,updatedAt:new Date().toISOString(),error:undefined};
         const checked=copyWebTranslation(candidate,doc.id,doc.web.contentVersion,source);
         if(!checked)throw new Error("翻译内容校验失败，已保存部分保留。");
         state=checked;
+        if(Number.isInteger(result.repairCount)&&result.repairCount!>0&&result.repairCount!<=batch.length)setTranslationRepairCount(count=>count+result.repairCount!);
+        reportTranslationActivity({phase:"saving",completed:Object.keys(state.units).length,total:source.units.length,startedAt,phaseStartedAt:Date.now()});
         const next=updateTranslation(state);await flush(next);
         if (readonlyRef.current || recoveryRef.current || blockedDraft.current || entryRef.current?.id!==e.id) throw new Error("翻译成果须先核对恢复记录，尚未确认保存。");
       }
-      if(!operation.cancelled && !remaining.length && state.status !== "complete") { state={...state,status:"complete",error:undefined,updatedAt:new Date().toISOString()};await flush(updateTranslation(state)); }
+      if(!operation.cancelled && !remaining.length && state.status !== "complete") { reportTranslationActivity({phase:"saving",completed:Object.keys(state.units).length,total:source.units.length,startedAt,phaseStartedAt:Date.now()}); state={...state,status:"complete",error:undefined,updatedAt:new Date().toISOString()};await flush(updateTranslation(state)); }
       if(!operation.cancelled)setTranslationProgress(state.status==="complete"?(doc.web.coverage==="public-excerpt"?"已保存公开正文译中已保存":"全文译中已保存"):"部分译文已保存，可主动续译");
     } catch(error) {
       if(operation.cancelled || translationOperation.current!==operation)return;
-      if (readonlyRef.current || recoveryRef.current || blockedDraft.current || entryRef.current?.id!==e.id) { setTranslationProgress("翻译成果待核对，尚未确认保存；已收到部分已保留。");return; }
-      updateTranslation({...state,status:"failed",error:message(error),updatedAt:new Date().toISOString()});setTranslationProgress(message(error));
+      if (readonlyRef.current || recoveryRef.current || blockedDraft.current || entryRef.current?.id!==e.id) { setTranslationProgress(`${translationCount(Object.keys(state.units).length,source.units.length)}；翻译成果待核对，尚未确认保存；已收到部分已保留。`);return; }
+      updateTranslation({...state,status:"failed",error:message(error),updatedAt:new Date().toISOString()});setTranslationProgress(`${translationCount(Object.keys(state.units).length,source.units.length)}；${message(error)}`);
       if(!savePaused.current)void flush().catch(()=>{});
-    } finally { if(translationOperation.current===operation){translationOperation.current=null;setTranslationRunning(false);} }
+    } finally { if(translationOperation.current===operation){translationOperation.current=null;setTranslationRunning(false);reportTranslationActivity(null);} }
   }
   const saved = useRef("");
   const savePaused = useRef(false);
@@ -153,8 +180,10 @@ export function useReadingLibrary(options: Options) {
   }
   async function refreshRecoveries() { const records = await api<RecoverySummary[]>("/recoveries"); setRecoveries(records); return records; }
   function install(e: LibraryEntry, revision = "") {
+    setTranslationRepairCount(0);
     desiredFragment.current = null;
     setTranslationProgress("");
+    reportTranslationActivity(null);
     savePaused.current = false;
     preview(null); blockedDraft.current=null; setBlocked(false); setCheck(null);
     remember(e); readonlyRef.current = !!revision; setHistoryId(revision);
@@ -522,7 +551,7 @@ export function useReadingLibrary(options: Options) {
     if (!timer.current) timer.current = setTimeout(() => { timer.current = null; void flush().catch(() => {}); }, 500);
   }
   useEffect(()=> { if (!notice) return; const id=setTimeout(()=>setNotice(""),4500); return ()=>clearTimeout(id); },[notice]);
-  return { translate, stopTranslation, translationRunning, translationProgress, autoTranslate, setAutoTranslation, saveNow:flush, webImportOpen, webImportSuccess, webJob, webError, showWebImport, readWebUrl, readWebArticle, readXArticleFile, confirmWebImport, cancelWebImport, initialPosition: desiredPosition.current, entry, list, ready, busy, error, importError, clearError: () => { setError(""); setImportError(false); }, status, check, recovery, recoveries, blocked, draftWarning, notice, historyId,
+  return { translate, stopTranslation, translationRunning, translationProgress, translationActivity, translationRepairCount, autoTranslate, setAutoTranslation, saveNow:flush, webImportOpen, webImportSuccess, webJob, webError, showWebImport, readWebUrl, readWebArticle, readXArticleFile, confirmWebImport, cancelWebImport, initialPosition: desiredPosition.current, entry, list, ready, busy, error, importError, clearError: () => { setError(""); setImportError(false); }, status, check, recovery, recoveries, blocked, draftWarning, notice, historyId,
     readOnly: !!historyId || !!recovery || blocked || busy,
     open, choose, importFile, checkSource: () => transition(checkSource), acceptUpdate, viewRevision, resolveRecovery, acknowledgeRecovery, showRecovery, closeRecovery,
     retry: () => ready && !blockedDraft.current ? transition(() => flush()) : initialize(),

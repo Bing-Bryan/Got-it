@@ -7,15 +7,17 @@ import type { WebDocumentData } from './web-data';
 type Node=DefaultTreeAdapterMap['node'];type Element=DefaultTreeAdapterMap['element'];type Text=DefaultTreeAdapterMap['textNode'];
 export const TRANSLATION_CONTRACT_VERSION=2 as const;
 /** New-response quality epoch; persisted structure/unit identities remain v2. */
-export const TRANSLATION_QUALITY_VERSION=1 as const;
+export const TRANSLATION_QUALITY_VERSION=3 as const;
 export const TRANSLATION_PLACEHOLDER=/\[GOTIT_(?:OPEN|CLOSE|KEEP)_\d+\]/g;
 export const TRANSLATION_LIMITS={units:64,inputChars:12_000,unitChars:4000,outputChars:48_000,callMs:120_000,roundMs:600_000} as const;
+/** New scheduling target; the API hard limits above remain compatible. */
+export const TRANSLATION_BATCH_TARGET={units:16,inputChars:4000} as const;
 export interface TranslationSelection {version?:1|2;translationId:string;sourceVersion:string;blockId:string;quote:string;prefix:string;suffix:string;start:number;end:number}
-export interface WebTranslationState {version:2;id:string;target:'zh';documentId:string;sourceVersion:string;status:'partial'|'complete'|'interrupted'|'failed';batchEpoch?:number;modelConfig:ModelConfig;units:Record<string,string>;updatedAt:string;error?:string}
+export interface WebTranslationState {version:2;id:string;target:'zh';documentId:string;sourceVersion:string;status:'partial'|'complete'|'interrupted'|'failed';batchEpoch?:number;modelConfig:ModelConfig;modelConfigsUsed?:ModelConfig[];units:Record<string,string>;updatedAt:string;error?:string}
 export interface TranslationUnit {id:string;blockId:string;text:string;structureContext?:{before:string[];after:string[]}}
 export interface TranslationBlock {id:string;text:string;headingPath:string[];tag:string}
 export interface TranslationSource {html:string;blocks:TranslationBlock[];units:TranslationUnit[]}
-export interface TranslationBatchResult {operationId:string;translationId:string;sourceVersion:string;modelConfig:ModelConfig;units:Record<string,string>}
+export interface TranslationBatchResult {repairCount?:number;operationId:string;translationId:string;sourceVersion:string;modelConfig:ModelConfig;units:Record<string,string>}
 const isElement=(n:Node):n is Element=>'tagName'in n;
 const children=(n:Node):Node[]=>'childNodes'in n?n.childNodes:[];
 const textOf=(n:Node):string=>n.nodeName==='#text'?(n as Text).value:children(n).map(textOf).join('');
@@ -31,16 +33,23 @@ export function validPlaceholderStructure(original:string,translated:string,cont
  for(const token of source){if(token.startsWith('[GOTIT_CLOSE_')){const owner=stack.pop();if(!owner)return false;closeOwner.set(token,owner);}else{parent.set(token,stack.at(-1)??'root');if(token.startsWith('[GOTIT_OPEN_'))stack.push(token);}}
  if(stack.length)return false;for(const token of output){if(token.startsWith('[GOTIT_CLOSE_')){if(stack.pop()!==closeOwner.get(token))return false;}else{if((stack.at(-1)??'root')!==parent.get(token))return false;if(token.startsWith('[GOTIT_OPEN_'))stack.push(token);}}return stack.length===0;
 }
-export function unitTranslationIssue(unit:TranslationUnit,value:unknown):string|undefined {
+/** Exact per-unit tokens plus whole-source owners for split fragments. */
+export function translationStructure(unit:TranslationUnit){
+ const tokens=placeholders(unit.text),before=unit.structureContext?.before??[],after=unit.structureContext?.after??[],stack:string[]=[],pairs:Array<{open:string;close:string}>=[],parents:Record<string,string>={};
+ for(const token of [...before,...tokens,...after]){if(token.startsWith('[GOTIT_CLOSE_')){const open=stack.pop();if(open)pairs.push({open,close:token});}else{parents[token]=stack.at(-1)??'root';if(token.startsWith('[GOTIT_OPEN_'))stack.push(token);}}
+ return {tokens,pairs,parents,...(before.length||after.length?{context:{before,after}}:{})};
+}
+export function friendlyTranslationError(message:string):string{return message.includes('安全诊断：')?'本批译文排版或内容校验失败，已有译文保留，可主动续译。':message;}
+export function unitTranslationIssue(unit:TranslationUnit,value:unknown,skipStructure=false):string|undefined {
  if(typeof value!=='string'||!value.trim())return 'empty';
  if(value.length>Math.min(TRANSLATION_LIMITS.outputChars,unit.text.length*6+1024))return 'size';
- if(!validPlaceholderStructure(unit.text,value,unit.structureContext))return 'placeholders';
+ if(!skipStructure&&!validPlaceholderStructure(unit.text,value,unit.structureContext))return 'placeholders';
  if(/(?:https?:\/\/|www\.|mailto:)/i.test(value))return 'url';
  const prose=unit.text.replace(TRANSLATION_PLACEHOLDER,'');if(prose.length>=60&&(prose.match(/[A-Za-z]{2,}/g)??[]).length>=6&&!/[\u3400-\u9fff]/.test(value))return 'not_chinese';
 }
 export function validUnitTranslation(unit:TranslationUnit,value:unknown):value is string {return unitTranslationIssue(unit,value)===undefined;}
-function newResponseIssue(unit:TranslationUnit,value:unknown):string|undefined{
- const issue=unitTranslationIssue(unit,value);if(issue||typeof value!=='string')return issue;
+function newResponseIssue(unit:TranslationUnit,value:unknown,skipStructure=false):string|undefined{
+ const issue=unitTranslationIssue(unit,value,skipStructure);if(issue||typeof value!=='string')return issue;
  const prose=unit.text.replace(TRANSLATION_PLACEHOLDER,''),output=value.replace(TRANSLATION_PLACEHOLDER,'');
  const letters=(prose.match(/\p{L}/gu)??[]).length,han=(prose.match(/[\u3400-\u9fff]/g)??[]).length;
  const foreign=/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Cyrillic}]/gu;
@@ -60,12 +69,20 @@ function batchQualityIssue(units:TranslationUnit[],values:string[],mode:'current
  if(mode==='current'){const prose=units.map(u=>u.text.replace(TRANSLATION_PLACEHOLDER,'')).join(' '),letters=(prose.match(/\p{L}/gu)??[]).length,han=(prose.match(/[\u3400-\u9fff]/g)??[]).length;if(prose.length>=200&&letters-han>=60&&!/[\u3400-\u9fff]/.test(output))return'not_chinese';}
  if(values.reduce((n,s)=>n+s.length,0)>TRANSLATION_LIMITS.outputChars)return'output_size';
 }
-export function translationBatchDiagnostic(units:TranslationUnit[],value:unknown,mode:'current'|'legacy'='current'){
+/** Recovery eligibility checks every row and every non-structure rule, without diagnostic truncation. */
+export function placeholderRepairUnits(units:TranslationUnit[],value:unknown):TranslationUnit[]{
+ if(!Array.isArray(value)||value.length!==units.length)return [];
+ const known=new Map(units.map(u=>[u.id,u])),seen=new Set<string>(),failed:TranslationUnit[]=[],values:string[]=[];
+ for(const row of value){const unit=known.get(row?.id);if(!unit||seen.has(row.id)||newResponseIssue(unit,row.text,true))return [];seen.add(row.id);values.push(row.text);if(!validPlaceholderStructure(unit.text,row.text,unit.structureContext)){if(!validPlaceholderStructure(unit.text,unit.text,unit.structureContext))return [];failed.push(unit);}}
+ if(seen.size!==units.length||batchQualityIssue(units,values,'current'))return [];
+ return failed;
+}
+export function translationBatchDiagnostic(units:TranslationUnit[],value:unknown,mode:'current'|'legacy'='current',issueLimit=16){
  const rows=Array.isArray(value)?value:[],known=new Map(units.map(u=>[u.id,u])),seen=new Set<string>(),issues:Array<{id:string;reason:string}>=[];
  for(const row of rows){const id=row&&typeof row.id==='string'&&known.has(row.id)?row.id:'unknown';if(id==='unknown'){issues.push({id,reason:'unknown_id'});continue;}if(seen.has(id))issues.push({id,reason:'duplicate'});seen.add(id);const reason=(mode==='current'?newResponseIssue:unitTranslationIssue)(known.get(id)!,row.text);if(reason)issues.push({id,reason});}
  for(const u of units)if(!seen.has(u.id))issues.push({id:u.id,reason:'missing'});
  if(!issues.length&&rows.length===units.length){const reason=batchQualityIssue(units,rows.map(row=>row.text),mode);if(reason)issues.push({id:'batch',reason});}
- return{expected:units.length,received:rows.length,issues:issues.slice(0,16)};
+ return{expected:units.length,received:rows.length,issues:issues.slice(0,issueLimit)};
 }
 
 function visit(n:Node,fn:(n:Node)=>void){fn(n);for(const c of children(n))visit(c,fn);}
@@ -91,4 +108,12 @@ export function translationBatches(source:TranslationSource,done:Record<string,s
 export function validateTranslationBatch(units:TranslationUnit[],value:unknown,mode:'current'|'legacy'='current'):Record<string,string>{if(!Array.isArray(value)||value.length!==units.length)throw new Error('翻译批次块数量不匹配。');const expected=new Map(units.map(u=>[u.id,u])),result:Record<string,string>={};for(const row of value){if(!row||typeof row!=='object'||!expected.has(row.id)||Object.hasOwn(result,row.id)||!(mode==='current'?newResponseIssue(expected.get(row.id)!,row.text)===undefined:validUnitTranslation(expected.get(row.id)!,row.text)))throw new Error('翻译块或受保护占位无效。');result[row.id]=row.text;}const reason=batchQualityIssue(units,Object.values(result),mode);if(reason)throw new Error(reason==='english_batch'?'翻译批次仍全部为英文，未计完成。':reason==='output_size'?'翻译输出超限。':'翻译批次未生成中文叙述，未计完成。');return result;}
 const safeId=(v:unknown):v is string=>typeof v==='string'&&/^[-\w]{1,100}$/.test(v);const hash=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
 export function copyTranslationSelection(value:unknown):TranslationSelection|undefined {if(!value||typeof value!=='object')return;const v=value as TranslationSelection;if((v.version!==undefined&&v.version!==1&&v.version!==2)||!safeId(v.translationId)||!hash(v.sourceVersion)||!safeId(v.blockId)||typeof v.quote!=='string'||!v.quote||v.quote.length>12000||typeof v.prefix!=='string'||v.prefix.length>240||typeof v.suffix!=='string'||v.suffix.length>240||!Number.isSafeInteger(v.start)||!Number.isSafeInteger(v.end)||v.start<0||v.end<=v.start||v.end-v.start!==v.quote.length)return;return{...(v.version!==undefined?{version:v.version}:{}),translationId:v.translationId,sourceVersion:v.sourceVersion,blockId:v.blockId,quote:v.quote,prefix:v.prefix,suffix:v.suffix,start:v.start,end:v.end};}
-export function copyWebTranslation(value:unknown,documentId:string,sourceVersion:string,source?:TranslationSource):WebTranslationState|undefined {if(!value||typeof value!=='object')return;const v=value as WebTranslationState,config=copyModelConfig(v.modelConfig);if(v.version!==2||!safeId(v.id)||v.target!=='zh'||v.documentId!==documentId||v.sourceVersion!==sourceVersion||!hash(sourceVersion)||!['partial','complete','interrupted','failed'].includes(v.status)||!config||typeof v.updatedAt!=='string'||!v.units||typeof v.units!=='object'||Array.isArray(v.units))return;if(v.batchEpoch!==undefined&&(!Number.isSafeInteger(v.batchEpoch)||v.batchEpoch<0||v.batchEpoch>10000))return;const units:Record<string,string>={};const known=new Map(source?.units.map(u=>[u.id,u]));let size=0;for(const[id,text]of Object.entries(v.units)){if(!safeId(id)||typeof text!=='string'||text.length>TRANSLATION_LIMITS.outputChars||(source&&(!known.has(id)||!validUnitTranslation(known.get(id)!,text))))return;size+=text.length;if(size>2_000_000)return;units[id]=text;}const complete=!!source&&source.units.every(u=>validUnitTranslation(u,units[u.id]));return{version:2,id:v.id,target:'zh',documentId,sourceVersion,status:v.status==='complete'&&!complete?'partial':v.status,modelConfig:config,...(v.batchEpoch!==undefined?{batchEpoch:v.batchEpoch}:{}),units,updatedAt:v.updatedAt,...(typeof v.error==='string'?{error:v.error.slice(0,500)}:{})};}
+/** Translation routing is independent of inquiry preferences; never substitutes another model. */
+export function translationModelConfig():ModelConfig {return {model:'gpt-6-luna',reasoningEffort:'medium'};}
+export function isTranslationModelConfig(value:ModelConfig):boolean {const fixed=translationModelConfig();return value.model===fixed.model&&value.reasoningEffort===fixed.reasoningEffort;}
+export function translationModelsUsed(state:Pick<WebTranslationState,'units'|'modelConfig'|'modelConfigsUsed'>):ModelConfig[] {
+ if(!Object.keys(state.units).length)return [];
+ return (state.modelConfigsUsed??[state.modelConfig]).map(config=>({...config}));
+}
+export function unionTranslationModels(configs:ModelConfig[],added:ModelConfig):ModelConfig[] {return [...configs.filter(config=>config.model!==added.model||config.reasoningEffort!==added.reasoningEffort),{...added}];}
+export function copyWebTranslation(value:unknown,documentId:string,sourceVersion:string,source?:TranslationSource):WebTranslationState|undefined {if(!value||typeof value!=='object')return;const v=value as WebTranslationState,config=copyModelConfig(v.modelConfig);if(v.version!==2||!safeId(v.id)||v.target!=='zh'||v.documentId!==documentId||v.sourceVersion!==sourceVersion||!hash(sourceVersion)||!['partial','complete','interrupted','failed'].includes(v.status)||!config||typeof v.updatedAt!=='string'||!v.units||typeof v.units!=='object'||Array.isArray(v.units))return;if(v.batchEpoch!==undefined&&(!Number.isSafeInteger(v.batchEpoch)||v.batchEpoch<0||v.batchEpoch>10000))return;const units:Record<string,string>={};const known=new Map(source?.units.map(u=>[u.id,u]));let size=0;for(const[id,text]of Object.entries(v.units)){if(!safeId(id)||typeof text!=='string'||text.length>TRANSLATION_LIMITS.outputChars||(source&&(!known.has(id)||!validUnitTranslation(known.get(id)!,text))))return;size+=text.length;if(size>2_000_000)return;units[id]=text;}let modelConfigsUsed:ModelConfig[]|undefined;if(v.modelConfigsUsed!==undefined){if(!Array.isArray(v.modelConfigsUsed)||v.modelConfigsUsed.length>16)return;modelConfigsUsed=[];for(const item of v.modelConfigsUsed){const c=copyModelConfig(item);if(!c||modelConfigsUsed.some(x=>x.model===c.model&&x.reasoningEffort===c.reasoningEffort))return;modelConfigsUsed.push(c);}if(!Object.keys(units).length&&modelConfigsUsed.length)return;if(Object.keys(units).length&&!modelConfigsUsed.some(c=>c.model===config.model&&c.reasoningEffort===config.reasoningEffort))return;}const complete=!!source&&source.units.every(u=>validUnitTranslation(u,units[u.id]));return{version:2,id:v.id,target:'zh',documentId,sourceVersion,status:v.status==='complete'&&!complete?'partial':v.status,modelConfig:config,...(modelConfigsUsed!==undefined?{modelConfigsUsed}:{}),...(v.batchEpoch!==undefined?{batchEpoch:v.batchEpoch}:{}),units,updatedAt:v.updatedAt,...(typeof v.error==='string'?{error:v.error.slice(0,500)}:{})};}

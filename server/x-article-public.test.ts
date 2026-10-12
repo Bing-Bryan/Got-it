@@ -38,3 +38,26 @@ it('saves complete public-service body with explicit missing media and restores 
 });
 
 it('rejects credential hashes throughout the actual import entry instead of stripping them into fetchable URLs',async()=>{const {WebImports}=await import('./web-imports');let lookups=0;const library={findWeb:async()=>{lookups++;return null;}}as any,jobs=new WebImports(library,async()=>{throw Error('must not fetch');});for(const suffix of['?sig=secret','#sig=secret'])await expect(jobs.start(SOURCE+suffix,crypto.randomUUID())).rejects.toMatchObject({code:'web_url_invalid'});expect(lookups).toBe(0);});
+
+it('validates observed URL annotations without changing source text, creating links or fetching annotation targets',async()=>{
+ const v:any=fixture(),b=v.status.article.content.blocks[0];b.text='Read example.org/path and https://example.net/docs for the details.';b.inlineStyleRanges=[];
+ b.data.urls=[{fromIndex:5,toIndex:21,text:'example.org/path'},{fromIndex:26,toIndex:50,text:'https://example.net/docs'}];
+ // Use the exact observed text/range contract rather than normalization for metadata.
+ b.data.urls=b.data.urls.map((u:any)=>({...u,toIndex:u.fromIndex+u.text.length}));
+ const c=adaptXPublicArticle(v,SOURCE),text=(n:any):string=>n.text??(n.children??[]).map(text).join('');
+ expect(c.nodes.map(text).join('')).toBe(v.status.article.content.blocks.map((b:any)=>b.text).join(''));expect(c.nodes[0].children!.every((n:any)=>n.type==='text')).toBe(true);
+ const urls:string[]=[];await extractPublicXArticle(SOURCE,{signal:new AbortController().signal,fetcher:async url=>{urls.push(url);return{url,type:'application/json',bytes:Buffer.from(JSON.stringify(v))};}});expect(urls).toEqual([xPublicEndpoint(SOURCE).href]);
+});
+it('rejects malformed URL metadata, bad UTF-16 ranges, credentials, overlap and unknown block data',()=>{
+ const make=()=>{const v:any=fixture(),b=v.status.article.content.blocks[0];b.text='https://example.org/😀';b.inlineStyleRanges=[];b.data.urls=[{fromIndex:0,toIndex:b.text.length,text:b.text}];return v;};
+ const mutations=[
+  (b:any)=>b.data.urls=null,(b:any)=>b.data.urls={},(b:any)=>b.data.urls=Array.from({length:1001},()=>b.data.urls[0]),
+  (b:any)=>b.data.urls[0].fromIndex=-1,(b:any)=>b.data.urls[0].fromIndex=.5,(b:any)=>b.data.urls[0].toIndex++,
+  (b:any)=>b.data.urls[0].text='different.example',(b:any)=>b.data.urls[0].href='https://extra.example',
+  (b:any)=>{b.data.urls[0].toIndex--;b.data.urls[0].text=b.text.slice(0,-1);},
+  (b:any)=>{b.text='https://user:pass@example.org';b.data.urls[0]={fromIndex:0,toIndex:b.text.length,text:b.text};},
+  (b:any)=>{b.text='javascript:alert(1)';b.data.urls[0]={fromIndex:0,toIndex:b.text.length,text:b.text};},
+  (b:any)=>b.data.urls.push({...b.data.urls[0]}),(b:any)=>b.data.unrecognized='not allowed',
+ ];
+ expect(()=>adaptXPublicArticle(make(),SOURCE)).not.toThrow();for(const mutate of mutations){const v=make();mutate(v.status.article.content.blocks[0]);expect(()=>adaptXPublicArticle(v,SOURCE)).toThrow();}
+});
