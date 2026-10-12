@@ -1,4 +1,4 @@
-import { localWebProxy,proxyPublicDns,proxyRequest } from './web-proxy';
+import { localWebProxy,proxyPublicDns,proxyRequest,classifyWebTransport } from './web-proxy';
 import { lookup } from 'node:dns/promises';
 import { request as httpRequest, type RequestOptions, type IncomingMessage, type ClientRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
@@ -21,7 +21,7 @@ export function webUrl(input:unknown):URL {
 export interface WebBudget {requests:number;bytes:number}
 export interface FetchedWeb {url:string;bytes:Buffer;type:string}
 export type WebTransport=(options:RequestOptions,callback:(response:IncomingMessage)=>void)=>ClientRequest;
-export async function fetchWeb(input:string,options:{signal:AbortSignal;budget?:WebBudget;maxBytes?:number;resolver?:Resolver;transport?:WebTransport;validateUrl?:(url:string)=>unknown}):Promise<FetchedWeb>{
+async function fetchWebOnce(input:string,options:{signal:AbortSignal;budget?:WebBudget;maxBytes?:number;resolver?:Resolver;transport?:WebTransport;validateUrl?:(url:string)=>unknown}):Promise<FetchedWeb>{
  let url=webUrl(input);const budget=options.budget??{requests:0,bytes:0};
  const proxy=!options.resolver&&!options.transport?localWebProxy():undefined;
  const signal=AbortSignal.any([options.signal,AbortSignal.timeout(WEB_LIMITS.requestMs)]);
@@ -57,4 +57,5 @@ export async function fetchWeb(input:string,options:{signal:AbortSignal;budget?:
  }
  throw new WebError('网页无法读取。');
 }
+export async function fetchWeb(...args:Parameters<typeof fetchWebOnce>):Promise<FetchedWeb>{try{return await fetchWebOnce(...args);}catch(error){if(!args[1].signal.aborted&&(error as {name?:string})?.name==='AbortError')throw classifyWebTransport(error,{reason:{name:'TimeoutError'}} as AbortSignal);throw classifyWebTransport(error,args[1].signal);}}
 function abortable<T>(promise:Promise<T>,signal:AbortSignal):Promise<T>{return new Promise((resolve,reject)=>{const stop=()=>reject(new WebError('网页读取已停止或超时。','web_stopped'));if(signal.aborted)return stop();signal.addEventListener('abort',stop,{once:true});promise.then(resolve,reject).finally(()=>signal.removeEventListener('abort',stop));});}

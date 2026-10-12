@@ -1,3 +1,4 @@
+import {missingWebMediaHtml} from './web-media-markup';
 import DOMPurify from "dompurify";
 import { marked, Renderer } from "marked";
 import type { WebDocumentData } from "./web-data";
@@ -19,7 +20,7 @@ export function renderMarkdown(markdown: string, web?: WebDocumentData): Rendere
     const id = href.startsWith("got-it-media:") ? href.slice("got-it-media:".length) : "";
     const media = mediaById.get(id);
     if (!media) return `<span class="image-unavailable">图片未获授权：${escapeHtml(text)}</span>`;
-    if (media.status !== "saved") return `<span class="image-unavailable">${escapeHtml(media.alt || "图片")}：${escapeHtml(media.reason || "未导入")}</span>`;
+    if (media.status !== "saved") return missingWebMediaHtml(media);
     return `<img data-web-media="${escapeHtml(media.id)}" tabindex="0" role="button" aria-label="放大查看：${escapeHtml(media.alt || "静态图片或图表")}" alt="${escapeHtml(media.alt)}"${media.width ? ` width="${media.width}"` : ""}${media.height ? ` height="${media.height}"` : ""}>`;
   };
   const rawHtml = marked.parse(markdown, {

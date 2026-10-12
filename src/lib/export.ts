@@ -104,6 +104,7 @@ export function workspaceToMarkdown(workspace: Workspace): string {
     `- 导入时间：${safe.document.importedAt}`,
     `- 最近更新：${safe.updatedAt}`,
     ...(safe.document.kind === "web" && safe.document.web.coverage === "public-excerpt" ? ["- 阅读范围：仅保存公开部分，付费内容未导入；知识贴仅针对已保存正文。", `- 原始文章：${safe.document.web.originalUrl}`] : []),
+    ...(safe.document.kind === 'web' && safe.document.web.extractorVersion === 'x-fxtwitter-public-v1' && safe.document.web.media.some(m=>m.status!=='saved') ? [`- 保存范围：正文已保存，${safe.document.web.media.filter(m=>m.status!=='saved').length}张图片未保存到本机。`,...safe.document.web.media.filter(m=>m.status!=='saved').map((m,i)=>m.sourceUrl?`- 未保存图片 ${i+1}：[查看原图](<${m.sourceUrl}>)`:`- 未保存图片 ${i+1}：未取得可用原图链接。`)] : []),
     "",
     cards || "暂无知识贴。",
     "",

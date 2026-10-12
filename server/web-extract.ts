@@ -1,3 +1,5 @@
+import {normalizeXArticleUrl} from '../src/lib/x-article-url';
+import {extractPublicXArticle} from './x-article-public';
 import { parse, serializeOuter, type DefaultTreeAdapterMap as Tree } from 'parse5';
 import { randomUUID, createHash } from 'node:crypto';
 import { createInitialWorkspace } from '../src/sample';
@@ -22,6 +24,7 @@ const esc=(s:string)=>s.replace(/[\\`*_[\]<>]/g,c=>'\\'+c);
 const normal=(s:string)=>s.replace(/\s+/g,' ').trim();
 export async function extractWeb(input:string,options:{signal:AbortSignal;fetcher?:(url:string,maxBytes:number,budget:WebBudget)=>Promise<FetchedWeb>;progress?:(message:string)=>void}):Promise<ExtractedWeb>{
  const original=articleUrl(input);
+ if(normalizeXArticleUrl(original.href))return extractPublicXArticle(original.href,options);
  const budget={requests:0,bytes:0};const fetcher=options.fetcher??((url,maxBytes,budget)=>fetchWeb(url,{signal:options.signal,maxBytes,budget,validateUrl:maxBytes===WEB_LIMITS.htmlBytes?articleUrl:mediaUrl}));
  options.progress?.('读取文章正文…');const page=await fetcher(original.href,WEB_LIMITS.htmlBytes,budget);options.signal.throwIfAborted();
  const final=articleUrl(page.url);

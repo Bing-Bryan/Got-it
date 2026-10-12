@@ -41,7 +41,7 @@
      icons keep their intentional shapes rather than inheriting a browser bevel. */
   :is(.provider-trigger, .toolbar-button, .reading-adjustment-trigger, .library-add,
       .primary-action, .secondary-action, .document-question-trigger):not(:where(.markdown-article *, .answer-markdown *)),
-  :is(.translation-actions, .translation-permission, .question-composer-actions,
+  :is(.translation-actions, .translation-permission, .translation-options, .question-composer-actions,
       .codex-login-actions, .web-import-dialog, .web-image-dialog, .recovery-dialog,
       .pdf-toolbar, .pdf-source-preview, .pdf-outline-error) button:not(:where(.markdown-article *, .answer-markdown *)) {
     border-radius: var(--control-radius);

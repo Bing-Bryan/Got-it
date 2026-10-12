@@ -1,5 +1,7 @@
+import {normalizeXArticleUrl} from "./lib/x-article-url";
+import {X_CAPTURE_MAX_BYTES, type XArticleCapture} from "./lib/x-article-capture";
 import { confidentlyEnglish } from "./lib/translation-policy";
-import { buildTranslationSource, copyWebTranslation, TRANSLATION_CONTRACT_VERSION, TRANSLATION_LIMITS, type WebTranslationState } from "./lib/web-translation";
+import { buildTranslationSource, copyWebTranslation, TRANSLATION_CONTRACT_VERSION, TRANSLATION_QUALITY_VERSION, TRANSLATION_LIMITS, type WebTranslationState } from "./lib/web-translation";
 import { modelConfig } from "./lib/model-routing";
 import { hasRecoveryDifference } from "./lib/recovery-diff";
 import { useEffect, useRef, useState } from "react";
@@ -14,7 +16,7 @@ import { DraftStore, readingKey, readingContent, withPreferences, type StoredDra
 const MIGRATION_KEY = "got-it.library.migration.v1";
 const PREFS_KEY = "got-it.model-preferences.v1";
 
-function savedLabel(w: Workspace) { return w.document.kind === "web" && w.document.web.media.some(m => m.status !== "saved") ? "已保存，部分内容未导入" : "已保存到本机"; }
+function savedLabel(w: Workspace) { if(w.document.kind==='web'&&w.document.web.extractorVersion==='x-fxtwitter-public-v1'){const missing=w.document.web.media.filter(m=>m.status!=='saved').length;if(missing)return `正文已保存到本机，${missing}张图片未保存`;}return w.document.kind === "web" && w.document.web.media.some(m => m.status !== "saved") ? "已保存，部分内容未导入" : "已保存到本机"; }
 const emptyList: LibraryList = { entries: [], activeId: null, warnings: [], nativePicker: true };
 const message = (e: unknown) => e instanceof TypeError && /fetch|network|load/i.test(e.message) ? "无法连接本机阅读服务，请确认服务正在运行后重试。" : e instanceof Error ? e.message : "本机阅读操作失败，请重试。";
 export function capturePosition(): ReadingPosition {
@@ -66,7 +68,8 @@ export function useReadingLibrary(options: Options) {
   const [webImportSuccess, setWebImportSuccess] = useState(0);
   const [webJob, setWebJob] = useState<WebImportJob | null>(null);
   const [webError, setWebError] = useState("");
-  const webOperation = useRef<{ operationId: string; creationKey: string; url: string; autoOpen?: boolean; autoStarted?: boolean } | null>(null);
+  const webOperation = useRef<{ operationId: string; creationKey: string; url: string; autoOpen?: boolean; autoStarted?: boolean; capture?: XArticleCapture } | null>(null);
+  const captureSequence = useRef(0);
   const webPoll = useRef<ReturnType<typeof setTimeout> | null>(null);
   const desiredFragment = useRef<string | null>(null);
   const translationOperation = useRef<{id:string;entryId:string;cancelled:boolean} | null>(null);
@@ -105,10 +108,10 @@ export function useReadingLibrary(options: Options) {
         while(remaining.length && batch.length<TRANSLATION_LIMITS.units && size+remaining[0].text.length<=TRANSLATION_LIMITS.inputChars) {const unit=remaining.shift()!;batch.push(unit);size+=unit.text.length;}
         if(!batch.length)throw new Error("正文单元超过翻译预算，请检查分块。");
         setTranslationProgress(`正在译中 ${Object.keys(state.units).length}/${source.units.length}`);
-        const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify({entryId:e.id,revisionId:e.revisionId,contractVersion:state.version,sourceVersion:doc.web.contentVersion,translationId:state.id,batchEpoch:state.batchEpoch??0,modelConfig:state.modelConfig,unitIds:batch.map(unit=>unit.id)})));
+        const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify({entryId:e.id,revisionId:e.revisionId,contractVersion:state.version,qualityVersion:TRANSLATION_QUALITY_VERSION,sourceVersion:doc.web.contentVersion,translationId:state.id,batchEpoch:state.batchEpoch??0,modelConfig:state.modelConfig,unitIds:batch.map(unit=>unit.id)})));
         operation.id=`${state.id}-${Array.from(new Uint8Array(digest)).map(byte=>byte.toString(16).padStart(2,"0")).join("").slice(0,32)}`;
         if(operation.cancelled || translationOperation.current!==operation)return;
-        const result=await api<{operationId:string;translationId:string;sourceVersion:string;modelConfig:WebTranslationState['modelConfig'];units:Record<string,string>}>(`/entries/${e.id}/translation-batches`,{operationId:operation.id,roundId:operation.roundId,revisionId:e.revisionId,sourceVersion:doc.web.contentVersion,translationId:state.id,unitIds:batch.map(u=>u.id),modelConfig:state.modelConfig});
+        const result=await api<{operationId:string;translationId:string;sourceVersion:string;modelConfig:WebTranslationState['modelConfig'];units:Record<string,string>}>(`/entries/${e.id}/translation-batches`,{qualityVersion:TRANSLATION_QUALITY_VERSION,operationId:operation.id,roundId:operation.roundId,revisionId:e.revisionId,sourceVersion:doc.web.contentVersion,translationId:state.id,unitIds:batch.map(u=>u.id),modelConfig:state.modelConfig});
         if(operation.cancelled || translationOperation.current!==operation || latest.current.workspace.document.id!==doc.id) return;
         if(result.operationId!==operation.id || result.translationId!==state.id || result.sourceVersion!==doc.web.contentVersion || Object.keys(result.units).length!==batch.length || batch.some(u=>typeof result.units[u.id]!=="string"))throw new Error("翻译结果与正文批次不匹配。");
         const candidate={...state,modelConfig:result.modelConfig,units:{...state.units,...result.units},status:remaining.length?"partial" as const:"complete" as const,updatedAt:new Date().toISOString(),error:undefined};
@@ -315,6 +318,7 @@ export function useReadingLibrary(options: Options) {
   function showWebImport() { setWebError(""); setWebImportOpen(true); }
   async function cancelWebImport(close = false) {
     if (busyRef.current) return;
+    captureSequence.current++;
     const operation = webOperation.current;
     webOperation.current = null;
     if (webPoll.current) { clearTimeout(webPoll.current); webPoll.current = null; }
@@ -330,17 +334,18 @@ export function useReadingLibrary(options: Options) {
     setWebJob(result);
     if (result.status === "failed" || result.status === "expired") setWebError(result.error || result.progress);
   }
-  async function readWebUrl(input: string, autoOpen = false) {
+  async function readWebUrl(input: string, autoOpen = false, capture?: XArticleCapture) {
     if (!ready || busyRef.current) return;
-    const url = safeWebUrl(input.trim());
+    captureSequence.current++;
+    const safe = safeWebUrl(input.trim()), url = safe ? normalizeXArticleUrl(safe) ?? safe : undefined;
     if (!url) { setWebError("请输入无登录凭据的公开 HTTP(S) 文章链接，不支持本机或私网地址。"); return; }
     const previous = webOperation.current;
     if (webPoll.current) clearTimeout(webPoll.current);
-    const operation = { operationId: crypto.randomUUID(), creationKey: crypto.randomUUID(), url, autoOpen, autoStarted: false };
+    const operation = { operationId: crypto.randomUUID(), creationKey: crypto.randomUUID(), url, autoOpen, autoStarted: false, capture };
     webOperation.current = operation; setWebError(""); setWebImportOpen(true);
     setWebJob({ operationId: operation.operationId, status: "reading", progress: "正在读取文章…" });
     if (previous) void api(`/web-imports/${previous.operationId}/cancel`, {}).catch(() => {});
-    try { receiveWebJob(await api<WebImportJob>("/web-imports", { url, operationId: operation.operationId }), operation.operationId); }
+    try { receiveWebJob(await api<WebImportJob>(capture ? "/x-article-imports" : "/web-imports", { ...(capture ? {capture} : {url}), operationId: operation.operationId }), operation.operationId); }
     catch (e) { if (webOperation.current === operation) { setWebError(message(e)); setWebJob({ operationId: operation.operationId, status: "failed", progress: "读取失败" }); } }
   }
   useEffect(() => {
@@ -354,6 +359,7 @@ export function useReadingLibrary(options: Options) {
   }, [webJob]);
   useEffect(() => () => {
     stopTranslation();
+    captureSequence.current++;
     const operation = webOperation.current; webOperation.current = null;
     if (webPoll.current) clearTimeout(webPoll.current);
     if (operation) void api(`/web-imports/${operation.operationId}/cancel`, {}).catch(() => {});
@@ -372,7 +378,7 @@ export function useReadingLibrary(options: Options) {
           if ((error as { status?: number })?.status === 404) invalidateCandidate();
           throw error;
         }
-        if (["expired", "cancelled"].includes(checked.status)) { invalidateCandidate(); throw new Error("读取作业已失效，请点击“阅读文章”重新读取。"); }
+        if (["expired", "cancelled"].includes(checked.status)) { invalidateCandidate(); throw new Error(operation.capture ? "捕获作业已失效，请重新选择 X 文章文件。" : "读取作业已失效，请点击“阅读文章”重新读取。"); }
         if (webOperation.current !== operation || checked.operationId !== operation.operationId || !["ready", "existing"].includes(checked.status)) throw new Error("预览已失效，请重新读取。");
         if (!checked.entryId && (!checked.preview || checked.preview.candidateId !== job.preview?.candidateId)) throw new Error("预览已失效，请重新读取。");
         if (checked.entryId) await api<LibraryEntry>(`/entries/${checked.entryId}`);
@@ -388,12 +394,29 @@ export function useReadingLibrary(options: Options) {
       } catch (e) { setWebError(message(e)); throw e; }
     });
   }
+  async function readXArticleFile(file: Pick<File, "size" | "text">) {
+    if (!ready || busyRef.current) return;
+    const sequence = ++captureSequence.current;
+    try {
+      if (file.size > X_CAPTURE_MAX_BYTES) throw new Error("X 文章文件超过 2 MiB，请重新捕获较小的文章。");
+      const raw = await file.text();
+      if (sequence !== captureSequence.current || busyRef.current) return;
+      if (new TextEncoder().encode(raw).length > X_CAPTURE_MAX_BYTES) throw new Error("X 文章文件超过 2 MiB。");
+      const capture = JSON.parse(raw) as XArticleCapture;
+      if (!capture || capture.format !== "got-it-x-article" || capture.version !== 1 || typeof capture.url !== "string") throw new Error("请选择 Got-it 书签生成的 X 文章文件。");
+      const operation = webOperation.current;
+      const doc = webJob?.preview?.workspace.document;
+      if (operation?.capture && capture.url === operation.url && webJob && ["ready", "existing"].includes(webJob.status) && !(doc?.kind === "web" && doc.web.media.some(m=>m.status!=="saved"))) { await confirmWebImport(); return; }
+      await readWebUrl(capture.url, true, capture);
+    } catch (error) { if(sequence !== captureSequence.current)return; setWebError(error instanceof SyntaxError ? "文章文件不是有效 JSON，请重新捕获。" : message(error)); }
+  }
   async function readWebArticle(input: string) {
+    captureSequence.current++;
     const operation = webOperation.current;
     const doc = webJob?.preview?.workspace.document;
-    const missing = doc?.kind === "web" && doc.web.media.some(media => media.status !== "saved");
+    const missing = doc?.kind === "web" && doc.web.extractorVersion !== "x-fxtwitter-public-v1" && doc.web.media.some(media => media.status !== "saved");
     // Saving retries keep the same candidate and idempotency key; extraction failures start afresh.
-    if (operation && safeWebUrl(input.trim()) === operation.url && !missing && webJob && ["ready", "existing"].includes(webJob.status)) {
+    if (operation && (normalizeXArticleUrl(input.trim()) ?? safeWebUrl(input.trim())) === operation.url && !missing && webJob && ["ready", "existing"].includes(webJob.status)) {
       await confirmWebImport();
       return;
     }
@@ -404,8 +427,8 @@ export function useReadingLibrary(options: Options) {
     if (!operation?.autoOpen || operation.autoStarted || busy || !webJob || !["ready", "existing"].includes(webJob.status) || webJob.operationId !== operation.operationId) return;
     operation.autoStarted = true;
     const doc = webJob.preview?.workspace.document;
-    if (doc?.kind === "web" && doc.web.media.some(media => media.status !== "saved")) {
-      setWebError("文章图片或图表未能完整保存，尚未加入。请点击“阅读文章”重试，或在原网站阅读。");
+    if (doc?.kind === "web" && doc.web.extractorVersion !== "x-fxtwitter-public-v1" && doc.web.media.some(media => media.status !== "saved")) {
+      setWebError(operation.capture ? "X 文章图片未能完整保存，尚未加入。请重新选择 X 文章文件重试，或在原网站阅读。" : "文章图片或图表未能完整保存，尚未加入。请点击“阅读文章”重试，或在原网站阅读。");
       return;
     }
     void confirmWebImport();
@@ -499,7 +522,7 @@ export function useReadingLibrary(options: Options) {
     if (!timer.current) timer.current = setTimeout(() => { timer.current = null; void flush().catch(() => {}); }, 500);
   }
   useEffect(()=> { if (!notice) return; const id=setTimeout(()=>setNotice(""),4500); return ()=>clearTimeout(id); },[notice]);
-  return { translate, stopTranslation, translationRunning, translationProgress, autoTranslate, setAutoTranslation, saveNow:flush, webImportOpen, webImportSuccess, webJob, webError, showWebImport, readWebUrl, readWebArticle, confirmWebImport, cancelWebImport, initialPosition: desiredPosition.current, entry, list, ready, busy, error, importError, clearError: () => { setError(""); setImportError(false); }, status, check, recovery, recoveries, blocked, draftWarning, notice, historyId,
+  return { translate, stopTranslation, translationRunning, translationProgress, autoTranslate, setAutoTranslation, saveNow:flush, webImportOpen, webImportSuccess, webJob, webError, showWebImport, readWebUrl, readWebArticle, readXArticleFile, confirmWebImport, cancelWebImport, initialPosition: desiredPosition.current, entry, list, ready, busy, error, importError, clearError: () => { setError(""); setImportError(false); }, status, check, recovery, recoveries, blocked, draftWarning, notice, historyId,
     readOnly: !!historyId || !!recovery || blocked || busy,
     open, choose, importFile, checkSource: () => transition(checkSource), acceptUpdate, viewRevision, resolveRecovery, acknowledgeRecovery, showRecovery, closeRecovery,
     retry: () => ready && !blockedDraft.current ? transition(() => flush()) : initialize(),

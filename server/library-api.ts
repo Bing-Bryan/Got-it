@@ -42,6 +42,7 @@ export function libraryRouter(library: ReadingLibrary, token = randomBytes(32).t
   const id = (req: Request) => String(req.params.id);
   router.post("/entries/:id/translation-batches/:operationId/cancel",action(async req=>translations.cancel(id(req),String(req.params.operationId))));
   router.post("/entries/:id/translation-batches",async(req,res)=>{const controller=new AbortController();res.on("close",()=>{if(!res.writableEnded)controller.abort();});try{res.json(await translations.batch(id(req),req.body,controller.signal));}catch(error){if(error instanceof ProviderError){const e=toProviderErrorBody(error);res.status(e.statusCode).json(e.body);}else{const e=libraryFailure(error);res.status(e.status).json({error:e.message,code:e.code});}}});
+  router.post("/x-article-imports", action(req=>web.startCapture(req.body?.capture,req.body?.operationId)));
   router.post("/web-imports", action(req=>web.start(req.body?.url,req.body?.operationId)));
   router.get("/web-imports/:operationId", action(async req=>web.status(String(req.params.operationId))));
   router.post("/web-imports/:operationId/cancel", action(async req=>web.cancel(String(req.params.operationId))));

@@ -1,155 +1,34 @@
-import {act} from 'react';import{createRoot}from'react-dom/client';import{expect,it,vi}from'vitest';
-import{WebTranslationControls}from'./WebTranslationControls';import{webWorkspace}from'./test-support/web';import type{useReadingLibrary}from'./useReadingLibrary';
+import {act} from 'react';
+import {createRoot} from 'react-dom/client';
+import {expect,it,vi} from 'vitest';
+import {WebTranslationControls} from './WebTranslationControls';
+import {webWorkspace} from './test-support/web';
+import type {useReadingLibrary} from './useReadingLibrary';
 
-it('uses one accessible icon button to switch existing reading sides without requesting translation', async () => {
-  Object.assign(globalThis, {IS_REACT_ACT_ENVIRONMENT:true});
-  const host = document.body.appendChild(document.createElement('div'));
-  const root = createRoot(host);
-  const workspace = webWorkspace();
-  workspace.webTranslation = {version:2,id:'toggle',target:'zh',documentId:workspace.document.id,sourceVersion:workspace.document.contentHash!,status:'complete',modelConfig:{model:'gpt-6.1-sol',reasoningEffort:'medium'},units:{'saved-unit':'已保存的译文'},updatedAt:new Date().toISOString()};
-  const translate = vi.fn(), onSide = vi.fn();
-  const library = {status:'已保存',ready:true,autoTranslate:false,translate} as unknown as ReturnType<typeof useReadingLibrary>;
-  const render = () => root.render(<WebTranslationControls workspace={workspace} library={library} onSide={onSide}/>);
-  try {
-    workspace.readingSide = 'original';
-    await act(async () => render());
-    const button = host.querySelector<HTMLButtonElement>('.translation-side-toggle')!;
-    expect(host.querySelectorAll('.translation-actions button')).toHaveLength(1);
-    expect(button.tagName).toBe('BUTTON');
-    expect(button.type).toBe('button');
-    expect(button.tabIndex).toBe(0);
-    expect(button.getAttribute('aria-label')).toBe('切换到中文译文');
-    expect(button.title).toBe('切换到中文译文');
-    expect(button.getAttribute('aria-pressed')).toBe('false');
-    expect(button.textContent).toBe('');
-    expect(button.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-    button.focus();
-    expect(document.activeElement).toBe(button);
-    await act(async () => button.click());
-    expect(onSide).toHaveBeenLastCalledWith('translated');
-    workspace.readingSide = 'translated';
-    await act(async () => render());
-    expect(button.getAttribute('aria-label')).toBe('切换到原文');
-    expect(button.title).toBe('切换到原文');
-    expect(button.getAttribute('aria-pressed')).toBe('true');
-    await act(async () => button.click());
-    expect(onSide).toHaveBeenLastCalledWith('original');
-    expect(onSide).toHaveBeenCalledTimes(2);
-    expect(translate).not.toHaveBeenCalled();
-  } finally {
-    await act(async () => root.unmount());
-    host.remove();
-  }
+async function setup() {
+  Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});
+  const host=document.body.appendChild(document.createElement('div')),root=createRoot(host),workspace=webWorkspace();
+  const library={status:'已保存到本机',ready:true,readOnly:false,autoTranslate:false,translationRunning:false,translationProgress:'',translate:vi.fn(),stopTranslation:vi.fn(),setAutoTranslation:vi.fn()} as unknown as ReturnType<typeof useReadingLibrary>;
+  const onSide=vi.fn();
+  const render=async(key='A')=>{await act(async()=>root.render(<WebTranslationControls key={key} workspace={workspace} library={library} onSide={onSide}/>));};
+  const click=async(selector='.translation-side-toggle')=>{await act(async()=>host.querySelector<HTMLButtonElement>(selector)!.click());};
+  const textClick=async(text:string)=>{await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent===text)!.click());};
+  const dispose=async()=>{await act(async()=>root.unmount());host.remove();};
+  const translation=(status:'partial'|'complete'|'failed'='complete',units:Record<string,string>={'saved-unit':'已保存译文'})=>{workspace.webTranslation={version:2,id:'translation',target:'zh',documentId:workspace.document.id,sourceVersion:workspace.document.contentHash!,status,modelConfig:{model:'gpt-6.1-sol',reasoningEffort:'medium'},units,updatedAt:new Date().toISOString()};};
+  return{host,workspace,library,onSide,render,click,textClick,dispose,translation};
+}
+
+it('offers one accessible icon and explicit general authorization for short and unknown non-English prose',async()=>{
+  const t=await setup();try{for(const prose of ['Bonjour !','今日は晴れです。','Привет!']){if(t.workspace.document.kind!=='web')throw Error();t.workspace.document.markdown=prose;await t.render(prose);const button=t.host.querySelector<HTMLButtonElement>('.translation-side-toggle')!;expect(t.host.querySelectorAll('.translation-actions button')).toHaveLength(1);expect(button.title).toBe('翻译为中文');expect(button.getAttribute('aria-label')).toBe(button.title);expect(button.tabIndex).toBe(0);expect(button.textContent).toBe('');expect(button.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');button.focus();expect(document.activeElement).toBe(button);await t.click();expect(button.getAttribute('aria-expanded')).toBe('true');expect(t.host.textContent).toContain('全部可翻译正文分批发送');expect(t.host.textContent).toContain('代码、URL和图片不发送');expect(t.host.textContent).toContain('以后自动翻译确认加入的新英文网页');expect(t.library.translate).not.toHaveBeenCalled();}}finally{await t.dispose();}
 });
+it('switches a complete saved translation locally with one icon and correct selected semantics',async()=>{const t=await setup();try{t.translation();for(const side of ['original','translated']as const){t.workspace.readingSide=side;await t.render();const b=t.host.querySelector<HTMLButtonElement>('.translation-side-toggle')!;expect(b.getAttribute('aria-pressed')).toBe(String(side==='translated'));expect(b.title).toBe(side==='original'?'切换到中文译文':'切换到原文');expect(t.host.querySelectorAll('button')).toHaveLength(1);await t.click();expect(t.onSide).toHaveBeenLastCalledWith(side==='original'?'translated':'original');}expect(t.library.translate).not.toHaveBeenCalled();}finally{await t.dispose();}});
+it('makes partial side switching and continuation reachable from the single icon and restores focus on Escape',async()=>{const t=await setup();try{t.translation('partial');await t.render();await t.click();expect(t.host.querySelector('.translation-options')).not.toBeNull();expect(t.host.querySelector('.translation-side-toggle')?.getAttribute('aria-expanded')).toBe('true');await t.textClick('切换到中文译文（部分）');expect(t.onSide).toHaveBeenCalledWith('translated');expect(t.library.translate).not.toHaveBeenCalled();await t.click();await act(async()=>t.host.querySelector('.translation-options button')!.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));expect(t.host.querySelector('.translation-options')).toBeNull();expect(document.activeElement).toBe(t.host.querySelector('.translation-side-toggle'));await t.click();await t.textClick('继续译中');expect(t.library.translate).toHaveBeenCalledOnce();}finally{await t.dispose();}});
+it('uses the same icon to stop a running request and keeps real progress and save failure visible',async()=>{const t=await setup();try{t.translation('partial');t.library.translationRunning=true;t.library.translationProgress='翻译中';t.library.status='保存失败';await t.render();const b=t.host.querySelector<HTMLButtonElement>('.translation-side-toggle')!;expect(b.title).toBe('停止翻译');expect(t.host.querySelectorAll('button')).toHaveLength(1);expect(t.host.querySelector('.translation-progress')?.textContent).toBe('翻译中');expect(t.host.querySelector('.translation-status')?.textContent).toBe('保存失败');await t.click();expect(t.library.stopTranslation).toHaveBeenCalledOnce();expect(t.library.translate).not.toHaveBeenCalled();}finally{await t.dispose();}});
+it('retries an authorized empty failed result without exposing an empty translated side',async()=>{const t=await setup();try{t.translation('failed',{});t.workspace.webTranslation!.error='首批翻译失败';await t.render();expect(t.host.querySelector('.translation-side-toggle')?.getAttribute('aria-label')).toBe('继续译中');expect(t.host.textContent).toContain('首批翻译失败');await t.click();expect(t.library.translate).toHaveBeenCalledOnce();expect(t.onSide).not.toHaveBeenCalled();}finally{await t.dispose();}});
+it('commits the unchanged English auto scope only on explicit start and cancels authorization on remount',async()=>{const t=await setup();try{await t.render();await t.click();await act(async()=>t.host.querySelector<HTMLInputElement>('input')!.click());await t.textClick('取消');expect(t.library.setAutoTranslation).not.toHaveBeenCalled();await t.click();await t.render('B');expect(t.host.querySelector('.translation-permission')).toBeNull();await t.click();await t.textClick('开始译中');expect(t.library.setAutoTranslation).toHaveBeenCalledWith(false);expect(t.library.translate).toHaveBeenCalledOnce();}finally{await t.dispose();}});
+it('retains public excerpt limits on both sides while removing X provenance from the toolbar',async()=>{const t=await setup();try{if(t.workspace.document.kind!=='web')throw Error();const web=t.workspace.document.web;web.coverage='public-excerpt';web.coverageReason='paywall';web.retrieval={kind:'public-service',provider:'fxtwitter',url:'https://api.fxtwitter.com/2/status/123'};for(const side of ['original','translated']as const){t.workspace.readingSide=side;await t.render();expect(t.host.textContent).toContain('仅保存公开部分，付费内容未导入');expect(t.host.querySelector('.translation-toolbar .translation-scope-warning')?.textContent).not.toContain('FxTwitter');expect(t.host.querySelector('a')?.title).toContain('FxTwitter');expect(t.host.querySelector('a')?.getAttribute('aria-describedby')).toBe(t.host.querySelector('.translation-source-description')?.id);expect(t.host.querySelector('a')?.href).toBe(web.originalUrl);}await t.click();expect(t.host.textContent).toContain('不包含原站付费内容');}finally{await t.dispose();}});
+it('does not let translation success overwrite pending persistence and disables new requests in read-only state',async()=>{const t=await setup();try{t.library.status='保存中';t.library.translationProgress='全文译中已保存';t.library.readOnly=true;await t.render();expect(t.host.querySelector('.translation-status')?.textContent).toBe('保存中');expect(t.host.querySelector('.translation-progress')).toBeNull();expect(t.host.querySelector<HTMLButtonElement>('.translation-side-toggle')?.disabled).toBe(true);t.translation();await t.render();expect(t.host.querySelector<HTMLButtonElement>('.translation-side-toggle')?.disabled).toBe(false);await t.click();expect(t.onSide).toHaveBeenCalledWith('translated');expect(t.library.translate).not.toHaveBeenCalled();}finally{await t.dispose();}});
 
-it('keeps partial translation explicit on both toggle directions and retains stop, progress and failure states', async () => {
-  Object.assign(globalThis, {IS_REACT_ACT_ENVIRONMENT:true});
-  const host = document.body.appendChild(document.createElement('div'));
-  const root = createRoot(host);
-  const workspace = webWorkspace();
-  workspace.webTranslation = {version:2,id:'partial',target:'zh',documentId:workspace.document.id,sourceVersion:workspace.document.contentHash!,status:'partial',modelConfig:{model:'gpt-6.1-sol',reasoningEffort:'medium'},units:{'saved-unit':'已保存的译文'},updatedAt:new Date().toISOString()};
-  const translate = vi.fn(), onSide = vi.fn(), stopTranslation = vi.fn();
-  const library = {status:'保存失败',ready:true,autoTranslate:false,translationRunning:true,translationProgress:'翻译中',translate,stopTranslation} as unknown as ReturnType<typeof useReadingLibrary>;
-  const render = () => root.render(<WebTranslationControls workspace={workspace} library={library} onSide={onSide}/>);
-  try {
-    for (const side of ['original','translated'] as const) {
-      workspace.readingSide = side;
-      await act(async () => render());
-      const button = host.querySelector<HTMLButtonElement>('.translation-side-toggle')!;
-      const label = side === 'original' ? '切换到中文译文（部分）' : '切换到原文（当前为部分中文译文）';
-      expect(button.getAttribute('aria-label')).toBe(label);
-      expect(button.title).toBe(label);
-      expect(host.textContent).toContain('停止翻译');
-      expect(host.querySelector('.translation-progress')?.textContent).toBe('翻译中');
-      expect(host.querySelector('.translation-status')?.textContent).toBe('保存失败');
-      await act(async () => button.click());
-      expect(onSide).toHaveBeenLastCalledWith(side === 'original' ? 'translated' : 'original');
-    }
-    expect(translate).not.toHaveBeenCalled();
-    expect(stopTranslation).not.toHaveBeenCalled();
-  } finally {
-    await act(async () => root.unmount());
-    host.remove();
-  }
-});
-
-it('shows the explicit translation action without a reading-side toggle when no translation exists', async () => {
-  Object.assign(globalThis, {IS_REACT_ACT_ENVIRONMENT:true});
-  const host = document.body.appendChild(document.createElement('div'));
-  const root = createRoot(host);
-  const library = {status:'已保存',ready:true,autoTranslate:false,translate:vi.fn()} as unknown as ReturnType<typeof useReadingLibrary>;
-  try {
-    await act(async () => root.render(<WebTranslationControls workspace={webWorkspace()} library={library} onSide={vi.fn()}/>));
-    expect(host.querySelector('.translation-side-toggle')).toBeNull();
-    expect([...host.querySelectorAll('button')].map(button => button.textContent)).toEqual(['全文译中']);
-    expect(library.translate).not.toHaveBeenCalled();
-  } finally {
-    await act(async () => root.unmount());
-    host.remove();
-  }
-});
-
-it('does not offer an empty translated side after the first batch fails, and retains retry and the error', async () => {
-  Object.assign(globalThis, {IS_REACT_ACT_ENVIRONMENT:true});
-  const host = document.body.appendChild(document.createElement('div'));
-  const root = createRoot(host);
-  const workspace = webWorkspace();
-  workspace.webTranslation = {version:2,id:'empty',target:'zh',documentId:workspace.document.id,sourceVersion:workspace.document.contentHash!,status:'failed',modelConfig:{model:'gpt-6.1-sol',reasoningEffort:'medium'},units:{},error:'首批翻译失败',updatedAt:new Date().toISOString()};
-  const translate = vi.fn(), onSide = vi.fn();
-  const library = {status:'已保存',ready:true,autoTranslate:false,translate} as unknown as ReturnType<typeof useReadingLibrary>;
-  const render = () => root.render(<WebTranslationControls workspace={workspace} library={library} onSide={onSide}/>);
-  try {
-    for (const units of [{}, {'empty-unit':'  '}] as Record<string,string>[]) {
-      workspace.webTranslation.units = units;
-      await act(async () => render());
-      expect(host.querySelector('.translation-side-toggle')).toBeNull();
-      expect(host.querySelector('.translation-progress')?.textContent).toBe('首批翻译失败');
-      expect([...host.querySelectorAll('button')].map(button => button.textContent)).toEqual(['继续译中']);
-      expect(translate).not.toHaveBeenCalled();
-      expect(onSide).not.toHaveBeenCalled();
-    }
-    await act(async () => host.querySelector<HTMLButtonElement>('button')!.click());
-    expect(translate).toHaveBeenCalledOnce();
-    expect(onSide).not.toHaveBeenCalled();
-    workspace.webTranslation.units = {'saved-unit':'已保存译文'};
-    await act(async () => render());
-    expect(host.querySelector('.translation-side-toggle')?.getAttribute('aria-label')).toBe('切换到中文译文（部分）');
-    expect(host.querySelector('.translation-progress')?.textContent).toBe('首批翻译失败');
-  } finally {
-    await act(async () => root.unmount());
-    host.remove();
-  }
-});
-it('authorization only commits auto preference on start; remount cancels old document permission',async()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});const host=document.body.appendChild(document.createElement('div')),root=createRoot(host);const translate=vi.fn(),setAutoTranslation=vi.fn();const library={status:"已保存到本机",autoTranslate:false,ready:true,translate,setAutoTranslation}as unknown as ReturnType<typeof useReadingLibrary>;const w=webWorkspace();const render=(key:string)=>root.render(<WebTranslationControls key={key} workspace={w} library={library} onSide={vi.fn()}/>);await act(async()=>render('A'));const click=async(text:string)=>{await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent===text)!.click());};await click('全文译中');await act(async()=>host.querySelector<HTMLInputElement>('input')!.click());await click('取消');expect(setAutoTranslation).not.toHaveBeenCalled();await click('全文译中');await act(async()=>render('B'));expect(host.textContent).not.toContain('开始译中');expect(translate).not.toHaveBeenCalled();await click('全文译中');await act(async()=>host.querySelector<HTMLInputElement>('input')!.click());await click('开始译中');expect(setAutoTranslation).toHaveBeenCalledWith(true);expect(translate).toHaveBeenCalledOnce();await act(async()=>root.unmount());host.remove();});
-
-it('shows one save status without translation success duplication and keeps failures visible', async () => {
-  Object.assign(globalThis, {IS_REACT_ACT_ENVIRONMENT:true});
-  const host=document.body.appendChild(document.createElement('div')),root=createRoot(host);
-  const w=webWorkspace();
-  w.webTranslation={version:2,id:'translation',target:'zh',documentId:w.document.id,sourceVersion:'a'.repeat(64),status:'complete',modelConfig:{model:'gpt-6.1-sol',reasoningEffort:'medium'},units:{'saved-unit':'已保存的译文'},updatedAt:new Date().toISOString()};
-  const library={status:'已保存到本机',ready:true,autoTranslate:false} as ReturnType<typeof useReadingLibrary>;
-  const render=()=>root.render(<WebTranslationControls workspace={w} library={library} saveStatus={library.status} onSide={vi.fn()}/>);
-  await act(async()=>render());
-  expect(host.querySelector('.translation-status')?.textContent).toBe('已保存');
-  expect(host.textContent).not.toContain('已保存到本机');
-  expect(host.textContent).toContain('部分图片／图表未导入');
-  library.translationProgress='全文译中已保存';
-  library.status='保存中';await act(async()=>render());
-  expect(host.querySelector('.translation-status')?.textContent).toBe('保存中');
-  expect(host.textContent).not.toContain('全文译中已保存');
-  expect(host.textContent).not.toContain('待保存');
-  library.translationProgress='翻译成果待核对，尚未确认保存';
-  await act(async()=>render());
-  expect(host.querySelector('.translation-progress')?.textContent).toBe('翻译成果待核对，尚未确认保存');
-  library.translationProgress='';
-  library.status='保存失败';await act(async()=>render());
-  expect(host.textContent).toContain('保存失败');
-  w.webTranslation.status='failed';w.webTranslation.error='翻译中断';await act(async()=>render());
-  expect(host.textContent).toContain('翻译中断');
-  expect(host.querySelector('.translation-side-toggle')?.getAttribute('aria-label')).toBe('切换到中文译文（部分）');
-  await act(async()=>root.unmount());host.remove();
-});
-
-it('keeps public excerpt warning and source link visible on both sides without implying whole-site translation',async()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});const host=document.body.appendChild(document.createElement('div')),root=createRoot(host),w=webWorkspace();if(w.document.kind!=='web')throw Error();w.document.web.coverage='public-excerpt';w.document.web.coverageReason='paywall';const library={ready:true,autoTranslate:false,status:'已保存到本机'}as ReturnType<typeof useReadingLibrary>;for(const side of['original','translated']as const){w.readingSide=side;await act(async()=>root.render(<WebTranslationControls workspace={w} library={library} onSide={vi.fn()}/>));expect(host.textContent).toContain('仅保存公开部分，付费内容未导入');expect(host.textContent).toContain('已保存公开正文译中');expect(host.textContent).not.toContain('全文译中');expect(host.querySelector('a')?.href).toBe(w.document.web.originalUrl);}await act(async()=>root.unmount());host.remove();});
-
-it('places exact scope copy beside the translation toggle inside the shared toolbar, retaining incomplete media warnings',async()=>{Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});const host=document.body.appendChild(document.createElement('div')),root=createRoot(host),w=webWorkspace();if(w.document.kind!=='web')throw Error();w.document.web.coverage='public-excerpt';w.document.web.coverageReason='paywall';w.webTranslation={version:2,id:'scope',target:'zh',documentId:w.document.id,sourceVersion:w.document.contentHash!,status:'partial',modelConfig:{model:'gpt-6.1-sol',reasoningEffort:'medium'},units:{'saved-unit':'已保存的译文'},updatedAt:new Date().toISOString()};const library={ready:true,autoTranslate:false,status:'已保存到本机'}as ReturnType<typeof useReadingLibrary>;for(const status of['partial','complete']as const){w.webTranslation.status=status;await act(async()=>root.render(<WebTranslationControls workspace={w} library={library} onSide={vi.fn()}/>));const warning=host.querySelector('.translation-scope-warning')!;expect(warning.textContent).toBe('仅保存公开部分，付费内容未导入。');expect(warning.closest('.translation-toolbar')).not.toBeNull();expect(warning.previousElementSibling?.getAttribute('aria-label')).toBe(status==='partial'?'切换到中文译文（部分）':'切换到中文译文');expect(host.textContent).not.toContain('翻译和知识贴仅针对本机保存的公开正文。');expect(host.querySelector('.translation-media-warning')?.textContent).toBe('部分图片／图表未导入');}delete w.document.web.coverage;delete w.document.web.coverageReason;await act(async()=>root.render(<WebTranslationControls workspace={w} library={library} onSide={vi.fn()}/>));expect(host.querySelector('.translation-scope-warning')).toBeNull();await act(async()=>root.unmount());host.remove();});
+it('hides initial high-confidence Chinese prose only, preserving mixed prose, short unknown text and existing operations',async()=>{const t=await setup();try{if(t.workspace.document.kind!=="web")throw Error();t.workspace.document={...t.workspace.document,markdown:'这是一篇完整的中文文章，读者可以直接阅读这些内容，无需重复翻译。我们会保留原文和阅读进度，让每次理解都可以继续。\n\n```js\nconst language = "English sample words in code";\n```\n\nhttps://example.com/English/path'};await t.render();expect(t.host.querySelector('.translation-side-toggle')).toBeNull();t.translation('partial');await t.render();expect(t.host.querySelector('.translation-side-toggle')).not.toBeNull();delete t.workspace.webTranslation;t.library.translationRunning=true;await t.render();expect(t.host.querySelector('.translation-side-toggle')?.getAttribute('aria-label')).toBe('停止翻译');t.library.translationRunning=false;t.workspace.document={...t.workspace.document,markdown:'中文。 Bonjour le monde!'};await t.render();expect(t.host.querySelector('.translation-side-toggle')).not.toBeNull();}finally{await t.dispose();}});
+it('keeps the actual initial translation icon available for a foreign paragraph inside a much longer Chinese document',async()=>{const t=await setup();try{if(t.workspace.document.kind!=='web')throw Error();t.workspace.document={...t.workspace.document,markdown:'这是一个中文段落，我们可以在这里阅读和理解原文，并将阅读结果保存到本机。'.repeat(20)+'\n\nThis paragraph contains original English prose that the reader may want to translate into Chinese.'};await t.render('mixed-long');const icon=t.host.querySelector<HTMLButtonElement>('.translation-side-toggle')!;expect(icon).not.toBeNull();expect(icon.getAttribute('aria-label')).toBe('翻译为中文');await t.click();expect(t.host.querySelector('.translation-permission')).not.toBeNull();expect(t.library.translate).not.toHaveBeenCalled();}finally{await t.dispose();}});
+it('uses one truthful saved-body/missing-count status for public X without duplicate warning or retry actions',async()=>{const t=await setup();try{if(t.workspace.document.kind!=='web')throw Error();t.workspace.document.web.extractorVersion='x-fxtwitter-public-v1';await t.render();const count=t.workspace.document.web.media.filter(m=>m.status!=='saved').length;expect(t.host.querySelector('.translation-status')?.textContent).toBe(`正文已保存到本机，${count}张图片未保存`);expect(t.host.querySelector('.translation-media-warning')).toBeNull();expect(t.host.textContent?.match(/张图片未保存/g)).toHaveLength(1);expect([...t.host.querySelectorAll('button')].some(b=>/补取|重试图片/.test(b.textContent??''))).toBe(false);for(const status of['保存中…','保存失败']){t.library.status=status;await t.render();expect(t.host.textContent).not.toContain('正文已保存');expect(t.host.querySelector('.translation-status')?.textContent).toBe(status.startsWith('保存中')?'保存中':status);}}finally{await t.dispose();}});

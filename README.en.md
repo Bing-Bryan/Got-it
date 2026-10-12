@@ -4,7 +4,7 @@
 
 **Make sense of it without leaving the page.**
 
-Got it is a local-first reader for Markdown, PDF, and static web articles. Add material to your reading library, select the original text, then explain a concept, check sources, or ask a specific question. Answers stay beside the passage as knowledge cards, ready to revisit after a refresh or in a later reading session.
+Got it is a local-first reader for Markdown, PDF, and web articles. Add material to your reading library, select the original text, then explain a concept, check sources, or ask a specific question. Answers stay beside the passage as knowledge cards, ready to revisit after a refresh or in a later reading session.
 
 AI normally runs only after you choose an action or send a question. If you previously enabled automatic translation, a newly confirmed English web entry starts translation under that preference. Original files remain unchanged; reading copies, cards, translations, and progress are stored locally.
 
@@ -54,17 +54,21 @@ PDFs scroll continuously. The outline uses embedded bookmarks when available and
 
 ![An image and caption selected on the original PDF page](docs/images/pdf-selection.png)
 
-### 5. Import a static article and translate it when needed
+### 5. Save a web article and translate it when needed
 
-Choose **Add file → Web link** and paste a public HTTPS article URL. Got it extracts the static body and required images, then opens the article only after saving a complete copy. Importing does not call a model. A saved copy remains readable when the source is temporarily unavailable. Adding the same URL again opens the existing entry without updating or translating it automatically.
+Choose **Add file → Web link** and paste a public HTTPS article URL. For ordinary web pages, Got it extracts the static body and required images, then opens the article after saving a complete copy. Importing does not call a model. A saved copy remains readable when the source is temporarily unavailable. Adding the same URL again opens the existing entry without updating or translating it automatically.
+
+**X content:** Paste an X/Twitter post or article URL into the same input and select **Read article**. Public articles, regular posts, and long posts are retrieved through FxTwitter. The service receives the public content ID and, when locating an article requires it, the public account name in the link—not your library, cards, or credentials. Source details retain the retrieval channel and saved scope; a service response is not independent verification of the complete original. Existing copies open without replacing their cards.
+
+Complete text, code, supported tables, and successfully retrieved images are saved locally. An unavailable X image does not block reading: its position shows that it was not saved and offers a safe original-image link, while the save status distinguishes saved text from missing images. Images are not automatically refetched. Embedded posts in articles retain an original-post link and an explicit notice that their body was not saved; no additional post is fetched. X videos retain an original-page playback link and attempt to save a local preview image when the source provides one; video files are not downloaded. Only the linked post and bounded quotes already included by the service are saved, without fetching an entire thread. An internal article ID that cannot be safely linked requires the original sharing-post URL. Articles with an account name use at most one bounded candidate page, without scanning the account. Older captures and their original source scope remain intact.
 
 ![A Chinese translation of an English web article with a knowledge card beside the text](docs/images/web-reading.png)
 
-For a saved English web article, start **Translate full text to Chinese** explicitly. The first run explains what will be sent. Translation is saved in batches, and stopping or failing preserves checked batches. Once translated text exists, one language icon in the toolbar switches between the original and Chinese views. The icon only changes the saved reading side; it never starts translation. The original is retained, and a Chinese card can return to both its translated excerpt and corresponding source paragraph.
+Non-Chinese text in imported web/X content can be translated explicitly. A single language icon opens permission when no translation exists, switches complete original/Chinese views, offers continuation for partial results, and allows stopping an active translation. The first run explains what is sent. Checked batches survive stopping or failure. Switching saved reading views does not call a model; the original and card associations remain intact.
 
-Translation currently covers **English web article text to Chinese**. Code blocks, inline code, link destinations, images, image alt text, and text inside images remain unchanged and are not sent for translation; an ordinary figure caption in the article body may still be translated as body text. Full-text translation is not available for Markdown, PDF, or other languages. The automatic translation preference applies only to newly confirmed English web entries added afterward.
+Code blocks, inline code, link destinations, images, image alt text, and text inside images remain unchanged and are not sent for translation; ordinary figure captions may be translated as body text. Full-text translation does not cover Markdown or PDF. The existing automatic preference still applies only to newly confirmed English web entries; support for other languages does not expand that permission. Other languages require an explicit action.
 
-Web import targets directly readable static articles and cannot support every website. Signed-in content, access challenges, JavaScript-only bodies, videos, site interactions, and required media that cannot be retrieved fail explicitly. For paid content, only the designated [Lenny article](https://www.lennysnewsletter.com/p/how-to-turn-your-ai-into-a-world) is allowed to save its public pre-paywall excerpt; the interface continuously discloses that scope. Other paywalled articles are rejected.
+Ordinary URL import targets readable static articles and cannot support every website. The X adapter depends on FxTwitter availability and structure. Private, deleted, mismatched or unrepresentable text and unsafe resources produce explicit errors, without signing in or inventing original text. Temporarily unavailable images retain explicit missing-image notices. Unavailable quotes retain an explicit state and original link instead of claiming their body was saved. Ordinary static import continues to reject signed-in pages, challenges, JavaScript-only bodies, and unsupported media. Only the designated [Lenny article](https://www.lennysnewsletter.com/p/how-to-turn-your-ai-into-a-world) can save its pre-paywall public excerpt, with an explicit scope notice; other paywalls are not bypassed.
 
 ### 6. Wait for confirmed saving before leaving
 

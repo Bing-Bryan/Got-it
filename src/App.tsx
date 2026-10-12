@@ -932,7 +932,7 @@ function App() {
             <FileText size={15} />
             <div>
               <strong title={workspace.document.filename}>{workspace.document.filename}</strong>
-              <span className="document-metadata">{workspace.document.isDemo ? "示例文档" : workspace.document.kind === "web" ? (workspace.document.web.coverage === "public-excerpt" ? "网页公开部分副本" : "网页保存副本") : "本地文档"} · {workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页 PDF` : workspace.document.markdown.length < 1000 ? `${workspace.document.markdown.length} 字符` : `${Math.round(workspace.document.markdown.length / 1000)}k 字符`}{readingMinutes !== null ? <span className="reading-time"> · 预计阅读 {readingMinutes} 分钟</span> : null}</span>
+              <span className="document-metadata">{workspace.document.isDemo ? "示例文档" : workspace.document.kind === "web" ? (workspace.document.web.retrieval?.provider === "fxtwitter" ? "X 公开接口保存副本" : workspace.document.web.extractorVersion === "x-browser-visible-v1" ? "X 页面保存副本" : workspace.document.web.coverage === "public-excerpt" ? "网页公开部分副本" : "网页保存副本") : "本地文档"} · {workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页 PDF` : workspace.document.markdown.length < 1000 ? `${workspace.document.markdown.length} 字符` : `${Math.round(workspace.document.markdown.length / 1000)}k 字符`}{readingMinutes !== null ? <span className="reading-time"> · 预计阅读 {readingMinutes} 分钟</span> : null}</span>
             </div>
           </div>
 

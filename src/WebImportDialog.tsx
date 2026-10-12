@@ -1,3 +1,4 @@
+import {normalizeXArticleUrl} from "./lib/x-article-url";
 import { useEffect, useRef, useState } from "react";
 import type { useReadingLibrary } from "./useReadingLibrary";
 
@@ -34,6 +35,7 @@ export function WebImportDialog({ library }: { library: Library }) {
       <label htmlFor="web-import-url">公开文章链接</label>
       <div><input id="web-import-url" type="url" value={url} placeholder="https://www.anthropic.com/research/…" autoComplete="off" autoFocus required disabled={pending} onChange={event => setUrl(event.target.value)} /><button type="submit" disabled={pending || !url.trim()}>{library.busy ? "正在保存…" : reading ? "正在读取…" : "阅读文章"}</button></div>
     </form>
+    {normalizeXArticleUrl(url) ? <p className="web-import-scope">新 X 内容将通过 FxTwitter 公开服务读取，可能发送公开内容 ID 及链接中的公开账号名，用于有限定位；不发送阅读库、知识贴或登录凭据。已有本机副本直接打开。</p> : null}
     {library.webError ? <p role="alert" className="library-warning">{library.webError}</p> : job ? <p className="web-import-progress" role="status">{library.busy ? "正在保存文章，请稍候。保存完成前暂不能关闭。" : job.progress}</p> : null}
   </dialog>;
 }

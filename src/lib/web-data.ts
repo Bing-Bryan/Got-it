@@ -14,6 +14,7 @@ export interface WebMedia {
   width?: number;
   height?: number;
   reason?: string;
+  sourceUrl?: string;
 }
 export interface WebFragment { fragment: string; headingIndex: number }
 export interface WebDocumentData {
@@ -24,6 +25,8 @@ export interface WebDocumentData {
   contentVersion: string;
   media: WebMedia[];
   fragments: WebFragment[];
+  retrieval?: {kind:"public-service";provider:"fxtwitter";url:string};
+  identity?: {statusId:string;articleId:string;handle:string};
   coverage?: "public-excerpt";
   coverageReason?: "paywall";
 }
@@ -39,7 +42,7 @@ export interface WebImportJob {
 
 export const WEB_HASH = /^[a-f0-9]{64}$/;
 export const WEB_MEDIA_ID = /^[A-Za-z0-9_-]{1,80}$/;
-const credential = /(?:^|[-_])(?:token|auth|authorization|password|passwd|secret|signature|credential|session|api[-_]?key|access[-_]?key|key)(?:$|[-_])|^x-amz-|^x-goog-/i;
+const credential = /(?:^|[-_])(?:token|auth|authorization|password|passwd|secret|signature|sig|credential|session|api[-_]?key|access[-_]?key|key)(?:$|[-_])|^x-amz-|^x-goog-/i;
 /** Syntax-only check; server must additionally validate every DNS result and pin the connection. */
 export function safeWebUrl(value: unknown): string | undefined {
   if (typeof value !== "string" || value.length > 4096) return;
@@ -56,14 +59,24 @@ export function safeWebUrl(value: unknown): string | undefined {
     return u.href;
   } catch { return; }
 }
+/** Syntax-only public X image link; opening it requires an explicit user click. */
+export function safeXImageSourceUrl(value:unknown):string|undefined {
+ const safe=safeWebUrl(value);if(!safe)return;const u=new URL(safe);
+ if(u.protocol!=='https:'||u.hostname!=='pbs.twimg.com'||u.port||u.hash)return;
+ if(/^\/amplify_video_thumb\/\d{1,30}\/img\/[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|webp)$/.test(u.pathname)){if([...u.searchParams.keys()].some(k=>k!=='name')||u.searchParams.getAll('name').length>1||u.searchParams.has('name')&&u.searchParams.get('name')!=='orig')return;return u.href;}
+ if(!/^\/media\/[A-Za-z0-9_-]+(?:\.(?:jpg|jpeg|png|webp|gif))?$/.test(u.pathname)||[...u.searchParams.keys()].some(k=>!['format','name'].includes(k))||u.searchParams.getAll('format').length>1||u.searchParams.getAll('name').length>1||u.searchParams.has('format')&&!/^(jpg|jpeg|png|webp|gif)$/.test(u.searchParams.get('format')!)||u.searchParams.has('name')&&!/^(orig|large|medium|small|thumb|\d+x\d+)$/.test(u.searchParams.get('name')!))return;
+ return u.href;
+}
 function record(value: unknown): value is Record<string, unknown> { return !!value && typeof value === "object" && !Array.isArray(value); }
 function text(value: unknown, max: number): value is string { return typeof value === "string" && value.length <= max; }
 function copyMedia(value: unknown): WebMedia | undefined {
   if (!record(value) || typeof value.id !== "string" || !WEB_MEDIA_ID.test(value.id)
     || !["image", "svg"].includes(String(value.kind)) || !["saved", "missing", "unsupported"].includes(String(value.status))
     || !text(value.alt, 4000) || (value.caption !== undefined && !text(value.caption, 4000))
+    || (value.sourceUrl !== undefined && (value.kind !== 'image' || value.status === 'unsupported' || !safeXImageSourceUrl(value.sourceUrl)))
     || (value.reason !== undefined && !text(value.reason, 2000))) return;
   const base = { id: value.id, kind: value.kind as WebMedia["kind"], status: value.status as WebMedia["status"], alt: value.alt,
+    ...(value.sourceUrl === undefined ? {} : {sourceUrl:safeXImageSourceUrl(value.sourceUrl)!}),
     ...(value.caption === undefined ? {} : { caption: value.caption as string }), ...(value.reason === undefined ? {} : { reason: value.reason as string }) };
   if (value.status !== "saved") {
     if (!value.reason || ["resourceId", "mime", "bytes", "width", "height"].some(k => value[k] !== undefined)) return;
@@ -84,7 +97,16 @@ export function copyWebDocument(value: unknown): WebDocumentData | undefined {
     || !text(value.extractorVersion, 200) || !value.extractorVersion || typeof value.contentVersion !== "string" || !WEB_HASH.test(value.contentVersion)
     || !Array.isArray(value.media) || value.media.length > 100 || !Array.isArray(value.fragments) || value.fragments.length > 10000) return;
   if ((value.coverage !== undefined || value.coverageReason !== undefined) && (value.coverage !== "public-excerpt" || value.coverageReason !== "paywall")) return;
+  let retrieval:WebDocumentData["retrieval"],identity:WebDocumentData["identity"];
+  if(value.identity!==undefined){const i=value.identity;if(!record(i)||Object.keys(i).some(k=>!["statusId","articleId","handle"].includes(k))||typeof i.statusId!=="string"||!/^\d{1,30}$/.test(i.statusId)||typeof i.articleId!=="string"||!/^\d{1,30}$/.test(i.articleId)||typeof i.handle!=="string"||!/^\w{1,15}$/.test(i.handle))return;identity={statusId:i.statusId,articleId:i.articleId,handle:i.handle};}
+  if(value.retrieval!==undefined){const r=value.retrieval;if(!record(r)||Object.keys(r).some(k=>!["kind","provider","url"].includes(k))||r.kind!=="public-service"||r.provider!=="fxtwitter"||typeof r.url!=="string"||!/^https:\/\/api\.fxtwitter\.com\/2\/status\/\d{1,30}$/.test(r.url)||value.extractorVersion!=="x-fxtwitter-public-v1")return;
+    const statusId=r.url.split("/").at(-1);if(identity&&identity.statusId!==statusId)return;
+    for(const source of[value.originalUrl,value.finalUrl]){const u=new URL(source as string),m=/^\/(i|[A-Za-z0-9_]{1,15})\/(article|status)\/(\d{1,30})\/?$/.exec(u.pathname);if(u.protocol!=="https:"||!['x.com','www.x.com','twitter.com','www.twitter.com'].includes(u.hostname)||u.port||u.search||u.hash||!m||!(m[3]===statusId||m[2]==="article"&&identity?.articleId===m[3])||identity&&m[1]!=="i"&&m[1].toLowerCase()!==identity.handle.toLowerCase())return;}
+    retrieval={kind:"public-service",provider:"fxtwitter",url:r.url};
+  }
+  if(value.extractorVersion==="x-fxtwitter-public-v1"&&!retrieval||identity&&!retrieval)return;
   const media = value.media.map(copyMedia);
+  if(media.some(m=>m?.sourceUrl)&&!retrieval)return;
   if (media.some(m => !m) || new Set(media.map(m => m!.id)).size !== media.length) return;
   if (media.reduce((bytes, m) => bytes + (m?.bytes ?? 0), 0) > 128 * 1024 * 1024) return;
   const fragments: WebFragment[] = [];
@@ -94,5 +116,5 @@ export function copyWebDocument(value: unknown): WebDocumentData | undefined {
   }
   if (new Set(fragments.map(f => f.fragment)).size !== fragments.length) return;
   return { version: 1, originalUrl: safeWebUrl(value.originalUrl)!, finalUrl: safeWebUrl(value.finalUrl)!, extractorVersion: value.extractorVersion,
-    contentVersion: value.contentVersion, media: media as WebMedia[], fragments, ...(value.coverage === "public-excerpt" ? {coverage: "public-excerpt" as const, coverageReason: "paywall" as const} : {}) };
+    ...(retrieval?{retrieval}:{}),...(identity?{identity}:{}), contentVersion: value.contentVersion, media: media as WebMedia[], fragments, ...(value.coverage === "public-excerpt" ? {coverage: "public-excerpt" as const, coverageReason: "paywall" as const} : {}) };
 }

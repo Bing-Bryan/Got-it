@@ -1,3 +1,4 @@
+import {xArticleIdentity} from '../src/lib/x-article-url';
 import { hasRecoveryDifference } from "../src/lib/recovery-diff";
 import { PdfResources } from "./pdf-resources";
 import { WebResources } from "./web-resources";
@@ -192,8 +193,9 @@ export class ReadingLibrary {
     });
   }
   async findWeb(input: string): Promise<LibraryEntry | null> {
-    const url=webUrl(input).href;
-    for(const summary of (await this.list()).entries){const e=await this.get(summary.id);if(e.workspace.document.kind==="web" && [e.workspace.document.web.originalUrl,e.workspace.document.web.finalUrl].some(u=>webUrl(u).href===url))return e;}
+    const url=webUrl(input).href,identity=xArticleIdentity(url);
+    for(const summary of (await this.list()).entries){const e=await this.get(summary.id);if(e.workspace.document.kind==="web" && [e.workspace.document.web.originalUrl,e.workspace.document.web.finalUrl].some(u=>identity?xArticleIdentity(webUrl(u).href)===identity:webUrl(u).href===url))return e;
+      if(identity&&e.workspace.document.kind==="web"){const w=e.workspace.document.web;if(w.retrieval?.provider==="fxtwitter"&&identity===`x-status:${w.retrieval.url.split('/').at(-1)}`||w.identity&&[ `x-status:${w.identity.statusId}`,`x-article:${w.identity.articleId}`].includes(identity))return e;}}
     return null;
   }
   async addWeb(value: Workspace, resources: Map<string,ValidImage>, creationKey: string, beforeCommit:()=>void = ()=>{}) {

@@ -41,7 +41,8 @@ for(const selected of [false,true])add(know,`删除模式 · ${selected?'开启'
 add(know,'删除某条知识贴',b(icon(Trash2,15),'category-delete','aria-label="删除知识贴"'));
 add(know,'确认删除',b(`${icon(Check,16)}<span>确认删除</span>`,'category-delete confirming','aria-label="确认删除"'),'确认图标与文字；危险操作保留红色');
 for(const selected of [false,true])add(trans,`翻译切换 · ${selected?'译文侧':'原文侧'}`,wrap('translation-actions',b(icon(Languages,18),'translation-side-toggle',`aria-pressed="${selected}" aria-label="切换原文与译文"`)));
-for(const label of ['全文译中','继续译中','停止翻译'])add(trans,label,wrap('translation-actions',b(label)));
+for(const label of ['翻译为中文','查看部分译文与继续译中','停止翻译'])add(trans,label,wrap('translation-actions',b(icon(Languages,18),'translation-side-toggle',`aria-label="${label}" title="${label}" aria-pressed="false"`)));
+for(const label of ['切换到中文译文（部分）','继续译中'])add(trans,`部分译文操作 · ${label}`,wrap('translation-options',b(label)));
 for(const label of ['开始译中','取消'])add(trans,`翻译授权 · ${label}`,wrap('translation-permission',b(label)));
 for(const selected of [false,true])add(pdf,`框选内容 · ${selected?'已开启':'未开启'}`,wrap('pdf-toolbar',b(selected?'取消框选':'框选内容','pdf-select-mode',`aria-pressed="${selected}"`)));
 add(pdf,'PDF 目录项',wrap('pdf-outline',b('<span>研究方法</span><small>2</small>','outline-item pdf-outline-item')));
