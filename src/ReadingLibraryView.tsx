@@ -33,7 +33,6 @@ export function ReadingLibraryNavigation({ library, importCopy }: { library: Lib
   const holder = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const popupId = useId();
-  const currentWeb = library.entry?.workspace.document.kind === "web" ? library.entry.workspace.document : null;
   const entries = useMemo(() => searchLibraryNames(library.list.entries, query), [library.list.entries, query]);
   const disabled = !library.ready || library.busy;
   useEffect(() => {
@@ -91,7 +90,7 @@ export function ReadingLibraryNavigation({ library, importCopy }: { library: Lib
             {library.recoveries.filter(r=>(r.entryId === e.id || r.resultEntryId === e.id) && r.state === "pending" && r.hasDifferences !== false).map(r=><button key={r.id} type="button" className="library-recovery-link" disabled={library.busy} onClick={()=>{closePopup();void library.showRecovery(r.id);}}>{r.state === "pending" ? "查看待核对差异" : "查看记录差异"}</button>)}
 
             </div>
-            {e.kind === "web" || e.url ? <div className="library-path"><div className="library-web-source"><a className="library-source-url" href={e.url} target="_blank" rel="noopener noreferrer">{e.url}</a><button type="button" className="library-copy-url" aria-label={`复制来源：${e.filename}`} onClick={() => void copyPath(e.id, e.url!)}>{copyStatus?.id === e.id && copyStatus.ok ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}</button></div>{copyStatus?.id === e.id ? <small role="status">{copyStatus.ok ? "来源已复制" : "复制失败，请选中链接手动复制"}</small> : null}{library.entry?.id === e.id && currentWeb ? <div className="library-current-source-facts"><span>导入于 {new Date(currentWeb.importedAt).toLocaleString()}</span><span>{currentWeb.web.retrieval?.provider === "fxtwitter" ? X_PUBLIC_SCOPE : currentWeb.web.extractorVersion === X_CAPTURE_EXTRACTOR ? X_CAPTURE_SCOPE : "正在阅读本机保存副本"}</span>{currentWeb.web.coverage === "public-excerpt" ? <span>仅保存公开部分，付费内容未导入</span> : null}{currentWeb.web.retrieval?.provider === "fxtwitter" ? <a href={currentWeb.web.retrieval.url} target="_blank" rel="noopener noreferrer">查看获取接口</a> : null}</div> : null}</div> : e.path ? <div className="library-path">
+            {e.kind === "web" || e.url ? <div className="library-path"><div className="library-web-source"><a className="library-source-url" href={e.url} target="_blank" rel="noopener noreferrer">{e.url}</a><button type="button" className="library-copy-url" aria-label={`复制来源：${e.filename}`} onClick={() => void copyPath(e.id, e.url!)}>{copyStatus?.id === e.id && copyStatus.ok ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}</button></div>{copyStatus?.id === e.id ? <small role="status">{copyStatus.ok ? "来源已复制" : "复制失败，请选中链接手动复制"}</small> : null}</div> : e.path ? <div className="library-path">
               <button className="library-copy-path" type="button" aria-label={`复制路径：${e.filename}`} onClick={() => void copyPath(e.id, e.path!)}><span>{e.path}</span>{copyStatus?.id === e.id && copyStatus.ok ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}</button>
               {copyStatus?.id === e.id ? <small role="status">{copyStatus.ok ? "路径已复制" : "复制失败，请选中路径手动复制"}</small> : null}
             </div> : <span className="library-no-path">未关联原文件</span>}
