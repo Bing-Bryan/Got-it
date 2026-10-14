@@ -16,7 +16,7 @@ export const visibleText=(n:Node):string=>excluded(n)?'':n.nodeName==='#text'?(n
 const normal=(s:string)=>s.replace(/\s+/g,' ').trim();
 function visibleNodes(n:Node,p:(n:Node)=>boolean):Node[]{return excluded(n)?[]:[...(p(n)?[n]:[]),...children(n).flatMap(c=>visibleNodes(c,p))];}
 function quality(n:Node){const prose=visibleNodes(n,c=>'tagName'in c&&c.tagName==='p').map(visibleText).map(normal).filter(s=>s.length>=40);const chars=normal(visibleText(n)).length;const links=visibleNodes(n,c=>'tagName'in c&&c.tagName==='a').map(visibleText).join('').length;return{prose:prose.length,chars,score:prose.reduce((a,s)=>a+s.length,0)-links};}
-export function genericArticle(root:Node,allowPublicExcerpt=false):{article:Node,body:Node,heading:Node,publicExcerpt:boolean}{
+export function genericArticle(root:Node):{article:Node,body:Node,heading:Node,publicExcerpt:boolean}{
  const candidates=visibleNodes(root,n=>'tagName'in n&&(['article','main'].includes(n.tagName)||nodeAttr(n,'role')==='main'||/(?:^|\s)(?:entry|post|article|h-entry)(?:$|\s)/.test(nodeAttr(n,'class'))));
  const articles=candidates.filter(n=>'tagName'in n&&n.tagName==='article');
  const pool=articles.length?articles:candidates;
@@ -29,14 +29,17 @@ export function genericArticle(root:Node,allowPublicExcerpt=false):{article:Node
  const gateText=(n:Node):string=>gateExcluded(n)?'':n.nodeName==='#text'?(n as Tree['textNode']).value:children(n).map(gateText).join('');
  const flow=gateNodes(article);
  const markedGate=(n:Node)=>/(?:^|[\s_-])(?:paywall|subscription-wall|subscriber-only)(?:$|[\s_-])/i.test(nodeAttr(n,'class')+' '+nodeAttr(n,'id'));
- const accessCopy=(s:string)=>/this post is for paid subscribers|(?:read|unlock|continue).{0,45}(?:paid subscribers|subscribe|sign in)|仅(?:限)?付费|订阅后(?:阅读|继续)/i.test(s);
+ const accessCopy=(s:string)=>/this post is for paid subscribers|(?:read|unlock|continue).{0,45}(?:paid subscribers|subscribe)|仅(?:限)?付费|订阅后(?:阅读|继续)/i.test(s);
  const plainAccessCopy=(s:string)=>/^(?:subscribe(?: now)? to (?:continue|keep) reading(?: (?:(?:this|the) (?:article|story|post)|(?:the )?(?:rest|remainder) of (?:this|the) (?:article|story|post)|the full (?:article|story|post)))?|(?:sign|log) in to (?:continue|keep) reading(?: (?:(?:this|the) (?:article|story|post)|(?:the )?(?:rest|remainder) of (?:this|the) (?:article|story|post)|the full (?:article|story|post)))?|(?:continue|keep) reading(?: (?:(?:this|the) (?:article|story|post)|(?:the )?(?:rest|remainder) of (?:this|the) (?:article|story|post)|the full (?:article|story|post)))? (?:by )?(?:subscribing|signing in|logging in)|订阅后继续阅读(?:本文|全文)?)[.!。…]*$/i.test(s);
  const inEditorialOrFooterContext=(n:Node)=>{for(let p:Node|undefined=n;p&&p!==article;p='parentNode'in p?p.parentNode as Node:undefined){if('tagName'in p&&['p','blockquote','q','figure','figcaption','table','li','footer','nav','aside'].includes(p.tagName))return true;if(/(?:^|[\s_-])(?:newsletter|signup|sign-up|post-footer|entry-footer|quote|citation)(?:$|[\s_-])/i.test(nodeAttr(p,'class')+' '+nodeAttr(p,'id')))return true;}return false;};
  const precedingProse=(n:Node)=>flow.slice(0,flow.indexOf(n)).filter(p=>'tagName'in p&&p.tagName==='p'&&normal(gateText(p)).length>=40).length;
  const inferredGate=(n:Node)=>'tagName'in n&&['div','section','form','dialog','button','a'].includes(n.tagName)&&normal(gateText(n)).length<=180&&plainAccessCopy(normal(gateText(n)))&&!inEditorialOrFooterContext(n)&&precedingProse(n)>=2;
- const gate=flow.find(n=>(markedGate(n)&&accessCopy(normal(gateText(n))))||inferredGate(n));
+ const loginCopy=(s:string)=>/(?:(?:sign|log)(?:ging|ning)? in.{0,80}(?:read|article|story|post)|(?:read|article|story|post).{0,80}(?:sign|log)(?:ging|ning)? in)/i.test(s);
+ const inferredLogin=(n:Node)=>'tagName'in n&&['div','section','form','dialog','button','a'].includes(n.tagName)&&normal(gateText(n)).length<=180&&plainAccessCopy(normal(gateText(n)).replace(/^please\s+/i,''))&&!inEditorialOrFooterContext(n);
+ const gate=flow.find(n=>(markedGate(n)&&!inEditorialOrFooterContext(n)&&(accessCopy(normal(gateText(n)))||loginCopy(normal(gateText(n)))))||inferredGate(n)||inferredLogin(n));
+ // A paid gate may offer sign-in to existing subscribers; a login-only gate is not public-excerpt permission.
+ if(gate&&loginCopy(normal(gateText(gate)))&&!accessCopy(normal(gateText(gate))))throw new WebError('这篇文章需要登录，无法读取可靠的公开正文。','web_paywall');
  if(gate){
-  if(!allowPublicExcerpt)throw new WebError('这篇文章的完整内容需要付费或登录，不能导入公开片段冒充全文。','web_paywall');
   function cutBefore(n:Node):boolean{const list=children(n);for(let i=0;i<list.length;i++){if(list[i]===gate){if('childNodes'in n)n.childNodes=list.slice(0,i);return true;}if(cutBefore(list[i])){if('childNodes'in n)n.childNodes=list.slice(0,i+1);return true;}}return false;}
   if(gate===article||!cutBefore(article))throw new WebError('无法确定可靠的公开正文边界。','web_structure');
  }

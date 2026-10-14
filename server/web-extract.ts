@@ -31,8 +31,7 @@ export async function extractWeb(input:string,options:{signal:AbortSignal;fetche
  if(!/^(text\/html|application\/xhtml\+xml)(;|$)/.test(page.type))throw new WebError('链接不是支持的静态文章；PDF 请使用添加文件。','web_type');
  const charset=/charset\s*=\s*["']?([^;\s"']+)/i.exec(page.type)?.[1]??'utf-8';let html:string;try{html=new TextDecoder(charset,{fatal:true}).decode(page.bytes)}catch{throw new WebError('网页字符编码无法读取。');}
  const root=parse(html),anthropic=final.hostname==='www.anthropic.com'&&final.pathname.startsWith('/research/'),claude=final.hostname==='claude.dev'&&final.pathname.startsWith('/blog/');
- const approvedPublicUrl='https://www.lennysnewsletter.com/p/how-to-turn-your-ai-into-a-world';
- const generic=!anthropic&&!claude?genericArticle(root,original.href===approvedPublicUrl&&final.href===approvedPublicUrl):undefined;
+ const generic=!anthropic&&!claude?genericArticle(root):undefined;
  const main=anthropic&&find(root,n=>'tagName'in n&&n.tagName==='main'&&attr(n,'id')==='main-content');
  const article=generic?.article??(anthropic?(main&&find(main,n=>'tagName'in n&&n.tagName==='article')):find(root,n=>attr(n,'data-tpl')==='article'));
  const bodies=article?all(article,n=>anthropic?attr(n,'class').split(/\s+/).some(c=>/^Body-module-.*__body$/.test(c)):attr(n,'id')==='body'&&attr(n,'class').split(/\s+/).includes('prose')):[];
