@@ -12,7 +12,7 @@ AI 通常只在你明确选择功能或发送问题后工作；如果事先开�
 
 ## 一次完整的阅读旅程
 
-本轮 Markdown、PDF 与含图片网页展示截图于 **2026-10-14** 使用隔离阅读库拍摄，呈现当前小写品牌和紫色 g 标识。Markdown 与 PDF 使用自制合成材料；网页来自 [Simon Willison 的公开文章](https://simonwillison.net/2026/Oct/9/built-using-my-voice/)，实际导入并保存静态图片。拍摄未发起模型请求。知识贴回答、资料库和框选截图保留 2026-10-12 的界面与已保存真实回答，不代表当前品牌样式；示例中的数字和回答仍需读者自行判断。
+本轮 Markdown、PDF 与含图片网页展示截图于 **2026-10-14** 使用隔离阅读库拍摄，呈现当前小写品牌和紫色 g 标识。Markdown 与 PDF 使用自制合成材料；网页来自 [Simon Willison 的公开文章](https://simonwillison.net/2026/Oct/9/built-using-my-voice/)，实际导入并保存静态图片。拍摄未发起模型请求。知识贴回答和框选截图保留 2026-10-12 的界面与已保存真实回答，不代表当前品牌样式；示例中的数字和回答仍需读者自行判断。
 
 ### 1. 把材料放进同一个阅读库
 
@@ -20,7 +20,7 @@ Markdown、PDF 和已导入网页可以共存。左上角独立「+」按钮添�
 
 > 当前品牌统一使用小写 `got it`（连字符写法 `got-it`）。本次品牌与阅读展示见[更新说明](docs/updates/2026-10-14-brand-and-reading-showcase.md)，公开仓库为 [Bing-Bryan/got-it](https://github.com/Bing-Bryan/got-it)。既有 `Got-it` 数据目录保留原拼写。
 
-![Markdown、PDF 和网页共存的本地阅读库，可按名称搜索](docs/images/library.png)
+![当前 got it 阅读界面：Markdown 原文、目录和知识贴面板](docs/images/reading-2026-10-14.png)
 
 ### 2. 留在原文里阅读
 

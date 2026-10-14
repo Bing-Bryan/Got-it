@@ -12,7 +12,7 @@ AI normally runs only after you choose an action or send a question. If you prev
 
 ## A complete reading journey
 
-The current Markdown, PDF, and illustrated web reading screenshots were captured on **October 14, 2026** with an isolated library, showing the lowercase brand and purple g mark. Markdown and PDF use synthetic samples. The web article is [Simon Willison’s public post](https://simonwillison.net/2026/Oct/9/built-using-my-voice/), imported through its real URL with saved static images. No model requests were made. Knowledge-card responses, the library view, and the PDF selection view retain their October 12 interface and previously saved real responses; they do not show the current brand styling. Assess figures and answers in the examples independently.
+The current Markdown, PDF, and illustrated web reading screenshots were captured on **October 14, 2026** with an isolated library, showing the lowercase brand and purple g mark. Markdown and PDF use synthetic samples. The web article is [Simon Willison’s public post](https://simonwillison.net/2026/Oct/9/built-using-my-voice/), imported through its real URL with saved static images. No model requests were made. Knowledge-card responses and the PDF selection view retain their October 12 interface and previously saved real responses; they do not show the current brand styling. Assess figures and answers in the examples independently.
 
 ### 1. Keep every format in one library
 
@@ -20,7 +20,7 @@ Markdown files, PDFs, and imported web articles coexist in the local library. Th
 
 > The current brand is lowercase `got it` (`got-it` when hyphenated). See the [brand and reading showcase update](docs/updates/2026-10-14-brand-and-reading-showcase.md). The public repository is [Bing-Bryan/got-it](https://github.com/Bing-Bryan/got-it); existing `Got-it` data directories keep their original spelling.
 
-![A local library containing Markdown, PDF, and web articles with name search](docs/images/library.png)
+![The current got it reading interface with Markdown, outline, and knowledge-card panel](docs/images/reading-2026-10-14.png)
 
 ### 2. Read beside the original
 
