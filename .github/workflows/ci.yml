@@ -1,9 +1,41 @@
 name: Release reliability
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      run_checks: ${{ steps.scope.outputs.run_checks }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect application changes
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          detector=scripts/ci-change-scope.mjs
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            detector="$RUNNER_TEMP/trusted-ci-change-scope.mjs"
+            if [[ ! "$BASE_SHA" =~ ^[a-f0-9]{40}$ ]] || ! git show "$BASE_SHA:scripts/ci-change-scope.mjs" > "$detector"; then
+              echo "run_checks=true" >> "$GITHUB_OUTPUT"
+              echo "reason=trusted_detector_unavailable" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          if decision=$(node "$detector"); then
+            printf '%s\n' "$decision" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_checks=true" >> "$GITHUB_OUTPUT"
+            echo "reason=detector_failed" >> "$GITHUB_OUTPUT"
+          fi
   checks:
+    needs: detect
+    if: ${{ always() && (needs.detect.result != 'success' || needs.detect.outputs.run_checks != 'false') }}
     strategy:
       fail-fast: false
       matrix:
@@ -16,6 +48,7 @@ jobs:
         with:
           node-version: '24.14.1'
           cache: npm
+      - run: node --test scripts/ci-change-scope.node-test.mjs
       - run: npm ci
       - run: npm test
       - run: npm run build

@@ -1087,6 +1087,16 @@
       "sha256": "27cc95ccca35dc6946004e7a8d84a9de3f1b5a128e7c0be806def79e4bfe0b2b"
     },
     {
+      "path": "scripts/ci-change-scope.mjs",
+      "bytes": 4533,
+      "sha256": "6247c45bb81df98cdcb03c25a6a3e4b72571ee01bdbc483bd1e7f0d12a2a6e58"
+    },
+    {
+      "path": "scripts/ci-change-scope.node-test.mjs",
+      "bytes": 8731,
+      "sha256": "6319a7e18063e33430af3a3df20e065fc9ac0e58ef8b5c69a9bd25b5ecfb1d39"
+    },
+    {
       "path": "scripts/generate-button-showcase.mjs",
       "bytes": 20720,
       "sha256": "88a4786651b7649119aaabc0cfd39824a4434f0d46e7ba51e3e81579049ee844"
@@ -1158,8 +1168,8 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "bytes": 592,
-      "sha256": "0e5d0a405100bd4224bbc60650e44a6ee0f5a1e9925e4f2c3db48b117935b51c"
+      "bytes": 1930,
+      "sha256": "ca6eeaf368b0248c531e4303289f5d846af881f2bab4792c47576295ab449ca5"
     },
     {
       "path": "docs/updates/2026-09-30.md",
@@ -1283,13 +1293,13 @@
     },
     {
       "path": "docs/release-checklist.md",
-      "bytes": 3129,
-      "sha256": "8041620fb67e9aa3688ffc199de1f6e4ccb92762d947b11ee9240c2651bebb46"
+      "bytes": 4342,
+      "sha256": "c4544c9da3338f3caa61727718fe3e0d1df40e328a212eae762444f09d951704"
     },
     {
       "path": "docs/release-results.md",
-      "bytes": 17897,
-      "sha256": "b3b845a9c8f62a36b40512499e8df00c834cb483cf0d997fbfbf0450c4f9be14"
+      "bytes": 18565,
+      "sha256": "0cc65680e8f2358c8294421138c3a7a3312dc572a2ffbcd1738bc869f23140de"
     },
     {
       "path": "docs/ui-guidelines.md",

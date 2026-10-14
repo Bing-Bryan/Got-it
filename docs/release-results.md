@@ -134,3 +134,9 @@
 独立公开仓库 macOS / Node 24.14.1 / npm 11：干净 `npm ci`、102 文件／780 项全量测试、`npm run build`（含类型检查）、`npm run test:release`、`npm audit --audit-level=high` 与 `npm run release:prepare` 全部通过，审计 0 漏洞，锁文件未改变，仅保留既有大构建块提示。白名单显式加入本次三图，272 文件快照文本扫描通过，不包含内部 OpenSpec、验收材料、合成样本、阅读库或开发历史。
 
 本轮新截图于 1440×1000 macOS Chromium 真实应用拍摄，Markdown / PDF 为自制合成材料；PDF 为 2 页原生文字、内置书签和图表，非图片伪装。公开网页通过真实 URL 导入，2 张静态图片完整保存并显示，未翻译、未发起模型请求；媒体与原文摘录仅用于展示，不分发完整文章。人工及独立审查核对公开安全。未重复真实模型回答与原生登录旅程，不声明新模型验收；Windows/Linux 原生界面与手机真机未覆盖。远端三系统自动结果以[本次仓库 Actions](https://github.com/Bing-Bryan/got-it/actions)为准，提交前不宣称 CI 已通过。
+
+## 2026-10-14：README / PNG 更新按范围运行 CI
+
+新增轻量检测，仅精确两份 README 与 PNG 路径可跳过应用矩阵；伴随 manifest 需核对结构、其它条目/说明及实际 Git blob。其它路径、未知差异和手动运行完整检查，PR采用可信base检测脚本。原三平台检查命令保留，并加入专用检测fixture。
+
+本机 Node 自带真实Git fixture 30/30通过（4.37秒），YAML解析及三平台/步骤结构核对通过。没有本机应用代码改动，不重复应用build、全量测试或模型请求；实际远端full/skip运行结果将在发布后按事实追加，不以fixture代替远端验收。
