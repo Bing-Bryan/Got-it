@@ -126,3 +126,11 @@
 本次只公开白名单代码和说明，不带内部 OpenSpec、验收材料、阅读库或开发历史。应用实现已在 macOS 隔离库验证真实新 Lenny URL：15331 字符、9 图全部保存、服务重启及刷新恢复；受控全付费失败保留 URL 且不入库，零新增模型调用。独立审查已修复登录漏检、引文误截及普通讨论误拒。无布局改动；截图工具不可用，未增加或复用截图作为本次验收，不宣称已做窄屏视觉检查。沿用已验收实现，不为此次归档重复模型或浏览器测试。
 
 2026-10-14 独立公开仓库在 macOS / Node 24.14.1 干净 `npm ci` 后，102 文件／780 项全量测试、构建与 `test:release` 均通过；`npm audit --audit-level=high` 为 0 漏洞，锁文件未改变，白名单文本扫描通过。仅出现既有大构建块提示。本次公开提交的远端结果以 [GitHub Actions](https://github.com/Bing-Bryan/Got-it/actions) 为准；三系统自动检查不替代 Windows/Linux 原生界面实机验收。
+
+## 2026-10-14：小写品牌与三种阅读展示
+
+当前品牌采用小写 `got it`，紫色 g 保持 29×29px，按用户反馈采用 +1px 垂直偏移。新 Markdown、原生文字 PDF 与真实导入含图网页截图使用隔离阅读库，旧回答截图保留原日期。详见[本次更新](updates/2026-10-14-brand-and-reading-showcase.md)。
+
+独立公开仓库 macOS / Node 24.14.1 / npm 11：干净 `npm ci`、102 文件／780 项全量测试、`npm run build`（含类型检查）、`npm run test:release`、`npm audit --audit-level=high` 与 `npm run release:prepare` 全部通过，审计 0 漏洞，锁文件未改变，仅保留既有大构建块提示。白名单显式加入本次三图，272 文件快照文本扫描通过，不包含内部 OpenSpec、验收材料、合成样本、阅读库或开发历史。
+
+本轮新截图于 1440×1000 macOS Chromium 真实应用拍摄，Markdown / PDF 为自制合成材料；PDF 为 2 页原生文字、内置书签和图表，非图片伪装。公开网页通过真实 URL 导入，2 张静态图片完整保存并显示，未翻译、未发起模型请求；媒体与原文摘录仅用于展示，不分发完整文章。人工及独立审查核对公开安全。未重复真实模型回答与原生登录旅程，不声明新模型验收；Windows/Linux 原生界面与手机真机未覆盖。远端三系统自动结果以[本次仓库 Actions](https://github.com/Bing-Bryan/got-it/actions)为准，提交前不宣称 CI 已通过。

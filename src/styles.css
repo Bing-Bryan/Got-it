@@ -120,7 +120,7 @@ a:focus-visible {
   width: 29px;
   height: 29px;
   object-fit: contain;
-  transform: translateY(-2px);
+  transform: translateY(1px);
 }
 
 .icon-button {

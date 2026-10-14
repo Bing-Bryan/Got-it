@@ -608,8 +608,8 @@
     },
     {
       "path": "src/styles.css",
-      "bytes": 105388,
-      "sha256": "8fd9319fc8c6f6488fa7ec42ce9820f96fbfc29586cccc146d9f32d6bb53fe8a"
+      "bytes": 105387,
+      "sha256": "ad06e6a6cbd9895dad3e6c2f8ffe57fb9e861483df91608307011f817294bb5f"
     },
     {
       "path": "src/test-support/library.ts",
@@ -1108,8 +1108,8 @@
     },
     {
       "path": "scripts/prepare-public.mjs",
-      "bytes": 2305,
-      "sha256": "bcbd89b6a7c7dfdbf15bcd0d655482b8b61070b2ccd014520872ecb42adc4e21"
+      "bytes": 2428,
+      "sha256": "f764044041ab6a6ff9ddd28cf2fc52a2bf347cb7a232854de817fd5c4a01bfce"
     },
     {
       "path": "scripts/release-smoke.mjs",
@@ -1212,6 +1212,11 @@
       "sha256": "0e8eadad32c4a3be9fceeaa357ba27ade66b3fcac23d641d08bbe7845257d5fd"
     },
     {
+      "path": "docs/updates/2026-10-14-brand-and-reading-showcase.md",
+      "bytes": 1155,
+      "sha256": "2d27d34748275ee0244026fe45909a1630dbb5ff6e624b7a64598aa78dbf3660"
+    },
+    {
       "path": "docs/updates/2026-10-14-lowercase-brand.md",
       "bytes": 1016,
       "sha256": "397fc4b2585273dc4787682d41bc5d897289271e23c3f9d7dcaecb56c54a0163"
@@ -1262,14 +1267,29 @@
       "sha256": "057435596567bba3a98ffe06ae580f37575a695b3069ffd6780e3964f8fc432e"
     },
     {
+      "path": "docs/images/reading-2026-10-14.png",
+      "bytes": 161909,
+      "sha256": "c6cb1233c4def3302d55520efdc7fe3fea4c8112be7765b6fe24b91d388e2b0b"
+    },
+    {
+      "path": "docs/images/pdf-reading-2026-10-14.png",
+      "bytes": 125875,
+      "sha256": "36861e73eac9aa74a446e533d871f31efe5854d77867baeb3798fe199226337c"
+    },
+    {
+      "path": "docs/images/web-images-2026-10-14.png",
+      "bytes": 237763,
+      "sha256": "12e891db45ef5388875f15b823754619cf34e2420bdf9939bf8a26b19fe2d0f6"
+    },
+    {
       "path": "docs/release-checklist.md",
       "bytes": 3129,
       "sha256": "8041620fb67e9aa3688ffc199de1f6e4ccb92762d947b11ee9240c2651bebb46"
     },
     {
       "path": "docs/release-results.md",
-      "bytes": 16397,
-      "sha256": "07694bebf313f24686affef7b117b55fc343600347e458d6e1f590a7a0dbcfca"
+      "bytes": 17897,
+      "sha256": "b3b845a9c8f62a36b40512499e8df00c834cb483cf0d997fbfbf0450c4f9be14"
     },
     {
       "path": "docs/ui-guidelines.md",
@@ -1293,13 +1313,13 @@
     },
     {
       "path": "README.md",
-      "bytes": 15422,
-      "sha256": "ad62ce6b410d2b0fb2c6ccd5df9b7c52f7b85943f228441316117b62132d793c"
+      "bytes": 15690,
+      "sha256": "673425f0a7aec9b71a173103263a05953ae98965808f2414e8c70307fa2cff2a"
     },
     {
       "path": "README.en.md",
-      "bytes": 17993,
-      "sha256": "16ba778bb2c97d3a1b55765eaf9aa029cde19d5b5701881eeb9e1809d3d8b4d9"
+      "bytes": 18231,
+      "sha256": "53b070d1a16244307c85b6de4521417b4c51719354a3a0bab04f5759a192d660"
     },
     {
       "path": "package.json",

@@ -12,13 +12,13 @@ AI normally runs only after you choose an action or send a question. If you prev
 
 ## A complete reading journey
 
-The screenshots below were captured on **October 12, 2026** with an isolated library. Samples include an AI companion product analysis, a synthetic PDF chart created for demonstration, and a Claude article about evaluation design. Only excerpts are shown; the complete materials are not distributed. AI content shown is made of previously saved real responses, and capturing the screenshots did not start new model requests. Screenshots introduce the interface rather than serving as feature validation. Treat figures, forecasts, and AI answers in the samples as claims to assess.
+The current Markdown, PDF, and illustrated web reading screenshots were captured on **October 14, 2026** with an isolated library, showing the lowercase brand and purple g mark. Markdown and PDF use synthetic samples. The web article is [Simon Willison’s public post](https://simonwillison.net/2026/Oct/9/built-using-my-voice/), imported through its real URL with saved static images. No model requests were made. Knowledge-card responses, the library view, and the PDF selection view retain their October 12 interface and previously saved real responses; they do not show the current brand styling. Assess figures and answers in the examples independently.
 
 ### 1. Keep every format in one library
 
 Markdown files, PDFs, and imported web articles coexist in the local library. The independent **+** button opens the add menu on hover; local files are labeled **MD / PDF** and web links **Static articles / X**. Click, keyboard, and touch remain supported, and leaving the combined button and menu area closes it. The adjacent library picker searches filenames or web article titles. Switching to an existing item does not generate an answer. Web entries retain their original URL, while local files show their source path or association state.
 
-> The current brand is lowercase `got it` (`got-it` when hyphenated). Reading-flow screenshots below were captured on 2026-10-12 and retain that interface; see the [current brand update](docs/updates/2026-10-14-lowercase-brand.md). Existing `Got-it` data directories and the GitHub repository URL remain unchanged.
+> The current brand is lowercase `got it` (`got-it` when hyphenated). See the [brand and reading showcase update](docs/updates/2026-10-14-brand-and-reading-showcase.md). The public repository is [Bing-Bryan/got-it](https://github.com/Bing-Bryan/got-it); existing `Got-it` data directories keep their original spelling.
 
 ![A local library containing Markdown, PDF, and web articles with name search](docs/images/library.png)
 
@@ -26,7 +26,7 @@ Markdown files, PDFs, and imported web articles coexist in the local library. Th
 
 Use the outline on the left, read in the center, and revisit cards linked to selected passages on the right. Markdown keeps headings, lists, and tables; PDF retains its original page layout; imported web articles keep readable text, links, code, and required static images.
 
-![Markdown reading view with the original, outline, and knowledge cards](docs/images/reading.png)
+![Markdown reading view with the original, outline, and knowledge cards](docs/images/reading-2026-10-14.png)
 
 Each sidebar can be pinned or collapsed independently, and the card panel can be resized. Adjust Markdown content width or PDF zoom; reset PDF pages to automatic fitting when needed. Sidebars become drawers on narrow screens.
 
@@ -52,11 +52,13 @@ Use **Ask about the whole document** when the question concerns the broader mate
 
 PDFs scroll continuously. The outline uses embedded bookmarks when available and otherwise detects headings locally. Select native text directly, or use **Select region** for scans, images, and complex layouts. Local recognition and the model request begin only after you choose Explain, Find sources, or Ask.
 
-![A PDF preserving its original layout and chapter outline](docs/images/pdf-reading.png)
+![A PDF preserving its original layout and chapter outline](docs/images/pdf-reading-2026-10-14.png)
 
 ![An image and caption selected on the original PDF page](docs/images/pdf-selection.png)
 
 ### 5. Save a web article and translate it when needed
+
+![An imported public web article with original text, links, and locally saved static images](docs/images/web-images-2026-10-14.png)
 
 Choose **+ → Web link** and paste a public HTTPS article URL. For ordinary web pages, got it extracts the static body and required images, then opens the article after saving a complete copy. Importing does not call a model. A saved copy remains readable when the source is temporarily unavailable. Adding the same URL again opens the existing entry without updating or translating it automatically.
 

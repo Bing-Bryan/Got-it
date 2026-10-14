@@ -4,6 +4,7 @@ import { resolve, join, relative } from 'node:path';
 import { createHash } from 'node:crypto';
 const roots = ['src', 'server', 'scripts', '.github', 'docs/updates',
   ...['reading', 'explain', 'sources', 'question', 'pdf-reading', 'pdf-selection', 'library', 'web-reading'].map(name => `docs/images/${name}.png`),
+  'docs/images/reading-2026-10-14.png', 'docs/images/pdf-reading-2026-10-14.png', 'docs/images/web-images-2026-10-14.png',
   'docs/release-checklist.md', 'docs/release-results.md', 'docs/ui-guidelines.md', 'docs/ui', 'SECURITY.md', 'LICENSE',
   'README.md', 'README.en.md', 'package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts',
   'index.html', '.env.example', '.gitignore', '.nvmrc'];
