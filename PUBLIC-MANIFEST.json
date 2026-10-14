@@ -1093,8 +1093,8 @@
     },
     {
       "path": "scripts/ci-change-scope.node-test.mjs",
-      "bytes": 8731,
-      "sha256": "6319a7e18063e33430af3a3df20e065fc9ac0e58ef8b5c69a9bd25b5ecfb1d39"
+      "bytes": 8756,
+      "sha256": "ec798fa7721ca47c18039af0a0d307638211ab149a5a0387a90d882c4578f40f"
     },
     {
       "path": "scripts/generate-button-showcase.mjs",
@@ -1168,8 +1168,8 @@
     },
     {
       "path": ".github/workflows/ci.yml",
-      "bytes": 1930,
-      "sha256": "ca6eeaf368b0248c531e4303289f5d846af881f2bab4792c47576295ab449ca5"
+      "bytes": 1968,
+      "sha256": "69f1bad0e28d8cf0e2355abb04605cc7c486217695d2742103089fc348b03990"
     },
     {
       "path": "docs/updates/2026-09-30.md",

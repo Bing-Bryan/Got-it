@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 const detector = resolve('scripts/ci-change-scope.mjs');
 const bash = process.platform === 'win32' ? join(process.env.ProgramFiles, 'Git', 'bin', 'bash.exe') : 'bash';
 const shellPath = path => path.replaceAll('\\', '/');
-const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
+const workflow = readFileSync('.github/workflows/ci.yml', 'utf8').replaceAll('\r\n', '\n');
 const workflowShell = workflow.split('        run: |\n')[1].split('\n  checks:')[0]
   .split('\n').map(line => line.slice(10)).join('\n');
 

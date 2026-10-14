@@ -28,6 +28,7 @@ jobs:
             fi
           fi
           if decision=$(node "$detector"); then
+            printf '%s\n' "$decision"
             printf '%s\n' "$decision" >> "$GITHUB_OUTPUT"
           else
             echo "run_checks=true" >> "$GITHUB_OUTPUT"
