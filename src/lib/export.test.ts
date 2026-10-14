@@ -80,7 +80,7 @@ describe("workspace exports", () => {
   it("exports Markdown knowledge cards with quote, backlink, thread, and source", () => {
     const markdown = workspaceToMarkdown(workspace);
 
-    expect(markdown).toContain("# Got-it · report.md");
+    expect(markdown).toContain("# got-it · report.md");
     expect(markdown).toContain("CAGR ≈ 20%");
     expect(markdown).toContain("focus-stickies://document/doc-1#block-1");
     expect(markdown).toContain("这个数字的来源是什么？");

@@ -866,7 +866,7 @@ function App() {
         <div className="brand-row">
           <BrandMark />
           <div>
-            <strong>Got it</strong>
+            <strong>got it</strong>
           </div>
           <div className="desktop-sidebar-controls">
             {<button className="icon-button" type="button" aria-label={sidebar.pinned ? "解除固定导航" : "固定导航"} aria-pressed={sidebar.pinned} title={sidebar.pinned ? "解除固定，移开后收起" : "固定导航"} onClick={e => { sidebar.pin(!sidebar.pinned); if(sidebar.pinned && e.detail>0)e.currentTarget.blur(); }}><Pin size={15} fill={sidebar.pinned ? "currentColor" : "none"} /></button>}

@@ -8,7 +8,7 @@ import {X_CAPTURE_EXTRACTOR, X_CAPTURE_MAX_BYTES, type XCaptureNode, type XArtic
 import {fetchWeb, WEB_LIMITS, WebError, type WebBudget, type FetchedWeb} from './web-fetch';
 import {validateStaticImage, type ValidImage} from './web-media';
 import type {ExtractedWeb} from './web-extract';
-const invalid = () => new WebError('X 文章文件格式或内容无效，请重新使用 Got-it 书签捕获。', 'x_capture_invalid');
+const invalid = () => new WebError('X 文章文件格式或内容无效，请重新使用 got-it 书签捕获。', 'x_capture_invalid');
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 function keys(v: Record<string, unknown>, allowed: string[]) { if (Object.keys(v).some(k=>!allowed.includes(k))) throw invalid(); }
 export function xArticleUrl(input: unknown): URL {

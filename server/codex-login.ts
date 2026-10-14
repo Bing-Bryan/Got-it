@@ -73,7 +73,7 @@ export class CodexLoginService {
         } catch { fail("Codex 登录接口不兼容，请更新 Codex 后重试。"); }
       }
     });
-    send({ id: 0, method: "initialize", params: { clientInfo: { name: "got_it", title: "Got-it", version: "0.1.0" } } });
+    send({ id: 0, method: "initialize", params: { clientInfo: { name: "got_it", title: "got-it", version: "0.1.0" } } });
     return this.status();
   }
   cancel(attemptId: unknown): CodexLoginState {

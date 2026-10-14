@@ -15,7 +15,7 @@ export const pickLocalFile: FilePicker = () => {
   if (process.platform !== "darwin") return Promise.reject(new LibraryError("当前系统暂不支持关联本机路径，请从浏览器选择文件。", 503, "picker_unavailable"));
   return new Promise((resolve, reject) => {
     // Fixed program, never interpolate a browser-supplied path or shell command.
-    const script = 'with timeout of 600 seconds\ntell application "System Events"\nactivate\nset chosenFile to choose file with prompt "选择要在 Got-it 中阅读的文件"\nreturn POSIX path of chosenFile\nend tell\nend timeout';
+    const script = 'with timeout of 600 seconds\ntell application "System Events"\nactivate\nset chosenFile to choose file with prompt "选择要在 got-it 中阅读的文件"\nreturn POSIX path of chosenFile\nend tell\nend timeout';
     execFile("/usr/bin/osascript", ["-e", script], { timeout: 600_000, maxBuffer: 32_768 }, (error, stdout, stderr) => {
       if (error) {
         const failure = pickerError({ stderr, killed: error.killed });

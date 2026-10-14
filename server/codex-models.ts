@@ -68,7 +68,7 @@ export async function readCodexModels(binary = resolveCodexBinary(process.env.CO
           }catch(error){fail(error instanceof Error?error:new Error("Codex模型列表格式不兼容"));}
         }
       });
-      send({id:0,method:"initialize",params:{clientInfo:{name:"got_it",title:"Got-it",version:"0.1.0"}}});
+      send({id:0,method:"initialize",params:{clientInfo:{name:"got_it",title:"got-it",version:"0.1.0"}}});
     });
   }finally{await rm(cwd,{recursive:true,force:true});}
 }

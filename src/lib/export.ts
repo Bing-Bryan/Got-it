@@ -98,7 +98,7 @@ export function workspaceToMarkdown(workspace: Workspace): string {
   const safe = sanitizeWorkspace(workspace);
   const cards = safe.inquiries.map(inquiryMarkdown).join("\n\n");
   return [
-    `# Got-it · ${safe.document.filename}`,
+    `# got-it · ${safe.document.filename}`,
     "",
     `- 文档 ID：${inlineCode(safe.document.id)}`,
     `- 导入时间：${safe.document.importedAt}`,

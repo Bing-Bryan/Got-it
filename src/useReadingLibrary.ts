@@ -432,7 +432,7 @@ export function useReadingLibrary(options: Options) {
       if (sequence !== captureSequence.current || busyRef.current) return;
       if (new TextEncoder().encode(raw).length > X_CAPTURE_MAX_BYTES) throw new Error("X 文章文件超过 2 MiB。");
       const capture = JSON.parse(raw) as XArticleCapture;
-      if (!capture || capture.format !== "got-it-x-article" || capture.version !== 1 || typeof capture.url !== "string") throw new Error("请选择 Got-it 书签生成的 X 文章文件。");
+      if (!capture || capture.format !== "got-it-x-article" || capture.version !== 1 || typeof capture.url !== "string") throw new Error("请选择 got-it 书签生成的 X 文章文件。");
       const operation = webOperation.current;
       const doc = webJob?.preview?.workspace.document;
       if (operation?.capture && capture.url === operation.url && webJob && ["ready", "existing"].includes(webJob.status) && !(doc?.kind === "web" && doc.web.media.some(m=>m.status!=="saved"))) { await confirmWebImport(); return; }

@@ -34,7 +34,7 @@ async function fetchWebOnce(input:string,options:{signal:AbortSignal;budget?:Web
   if(!addresses.length||addresses.some(a=>!publicAddress(a.address)))throw new WebError('链接或资源不是公共网络地址。','web_address');
   const address=addresses[0];
   const result=await new Promise<{location?:string;bytes?:Buffer;type?:string}>((resolve,reject)=>{
-   const pinned:RequestOptions={protocol:url.protocol,hostname:address.address,family:address.family,port:url.protocol==='https:'?443:80,path:url.pathname+url.search,servername:isIP(host)?undefined:host,headers:{Host:url.host,Accept:'text/html,image/png,image/jpeg,image/webp,image/svg+xml,*/*;q=0.1','Accept-Encoding':'gzip, deflate, br','User-Agent':'Got-it/0.1 static-reader'},agent:false,signal,maxHeaderSize:16384} as RequestOptions;
+   const pinned:RequestOptions={protocol:url.protocol,hostname:address.address,family:address.family,port:url.protocol==='https:'?443:80,path:url.pathname+url.search,servername:isIP(host)?undefined:host,headers:{Host:url.host,Accept:'text/html,image/png,image/jpeg,image/webp,image/svg+xml,*/*;q=0.1','Accept-Encoding':'gzip, deflate, br','User-Agent':'got-it/0.1 static-reader'},agent:false,signal,maxHeaderSize:16384} as RequestOptions;
    const request=(options.transport??(proxy?((o,c)=>proxyRequest(proxy,o,c)):(url.protocol==='https:'?httpsRequest:httpRequest)))(pinned,response=>{
     const status=response.statusCode??0;
     if([301,302,303,307,308].includes(status)&&response.headers.location){response.destroy();resolve({location:response.headers.location});return;}

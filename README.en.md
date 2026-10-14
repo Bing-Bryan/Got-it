@@ -1,14 +1,14 @@
-# Got it
+# got it
 
 [简体中文](README.md) · **English**
 
 **Make sense of it without leaving the page.**
 
-Got it is a local-first reader for Markdown, PDF, and web articles. Add material to your reading library, select the original text, then explain a concept, check sources, or ask a specific question. Answers stay beside the passage as knowledge cards, ready to revisit after a refresh or in a later reading session.
+got it is a local-first reader for Markdown, PDF, and web articles. Add material to your reading library, select the original text, then explain a concept, check sources, or ask a specific question. Answers stay beside the passage as knowledge cards, ready to revisit after a refresh or in a later reading session.
 
 AI normally runs only after you choose an action or send a question. If you previously enabled automatic translation, a newly confirmed English web entry starts translation under that preference. Original files remain unchanged; reading copies, cards, translations, and progress are stored locally.
 
-> **v0.1.0 · Early preview.** Best suited to readers already familiar with Codex. macOS Apple Silicon has been tested; Windows and Linux have not yet received native UI validation. Got it has no accounts, cloud sync, or collaboration.
+> **v0.1.0 · Early preview.** Best suited to readers already familiar with Codex. macOS Apple Silicon has been tested; Windows and Linux have not yet received native UI validation. got it has no accounts, cloud sync, or collaboration.
 
 ## A complete reading journey
 
@@ -17,6 +17,8 @@ The screenshots below were captured on **October 12, 2026** with an isolated lib
 ### 1. Keep every format in one library
 
 Markdown files, PDFs, and imported web articles coexist in the local library. The independent **+** button opens the add menu on hover; local files are labeled **MD / PDF** and web links **Static articles / X**. Click, keyboard, and touch remain supported, and leaving the combined button and menu area closes it. The adjacent library picker searches filenames or web article titles. Switching to an existing item does not generate an answer. Web entries retain their original URL, while local files show their source path or association state.
+
+> The current brand is lowercase `got it` (`got-it` when hyphenated). Reading-flow screenshots below were captured on 2026-10-12 and retain that interface; see the [current brand update](docs/updates/2026-10-14-lowercase-brand.md). Existing `Got-it` data directories and the GitHub repository URL remain unchanged.
 
 ![A local library containing Markdown, PDF, and web articles with name search](docs/images/library.png)
 
@@ -56,7 +58,7 @@ PDFs scroll continuously. The outline uses embedded bookmarks when available and
 
 ### 5. Save a web article and translate it when needed
 
-Choose **+ → Web link** and paste a public HTTPS article URL. For ordinary web pages, Got it extracts the static body and required images, then opens the article after saving a complete copy. Importing does not call a model. A saved copy remains readable when the source is temporarily unavailable. Adding the same URL again opens the existing entry without updating or translating it automatically.
+Choose **+ → Web link** and paste a public HTTPS article URL. For ordinary web pages, got it extracts the static body and required images, then opens the article after saving a complete copy. Importing does not call a model. A saved copy remains readable when the source is temporarily unavailable. Adding the same URL again opens the existing entry without updating or translating it automatically.
 
 **X content:** Paste an X/Twitter post or article URL into the same input and select **Read article**. Public articles, regular posts, and long posts are retrieved through FxTwitter. The service receives the public content ID and, when locating an article requires it, the public account name in the link—not your library, cards, or credentials. Source details retain the retrieval channel and saved scope; a service response is not independent verification of the complete original. Existing copies open without replacing their cards.
 
@@ -116,7 +118,7 @@ The browser opens <http://127.0.0.1:8787/>. Keep the terminal running and press 
 3. Select a passage or PDF region and choose Explain, Find sources, or Ask.
 4. Wait until the interface confirms saving before closing; the next launch restores the reading record.
 
-Got it does not read, copy, or store Codex tokens. On macOS it prefers the executable from Codex.app / ChatGPT.app, then `codex` on PATH. `CODEX_CLI_PATH` can specify another executable.
+got it does not read, copy, or store Codex tokens. On macOS it prefers the executable from Codex.app / ChatGPT.app, then `codex` on PATH. `CODEX_CLI_PATH` can specify another executable.
 
 For development:
 

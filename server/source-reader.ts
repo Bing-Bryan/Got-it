@@ -38,7 +38,7 @@ export function pinnedOptions(url: URL, address: Address, signal: AbortSignal): 
     protocol: url.protocol, hostname: address.address, family: address.family,
     port: url.port || (url.protocol === "https:" ? 443 : 80),
     path: `${url.pathname}${url.search}`, servername: isIP(url.hostname) ? undefined : url.hostname,
-    headers: { Host: url.host, Accept: "text/html,application/xhtml+xml", "Accept-Encoding": "identity", "User-Agent": "Got-it/0.1 source-verification" },
+    headers: { Host: url.host, Accept: "text/html,application/xhtml+xml", "Accept-Encoding": "identity", "User-Agent": "got-it/0.1 source-verification" },
     agent: false, signal, maxHeaderSize: 16384,
   } as RequestOptions;
 }

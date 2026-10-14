@@ -118,7 +118,7 @@ export function startServer(port = positivePort(process.env.PORT), open = false)
     const address = server.address();
     if (!address || typeof address === "string") return;
     const url = `http://127.0.0.1:${address.port}/`;
-    console.log(`Got-it API listening on ${url}`);
+    console.log(`got-it API listening on ${url}`);
     void openReadingPage(url, {
       enabled: open,
       browser: process.env.BROWSER,

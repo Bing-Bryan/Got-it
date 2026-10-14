@@ -265,7 +265,7 @@ export class ProviderService {
     this.modelCatalog = options.modelCatalog ?? (() => readCodexModels(this.codexCliPath));
     this.sourceReader = options.sourceReader;
     this.codexTurn = options.codexTurnImpl ?? runCodexTurn;
-    this.translationTrace=options.translationTrace??(trace=>{if(trace.issues.length)console.warn("Got-it translation validation",JSON.stringify(trace));});
+    this.translationTrace=options.translationTrace??(trace=>{if(trace.issues.length)console.warn("got-it translation validation",JSON.stringify(trace));});
     this.codexCliPath = resolveCodexBinary(options.codexCliPath ?? process.env.CODEX_CLI_PATH);
     this.execFile = options.execFileImpl ?? defaultExecFile;
     this.makeTempDir = options.makeTempDir ?? ((prefix) => mkdtemp(join(tmpdir(), prefix)));

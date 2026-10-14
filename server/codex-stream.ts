@@ -141,6 +141,6 @@ export const runCodexTurn: CodexTurnRunner = async options => {
         try { consume(JSON.parse(line)); } catch(error) { finish(error instanceof Error ? error : new Error('Codex协议格式不兼容')); }
       }
     });
-    send({id:0,method:'initialize',params:{clientInfo:{name:'got_it',title:'Got-it',version:'0.1.0'}}});
+    send({id:0,method:'initialize',params:{clientInfo:{name:'got_it',title:'got-it',version:'0.1.0'}}});
   });
 };
