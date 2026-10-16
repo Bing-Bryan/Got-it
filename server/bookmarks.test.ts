@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, afterEach, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, writeFile, rm, open, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';import { join } from 'node:path';import { randomUUID } from 'node:crypto';
 import { Bookmarks } from './bookmarks';import { ReadingLibrary } from './reading-library';import { bookmarkSourceBlocks } from './bookmark-source';
@@ -52,8 +52,18 @@ it('returns full long excerpt and trailing context, excludes source title/url, n
  expect((await s.store.list(tail)).total).toBe(1);expect((await s.store.list('context-end abc')).total).toBe(1);expect((await s.store.list('HiddenTitleUnique')).total).toBe(0);expect((await s.store.list('Synthetic.md')).total).toBe(0);
  expect((await s.store.list(tail)).bookmarks[0].excerpt).toBe(saved.bookmark.excerpt);
 });
+// PDF.js engine/worker startup is fixture preparation, not bookmark validation time.
+// Keep the bookmark assertions under the normal test timeout, with real resources.
+let nativePdf:Awaited<ReturnType<typeof prepareNativePdf>>;
+async function prepareNativePdf(){
+ const dir=await mkdtemp(join(tmpdir(),'got-it-bookmark-native-pdf-'));
+ try{const library=new ReadingLibrary(join(dir,'data')),candidate=await library.uploadPdf('safe.pdf',pdfFixture()),entry=await library.add(candidate.workspace!,randomUUID(),candidate.selectionId);return{dir,library,entry,store:new Bookmarks(library)};}
+ catch(error){await rm(dir,{recursive:true,force:true});throw error;}
+}
+beforeAll(async()=>{nativePdf=await prepareNativePdf();});
+afterAll(async()=>{if(nativePdf)await rm(nativePdf.dir,{recursive:true,force:true});});
 it('validates PDF native resource/page/text and refuses region/forged text without OCR',async()=>{
- const s=await setup(),candidate=await s.library.uploadPdf('safe.pdf',pdfFixture()),entry=await s.library.add(candidate.workspace!,randomUUID(),candidate.selectionId),quote='SYNTHETIC CHART 1';
+ const s=nativePdf,entry=s.entry,quote='SYNTHETIC CHART 1';
  const a:Anchor={documentId:entry.workspace.document.id,blockId:'pdf-1-native',quote,prefix:'',suffix:'',headingPath:['第1页'],start:0,end:quote.length,matchStatus:'matched',pdf:{kind:'text',source:'native',fileHash:entry.workspace.document.contentHash,page:1,rects:[[70,245,280,270]]}};
  const input={entryId:entry.id,revisionId:entry.revisionId,operationId:randomUUID(),anchor:a};const saved=await s.store.create(input);expect((await s.store.locate(saved.bookmark.id)).bookmark.anchor.pdf?.page).toBe(1);
  await expect(s.store.create({...input,operationId:randomUUID(),anchor:{...a,quote:'FAKE WORDING',end:12}})).rejects.toMatchObject({status:409});
