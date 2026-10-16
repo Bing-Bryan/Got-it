@@ -1,3 +1,6 @@
+import {revealBookmarkRects} from './lib/bookmark-navigation';
+import { BookmarkAction } from './BookmarkAction';
+import type { BookmarkCreate, BookmarkResult, ReadingBookmark } from './lib/bookmark-types';
 import { MessageSquareText } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { pdfReadingMinutes } from "./lib/pdf-reading-time";
@@ -20,7 +23,7 @@ import './pdf-reader.css';
 GlobalWorkerOptions.workerSrc = workerUrl;
 type PdfDocument = Extract<DocumentSnapshot, {kind:'pdf'}>;
 type Viewport = ReturnType<PDFPageProxy['getViewport']>;
-interface Props { toolbarHost?:HTMLElement|null; adjustmentHost?:HTMLElement|null; onReadingTime?:(hash:string,minutes:number|null)=>void; outlineTarget?:{item:PdfOutlineItem;nonce:number}|null; onCurrentPage?:(page:number)=>void; document:PdfDocument; entryId:string; inquiries:Inquiry[]; activeId?:string|null; target?:{id:string;nonce:number;returnToSource?:boolean}|null; onLocated?:(id:string,success:boolean,returnToSource?:boolean,target?:HTMLElement)=>void; initialPosition?:ReadingPosition; readOnly?:boolean; saveStatus?:string; saveBusy?:boolean; saveError?:boolean; onCreate?:(intent:ActiveInquiryIntent,draft:SelectionDraft,question?:string)=>void; onActivate?:(id:string)=>void; onReady?:()=>void; onView?:()=>void }
+interface Props { bookmarkCompleted?:BookmarkCreate|null; bookmarks?:ReadingBookmark[]; onBookmarkStarted?:(request:BookmarkCreate)=>void; bookmarkVersion?:number;onBookmarkFailed?:(request:BookmarkCreate,error:string)=>void; revisionId?:string; onBookmarkSaved?:(result:BookmarkResult,request:BookmarkCreate)=>void; bookmarkTarget?:ReadingBookmark|null;onBookmarkLocated?:(success:boolean)=>void; toolbarHost?:HTMLElement|null; adjustmentHost?:HTMLElement|null; onReadingTime?:(hash:string,minutes:number|null)=>void; outlineTarget?:{item:PdfOutlineItem;nonce:number}|null; onCurrentPage?:(page:number)=>void; document:PdfDocument; entryId:string; inquiries:Inquiry[]; activeId?:string|null; target?:{id:string;nonce:number;returnToSource?:boolean}|null; onLocated?:(id:string,success:boolean,returnToSource?:boolean,target?:HTMLElement)=>void; initialPosition?:ReadingPosition; readOnly?:boolean; saveStatus?:string; saveBusy?:boolean; saveError?:boolean; onCreate?:(intent:ActiveInquiryIntent,draft:SelectionDraft,question?:string)=>void; onActivate?:(id:string)=>void; onReady?:()=>void; onView?:()=>void }
 interface SheetToolbar {page:number;ready:boolean;mode:'text'|'region';busy:boolean;start:()=>void;cancel:()=>void}
 const rectStyle=(r:PdfRect)=>({left:r[0],top:r[1],width:r[2]-r[0],height:r[3]-r[1]});
 const errorText=(e:unknown)=>e instanceof Error?e.message:'PDF 操作未完成，请重试。';
@@ -65,6 +68,7 @@ export default function PdfReader(props:Props) {
     }).catch(() => { /* Optional estimate: missing text or failure must not block reading. */ });
     return () => controller.abort();
   }, [pdf, props.document.pdf.resourceId, props.onReadingTime]);
+  useEffect(()=>{if(error&&props.bookmarkTarget)props.onBookmarkLocated?.(false);},[error,props.bookmarkTarget]);
   useEffect(()=>{if(error&&props.target)props.onLocated?.(props.target.id,false,props.target.returnToSource);},[error,props.target]);
   const activeToolbar=toolbar?.page===currentPage?toolbar:null;
   const saveLabel=props.saveError?'未保存':props.saveBusy?'处理中':props.saveStatus??'';
@@ -94,7 +98,9 @@ function PdfSheet(props:SheetProps) {
   const [viewport,setViewport]=useState<Viewport|null>(null),[ready,setReady]=useState(false),[error,setError]=useState('');
   const [mode,setMode]=useState<'text'|'region'>('text'),[box,setBox]=useState<PdfRect|null>(null);
   const [preview,setPreview]=useState(''),[busy,setBusy]=useState(false),[status,setStatus]=useState('');
+  const bookmarkSelectionRef=useRef<Anchor|null>(null),bookmarkOperationRef=useRef<{anchor:Anchor;operationId:string}|null>(null);
   const [ocr,setOcr]=useState<Array<{id:string;data:PdfOcrData}>>([]),[selection,setSelection]=useState<{anchor:Anchor;preview:string}|null>(null),[quote,setQuote]=useState('');
+  bookmarkSelectionRef.current=selection?.anchor??null;
   const card=useRef<HTMLDivElement>(null);
   const root=useRef<HTMLDivElement>(null),surface=useRef<HTMLDivElement>(null),canvas=useRef<HTMLCanvasElement>(null),native=useRef<HTMLDivElement>(null),ocrLayer=useRef<HTMLDivElement>(null);
   const ocrCache=useRef(new Map<string,{id:string;data:PdfOcrData}>());
@@ -167,6 +173,12 @@ function PdfSheet(props:SheetProps) {
     return()=>{disposed=true;render?.cancel();text?.cancel();};
   },[pdf,page,near,renderWidth]);
   useEffect(()=>{
+    const b=props.bookmarkTarget,a=b?.anchor.pdf;if(!b||!a||a.page!==page)return;
+    if(error){props.onBookmarkLocated?.(false);return;}
+    if(!ready||!viewport||Math.abs(viewport.width-width)>1){if(root.current)revealReadingTarget(root.current);setNear(true);return;}
+    const frame=requestAnimationFrame(()=>{const sheet=surface.current,scroll=root.current?.closest<HTMLElement>('.reader-scroll');if(!sheet||!scroll||!viewport||a.fileHash!==props.document.pdf.resourceId){props.onBookmarkLocated?.(false);return;}props.onReady?.();const bounds=sheet.getBoundingClientRect(),rects=a.rects.map(rect=>{const [left,top,right,bottom]=screenRect(displayViewport!,rect);return{left:bounds.left+left,top:bounds.top+top,right:bounds.left+right,bottom:bounds.top+bottom};});props.onBookmarkLocated?.(revealBookmarkRects(scroll,rects));});return()=>cancelAnimationFrame(frame);
+  },[props.bookmarkTarget,page,ready,error,width,viewport]);
+  useEffect(()=>{
     const t=props.target;if(!t)return;
     const key=`${t.id}:${t.nonce}`;
     if(appliedTarget.current===key)return;
@@ -187,6 +199,7 @@ function PdfSheet(props:SheetProps) {
     return()=>cancelAnimationFrame(frame);
   },[props.target,page,ready,error,props.document.pdf.resourceId]);
   useEffect(()=>{if(!viewport)return;for(const el of ocrLayer.current?.querySelectorAll<HTMLElement>('[data-line]')??[]){el.style.transform='none';const desired=Number(el.dataset.width),actual=el.getBoundingClientRect().width/(width/viewport.width);if(actual)el.style.transform=`scaleX(${desired/actual})`; }},[ocr,viewport]);
+  useEffect(()=>{const done=props.bookmarkCompleted,operation=bookmarkOperationRef.current;if(done&&operation&&done.operationId===operation.operationId&&bookmarkSelectionRef.current===operation.anchor)cancel();},[props.bookmarkCompleted]);
   const point=(event:{clientX:number;clientY:number}):[number,number]=>{const r=surface.current!.getBoundingClientRect();return [Math.max(0,Math.min(r.width,event.clientX-r.left)),Math.max(0,Math.min(r.height,event.clientY-r.top))];};
   function crop(r:PdfRect):HTMLCanvasElement {
     const c=canvas.current!,v=viewport!,s=screenRect(v,r),ratio=c.width/v.width;
@@ -266,12 +279,13 @@ function PdfSheet(props:SheetProps) {
       {near?<><canvas ref={canvas} aria-label={`PDF 第 ${page} 页`} /><div ref={native} className="pdf-native textLayer"/></>:<div className="pdf-page-placeholder">第 {page} 页</div>}
       <div ref={ocrLayer} className="pdf-ocr">{near&&viewport?ocr.map(o=><div key={o.id} data-ocr-id={o.id}>{o.data.lines.map((l,n)=>{const r=screenRect(viewport,l.rect);return <span key={n} data-line={n} data-width={r[2]-r[0]} style={{left:r[0],top:r[1],fontSize:r[3]-r[1]}}>{l.text}{'\n'}</span>;})}</div>):null}</div>
       {near&&viewport?marks.flatMap(i=>i.anchor.pdf!.rects.map((r,n)=><div key={i.id+'-'+n} data-pdf-inquiry={i.id} className={`pdf-mark ${i.anchor.pdf!.kind} ${props.activeId===i.id?'active':''}`} style={rectStyle(screenRect(viewport,r))}>{n===0?<button type="button" title="查看知识贴" aria-label={`查看知识贴：${i.anchor.quote}`} onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();props.onActivate?.(i.id);}}><MessageSquareText size={14} aria-hidden="true" /></button>:null}</div>)):null}
+      {near&&viewport?props.bookmarks?.filter(bookmark=>bookmark.anchor.pdf?.page===page&&bookmark.anchor.pdf.fileHash===props.document.pdf.resourceId).flatMap(bookmark=>bookmark.anchor.pdf!.rects.map((rect,index)=><div key={bookmark.id+'-'+index} className="pdf-bookmark-mark" data-pdf-bookmark={bookmark.id} style={rectStyle(screenRect(viewport,rect))}/>)):null}
       {box&&viewport?<div className="pdf-draft-box" style={rectStyle(screenRect(viewport,box))}/>:null}
       </div>
     </div></div>
     {(preview&&box)||selection?<div ref={card} className="pdf-selection-card selection-surface" role="region" aria-label="选区操作" onPointerUp={e=>e.stopPropagation()}>
       {selection?<div className="selection-quote pdf-selected-quote">“{quote}”</div>:<div className="pdf-selection-preview"><img src={preview} alt="本次选择的原页区域" /></div>}
-      <SelectionActions className="pdf-card-actions" disabled={busy||props.readOnly} onClose={cancel} onSelect={(intent,question)=>{if(selection)create(intent,selection.anchor,question);else void selectRegion(intent,question);}}/>
+      <SelectionActions bookmark={selection&&props.revisionId&&props.onBookmarkSaved&&!props.readOnly?<BookmarkAction entryId={props.entryId} revisionId={props.revisionId} anchor={selection.anchor} disabled={busy} iconOnly onSaved={props.onBookmarkSaved} onStarted={request=>{const anchor=bookmarkSelectionRef.current;if(anchor)bookmarkOperationRef.current={anchor,operationId:request.operationId};props.onBookmarkStarted?.(request);}} version={props.bookmarkVersion} onFailed={props.onBookmarkFailed}/>:null} className="pdf-card-actions" disabled={busy||props.readOnly} onClose={cancel} onSelect={(intent,question)=>{if(selection)create(intent,selection.anchor,question);else void selectRegion(intent,question);}}/>
       {busy?<p role="status">{status}</p>:null}
     </div>:null}
   </section>;

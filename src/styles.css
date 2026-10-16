@@ -2813,3 +2813,15 @@ a:focus-visible {
 
 .library-current-source-facts { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .translation-source-description { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+@layer reader-base {
+.web-media-retry-controls{display:inline-flex;align-items:center;gap:8px;vertical-align:middle;user-select:none;}.web-media-retry{display:inline-grid;place-items:center;width:44px;height:44px;padding:0;border:1px solid var(--control-border);border-radius:var(--control-radius);background:var(--control-bg);color:var(--control-fg);cursor:pointer;}.web-media-retry[aria-busy="true"] svg{animation:web-media-spin 1s linear infinite;}.web-media-retry-error::after,.web-media-retry-unavailable::after{content:attr(data-message);font-size:12px;line-height:1.6;}.web-media-retry-error{color:var(--red);}.web-media-retry-unavailable{display:inline-block;margin-left:6px;color:var(--muted);user-select:none;}
+@keyframes web-media-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.web-media-retry[aria-busy="true"] svg{animation:none;}}
+}
+@layer controls {
+.markdown-article .web-media-retry{border-color:var(--line-strong);background:var(--paper);color:var(--muted);}.markdown-article .web-media-retry:hover{background:var(--blue-soft);border-color:var(--blue-line);color:var(--blue-strong);}.markdown-article .web-media-retry:active{background:var(--control-pressed);color:var(--blue-strong);}.markdown-article .web-media-retry:focus-visible{outline:2px solid var(--blue);outline-offset:2px;}.markdown-article .web-media-retry:disabled{background:var(--control-disabled-bg);color:var(--control-disabled-fg);border-color:var(--control-disabled-border);cursor:default;}
+}
+
+@layer reader-base {.image-unavailable[data-media-label]::before{content:attr(data-media-label);}.image-unavailable [data-media-label]::after{content:attr(data-media-label);}.image-unavailable a[data-media-label]{margin-left:4px;}}
+
+@layer reader-base {.web-media-live{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}}

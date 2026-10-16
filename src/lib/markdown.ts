@@ -1,4 +1,6 @@
-import {missingWebMediaHtml} from './web-media-markup';
+import {annotateBookmarkBlocks} from './bookmark-dom';
+import {domWebAnchorText} from './web-anchor-compat';
+import {missingWebMediaHtml,mediaLegacyAttribute,stripWebCompatAttributes} from './web-media-markup';
 import DOMPurify from "dompurify";
 import { marked, Renderer } from "marked";
 import type { WebDocumentData } from "./web-data";
@@ -16,12 +18,13 @@ const escapeHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g,
 export function renderMarkdown(markdown: string, web?: WebDocumentData): RenderedMarkdown {
   const mediaById = new Map(web?.media.map(media => [media.id, media]));
   const renderer = web ? new Renderer() : undefined;
+  if(renderer)renderer.html=({text})=>stripWebCompatAttributes(text);
   if (renderer) renderer.image = ({ href, text }) => {
     const id = href.startsWith("got-it-media:") ? href.slice("got-it-media:".length) : "";
     const media = mediaById.get(id);
     if (!media) return `<span class="image-unavailable">图片未获授权：${escapeHtml(text)}</span>`;
     if (media.status !== "saved") return missingWebMediaHtml(media);
-    return `<img data-web-media="${escapeHtml(media.id)}" tabindex="0" role="button" aria-label="放大查看：${escapeHtml(media.alt || "静态图片或图表")}" alt="${escapeHtml(media.alt)}"${media.width ? ` width="${media.width}"` : ""}${media.height ? ` height="${media.height}"` : ""}>`;
+    return `<img${mediaLegacyAttribute(media)} data-web-media="${escapeHtml(media.id)}" tabindex="0" role="button" aria-label="放大查看：${escapeHtml(media.alt || "静态图片或图表")}" alt="${escapeHtml(media.alt)}"${media.width ? ` width="${media.width}"` : ""}${media.height ? ` height="${media.height}"` : ""}>`;
   };
   const rawHtml = marked.parse(markdown, {
     async: false,
@@ -54,7 +57,9 @@ export function renderMarkdown(markdown: string, web?: WebDocumentData): Rendere
   container.querySelectorAll<HTMLElement>(BLOCK_SELECTOR).forEach((block, index) => {
     const text = cleanText(block.textContent);
     const tagName = block.tagName.toLowerCase();
-    const blockId = `block-${index}-${stableHash(`${tagName}:${text}`).slice(0, 7)}`;
+    const projection=domWebAnchorText(block);
+    const blockId = `block-${index}-${stableHash(`${tagName}:${cleanText(projection.legacy?.text??text)}`).slice(0, 7)}`;
+    if(projection.legacy)block.dataset.webAnchorLegacy=JSON.stringify(projection.legacy);
     block.dataset.blockId = blockId;
 
     if (/^h[1-6]$/.test(tagName)) {
@@ -109,6 +114,8 @@ export function renderMarkdown(markdown: string, web?: WebDocumentData): Rendere
     const match = web.fragments.find(item => item.fragment === fragment);
     if (match && outline[match.headingIndex]) link.href = `#${outline[match.headingIndex].id}`;
   });
+  annotateBookmarkBlocks(container);
+  container.querySelectorAll<HTMLElement>('[data-web-anchor-legacy]').forEach(block=>{const p=domWebAnchorText(block);if(p.legacy)block.dataset.webAnchorLegacy=JSON.stringify(p.legacy);});
   return { html: container.innerHTML, outline };
 }
 

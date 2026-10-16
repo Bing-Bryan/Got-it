@@ -15,6 +15,7 @@ export interface WebMedia {
   height?: number;
   reason?: string;
   sourceUrl?: string;
+  legacyMissing?: {reason:string;linked:boolean};
 }
 export interface WebFragment { fragment: string; headingIndex: number }
 export interface WebDocumentData {
@@ -69,14 +70,17 @@ export function safeXImageSourceUrl(value:unknown):string|undefined {
 }
 function record(value: unknown): value is Record<string, unknown> { return !!value && typeof value === "object" && !Array.isArray(value); }
 function text(value: unknown, max: number): value is string { return typeof value === "string" && value.length <= max; }
-function copyMedia(value: unknown): WebMedia | undefined {
+export function safeImageSourceUrl(value:unknown):string|undefined { const safe=safeWebUrl(value);if(!safe)return;const u=new URL(safe);if(u.protocol!=="https:"||u.hash)return;return u.href; }
+function copyMedia(value: unknown, publicX=false): WebMedia | undefined {
   if (!record(value) || typeof value.id !== "string" || !WEB_MEDIA_ID.test(value.id)
     || !["image", "svg"].includes(String(value.kind)) || !["saved", "missing", "unsupported"].includes(String(value.status))
     || !text(value.alt, 4000) || (value.caption !== undefined && !text(value.caption, 4000))
-    || (value.sourceUrl !== undefined && (value.kind !== 'image' || value.status === 'unsupported' || !safeXImageSourceUrl(value.sourceUrl)))
+    || (value.sourceUrl !== undefined && (value.kind !== 'image' || value.status === 'unsupported' || !(publicX?safeXImageSourceUrl(value.sourceUrl):safeImageSourceUrl(value.sourceUrl))))
+    || (value.legacyMissing !== undefined && (!record(value.legacyMissing) || value.kind!=='image' || value.status!=='saved' || Object.keys(value.legacyMissing).some(k=>!['reason','linked'].includes(k)) || !text(value.legacyMissing.reason,2000) || typeof value.legacyMissing.linked!=='boolean'))
     || (value.reason !== undefined && !text(value.reason, 2000))) return;
   const base = { id: value.id, kind: value.kind as WebMedia["kind"], status: value.status as WebMedia["status"], alt: value.alt,
-    ...(value.sourceUrl === undefined ? {} : {sourceUrl:safeXImageSourceUrl(value.sourceUrl)!}),
+    ...(value.sourceUrl === undefined ? {} : {sourceUrl:(publicX?safeXImageSourceUrl(value.sourceUrl):safeImageSourceUrl(value.sourceUrl))!}),
+    ...(value.legacyMissing === undefined ? {} : {legacyMissing:{reason:(value.legacyMissing as {reason:string}).reason,linked:(value.legacyMissing as {linked:boolean}).linked}}),
     ...(value.caption === undefined ? {} : { caption: value.caption as string }), ...(value.reason === undefined ? {} : { reason: value.reason as string }) };
   if (value.status !== "saved") {
     if (!value.reason || ["resourceId", "mime", "bytes", "width", "height"].some(k => value[k] !== undefined)) return;
@@ -105,8 +109,7 @@ export function copyWebDocument(value: unknown): WebDocumentData | undefined {
     retrieval={kind:"public-service",provider:"fxtwitter",url:r.url};
   }
   if(value.extractorVersion==="x-fxtwitter-public-v1"&&!retrieval||identity&&!retrieval)return;
-  const media = value.media.map(copyMedia);
-  if(media.some(m=>m?.sourceUrl)&&!retrieval)return;
+  const media = value.media.map(m=>copyMedia(m,!!retrieval));
   if (media.some(m => !m) || new Set(media.map(m => m!.id)).size !== media.length) return;
   if (media.reduce((bytes, m) => bytes + (m?.bytes ?? 0), 0) > 128 * 1024 * 1024) return;
   const fragments: WebFragment[] = [];

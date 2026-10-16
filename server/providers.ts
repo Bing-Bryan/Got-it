@@ -824,7 +824,11 @@ function readRequiredString(record: Record<string, unknown>, key: string, maxLen
   if (typeof value !== "string" || cleanString(value).length === 0) {
     throw new ProviderError(`${key} 不能为空`, 400, "invalid_request");
   }
-  return value.trim().slice(0, maxLength);
+  if (value.length > maxLength) {
+    throw new ProviderError(`${key} 超过 ${maxLength} 字符限制，请缩小选区或上下文后重试`, 400, `${key}_too_long`);
+  }
+  // Selected text is an exact user-authorized range, including its boundary whitespace.
+  return key === "quote" || key === "context" ? value : value.trim();
 }
 
 function readOptionalString(record: Record<string, unknown>, key: string, maxLength: number): string {
@@ -835,7 +839,11 @@ function readOptionalString(record: Record<string, unknown>, key: string, maxLen
   if (typeof value !== "string") {
     throw new ProviderError(`${key} 必须是字符串`, 400, "invalid_request");
   }
-  return value.trim().slice(0, maxLength);
+  if (value.length > maxLength) {
+    throw new ProviderError(`${key} 超过 ${maxLength} 字符限制，请缩小选区或上下文后重试`, 400, `${key}_too_long`);
+  }
+  // Selected text is an exact user-authorized range, including its boundary whitespace.
+  return key === "quote" || key === "context" ? value : value.trim();
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

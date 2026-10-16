@@ -1,7 +1,9 @@
+import {translationContext} from './translation-reading';
 import type { Anchor } from "../types";
 
 /** Bounded article context; a table cell needs its headers and row to be meaningful. */
 export function readingContext(article: HTMLElement | null, anchor: Anchor): string {
+  if(anchor.segments){const first=anchor.segments[0].translation??anchor.segments[0],last=anchor.segments.at(-1)!.translation??anchor.segments.at(-1)!;return [translationContext(anchor),`选区前文：${first.prefix}`,`选区后文：${last.suffix}`].filter(Boolean).join('\n');}
   if(anchor.pdf)return anchor.pdf.context ?? anchor.quote;
   const block = [...(article?.querySelectorAll<HTMLElement>("[data-block-id]") ?? [])].find(e => e.dataset.blockId === anchor.blockId);
   if (!block) return `${anchor.prefix}${anchor.quote}${anchor.suffix}`;
@@ -18,7 +20,7 @@ export function readingContext(article: HTMLElement | null, anchor: Anchor): str
 /** Only explicitly named comparison subjects add bounded local blocks, never the full article. */
 export function questionContext(article: HTMLElement | null, anchor: Anchor, question: string): string {
   const base = readingContext(article, anchor);
-  if (!article || anchor.pdf) return base;
+  if (!article || anchor.pdf || anchor.segments) return base;
   const terms = [...new Set(question.match(/[A-Za-z][A-Za-z0-9.\-]{1,50}|[\u4e00-\u9fff]{2,12}/g) ?? [])]
     .filter(t => !anchor.quote.includes(t)).slice(0, 8);
   const blocks = [...article.querySelectorAll<HTMLElement>('[data-block-id]')]

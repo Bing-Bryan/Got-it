@@ -27,3 +27,12 @@ it('opens a document composer without sending, and closes its parent on Escape',
 it('returns from inline editing without sending or losing draft', async () => {
  const send=vi.fn();await act(async()=>root.render(<QuestionComposer inline onSubmit={send}/>));await click('.question-toggle');await type('保留这个问题');await click('.question-back');expect(send).not.toHaveBeenCalled();await click('.question-toggle');expect(host.querySelector('textarea')!.value).toBe('保留这个问题');
 });
+
+
+it('hides only the closed trigger and preserves its prompt, open input and draft',async()=>{
+ const send=vi.fn();const render=async(hideTrigger:boolean)=>act(async()=>root.render(<QuestionComposer hideTrigger={hideTrigger} prompt="还是不懂？" onSubmit={send}/>));
+ await render(false);await click('.question-toggle');await type('保留的草稿');
+ await render(true);expect(host.querySelector('textarea')!.value).toBe('保留的草稿');await key({key:'Escape'});
+ expect(host.querySelector('.question-toggle')).toBeNull();expect(host.querySelector('.question-prompt')?.textContent).toBe('还是不懂？');
+ await render(false);await click('.question-toggle');expect(host.querySelector('textarea')!.value).toBe('保留的草稿');expect(send).not.toHaveBeenCalled();
+});

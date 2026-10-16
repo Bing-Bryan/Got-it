@@ -19,7 +19,9 @@ GitHub Actions 先用轻量检测决定范围：只有 `README.md`、`README.en.
 
 GitHub Actions 对三个系统执行这些检查。远程执行结果出来前，Windows/Linux 仍标实验性；API/单元测试通过也不等于系统选择器等原生交互已验收。
 
-完整检查另执行 `node --test scripts/ci-change-scope.node-test.mjs`，用临时真实 Git 提交验证检测边界；这不依赖安装应用测试框架。README/PNG 分支只完成范围检测，不代表应用检查通过，人工仍须核对图片内容、路径和公开安全。
+内部研究目录 `scripts/bookmark-ai-spike` 与 `scripts/bookmark-retrieval-spike` 不在公开产品范围内；准备过程从walk和逐文件复制共同排除，不能只从清单隐藏。
+
+完整检查另执行 `node --test scripts/prepare-public.node-test.mjs scripts/ci-change-scope.node-test.mjs`，用临时真实 Git 提交验证检测边界；这不依赖安装应用测试框架。README/PNG 分支只完成范围检测，不代表应用检查通过，人工仍须核对图片内容、路径和公开安全。
 
 ## 真人 / 真实浏览器门槛（发布候选版本）
 

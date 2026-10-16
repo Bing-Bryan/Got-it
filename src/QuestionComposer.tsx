@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { ArrowUp, MessageCircle } from 'lucide-react';
 
 /** A deliberate, optional input; opening it never invokes a model. */
-export function QuestionComposer({ onSubmit, disabled = false, followUp = false, inline = false, prompt, initialOpen = false, onClose }: {
-  onSubmit: (question: string) => void; disabled?: boolean; followUp?: boolean; inline?: boolean; prompt?: string; initialOpen?: boolean; onClose?: () => void;
+export function QuestionComposer({ onSubmit, disabled = false, hideTrigger = false, followUp = false, inline = false, prompt, initialOpen = false, onClose }: {
+  onSubmit: (question: string) => void; disabled?: boolean; hideTrigger?: boolean; followUp?: boolean; inline?: boolean; prompt?: string; initialOpen?: boolean; onClose?: () => void;
 }) {
   const [open, setOpen] = useState(initialOpen), [question, setQuestion] = useState('');
-  if (!open) return <>{prompt ? <span className="question-prompt">{prompt}</span> : null}<button className={`question-toggle${inline ? ' question-input-trigger' : ' secondary-action'}`} type="button" disabled={disabled} onClick={() => setOpen(true)}>{inline ? <><MessageCircle size={14} aria-hidden="true"/><span>问一问</span></> : followUp ? '继续追问…' : '问一问'}</button></>;
+  if (!open) return <>{prompt ? <span className="question-prompt">{prompt}</span> : null}{hideTrigger ? null : <button className={`question-toggle${inline ? ' question-input-trigger' : ' secondary-action'}`} type="button" disabled={disabled} onClick={() => setOpen(true)}>{inline ? <><MessageCircle size={14} aria-hidden="true"/><span>问一问</span></> : followUp ? '继续追问…' : '问一问'}</button>}</>;
   const input = <textarea autoFocus aria-label={followUp ? '追问内容' : '自定义问题'} maxLength={2000} rows={inline ? 1 : 3} value={question} onChange={e => {
     setQuestion(e.target.value);
     if (inline) { e.currentTarget.style.height = '32px'; e.currentTarget.style.height = `${Math.min(120, e.currentTarget.scrollHeight)}px`; }

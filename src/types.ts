@@ -49,6 +49,8 @@ export type DocumentSnapshot = (DocumentBase & { kind?: 'markdown'; markdown: st
   | (DocumentBase & { kind: 'web'; markdown: string; web: WebDocumentData; pdf?: never });
 
 export interface Anchor {
+  /** Ordered complete continuous selection; leaves use the legacy single-block shape. */
+  segments?: Anchor[];
   translation?: TranslationSelection;
   scope?: "document";
   pdf?: PdfLocation;

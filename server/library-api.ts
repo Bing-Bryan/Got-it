@@ -1,3 +1,5 @@
+import { WebMediaRetries } from './web-media-retries';
+import { Bookmarks } from './bookmarks';
 import { WebTranslations } from "./web-translations";
 import { ProviderService, ProviderError, toProviderErrorBody } from "./providers";
 import { WebImports } from "./web-imports";
@@ -21,9 +23,10 @@ export function localOriginGuard(request: Request, response: Response, next: Nex
   next();
 }
 
-export function libraryRouter(library: ReadingLibrary, token = randomBytes(32).toString("hex"), web = new WebImports(library), translations = new WebTranslations(library,new ProviderService())) {
+export function libraryRouter(library: ReadingLibrary, token = randomBytes(32).toString("hex"), web = new WebImports(library), translations = new WebTranslations(library,new ProviderService()), mediaRetries = new WebMediaRetries(library)) {
   const router = express.Router();
   const outlines = new PdfOutlineStore(library);
+  const bookmarks = new Bookmarks(library);
   router.use((_req, res, next) => { res.setHeader("Cache-Control", "no-store"); next(); });
   router.post("/session", (req, res) => {
     // JSON is required even for bootstrap: cross-site simple forms cannot obtain a session.
@@ -40,6 +43,11 @@ export function libraryRouter(library: ReadingLibrary, token = randomBytes(32).t
     try { res.json(await fn(req)); } catch (error) { const e = libraryFailure(error); res.status(e.status).json({ error: e.message, code: e.code }); }
   };
   const id = (req: Request) => String(req.params.id);
+  router.get('/bookmarks',action(req=>bookmarks.list(typeof req.query.q==='string'?req.query.q:'',Number(req.query.offset)||0,Number(req.query.limit)||50,{entryId:typeof req.query.entryId==='string'?req.query.entryId:undefined,revisionId:typeof req.query.revisionId==='string'?req.query.revisionId:undefined})));
+  router.post('/bookmarks/lookup',action(req=>bookmarks.lookup(req.body)));
+  router.post('/bookmarks',action(req=>bookmarks.create(req.body)));
+  router.post('/bookmarks/:id/delete',action(req=>bookmarks.remove(id(req),req.body?.expectedVersion,req.body?.creationOperationId)));
+  router.get('/bookmarks/:id/location',action(req=>bookmarks.locate(id(req))));
   router.post("/entries/:id/translation-batches/:operationId/cancel",action(async req=>translations.cancel(id(req),String(req.params.operationId))));
   router.post("/entries/:id/translation-batches",async(req,res)=>{const controller=new AbortController();res.on("close",()=>{if(!res.writableEnded)controller.abort();});try{res.json(await translations.batch(id(req),req.body,controller.signal));}catch(error){if(error instanceof ProviderError){const e=toProviderErrorBody(error);res.status(e.statusCode).json(e.body);}else{const e=libraryFailure(error);res.status(e.status).json({error:e.message,code:e.code});}}});
   router.post("/x-article-imports", action(req=>web.startCapture(req.body?.capture,req.body?.operationId)));
@@ -52,6 +60,12 @@ export function libraryRouter(library: ReadingLibrary, token = randomBytes(32).t
   });
   router.get("/entries/:id/web-resources/:revisionId/:resourceId",async(req,res)=>{
     try{const r=await library.readWebResource(String(req.params.id),String(req.params.revisionId),String(req.params.resourceId));res.setHeader("X-Content-Type-Options","nosniff");res.setHeader("Content-Security-Policy","default-src 'none'; sandbox");res.type(r.mime).send(r.bytes)}catch(error){const e=libraryFailure(error);res.status(e.status).json({error:e.message,code:e.code})}
+  });
+
+  router.post('/entries/:id/web-media/:mediaId/retry',async(req,res)=>{
+    const controller=new AbortController();res.on('close',()=>{if(!res.writableEnded)controller.abort();});
+    try{if(!req.body||Object.keys(req.body).some(k=>k!=='revisionId'))throw new Error('invalid retry fields');res.json(await mediaRetries.retry(id(req),req.body.revisionId,String(req.params.mediaId),controller.signal));}
+    catch(error){const e=error instanceof Error&&error.message==='invalid retry fields'?{status:400,message:'图片重试仅接受材料版本。',code:'web_media_invalid'}:libraryFailure(error);res.status(e.status).json({error:e.message,code:e.code});}
   });
 
   router.post("/pdf", express.raw({type:"application/pdf",limit:"50mb"}), action(req=>library.uploadPdf(String(req.query.filename||"document.pdf"),req.body)));

@@ -1,3 +1,14 @@
+import {revealBookmarkRanges} from './lib/bookmark-navigation';
+import { selectionContext,selectionRequestError } from './lib/inquiry-selection';
+import { DocumentBookmarks } from './DocumentBookmarks';
+import { useDocumentBookmarks } from './useDocumentBookmarks';
+import { createBookmarkDraft, bookmarkDomRanges, type BookmarkDraft } from './lib/bookmark-selection';
+import { applyBookmarkHighlights } from './lib/bookmark-highlights';
+import { bookmarkQuote, bookmarkSegments, bookmarkPosition, type BookmarkCreate, type BookmarkResult } from './lib/bookmark-types';
+import { useBookmarkFeedback } from './useBookmarkFeedback';
+import { BookmarkAction } from './BookmarkAction';
+import { BookmarksView } from './BookmarksView';
+import type { ReadingBookmark } from './lib/bookmark-types';
 import { WebTranslationControls } from "./WebTranslationControls";
 import { translatedRendering, canonicalTranslationDraft, selectedQuote, translationContext } from "./lib/translation-reading";
 import brandIcon from "./assets/got-it-icon.svg";
@@ -30,6 +41,7 @@ import { interruptMessage, PROGRESS_LABELS, readInquiryStream, responseMessage }
 import { NEW_INQUIRY_INTENTS } from "./types";
 import { safeSourceUrl } from "./lib/evidence";
 import {
+  Bookmark,
   BookMarked,
   BookOpenText,
   Bot,
@@ -86,6 +98,7 @@ import { createInitialWorkspace } from "./sample";
 import { REFINEMENTS, canCompleteInquiry, type Refinement } from "./lib/learning";
 import { renderMarkdown } from "./lib/markdown";
 import { loadWebMedia } from "./lib/web-media";
+import { WebMediaRetry } from "./WebMediaRetry";
 import { WebImageViewer } from "./WebImageViewer";
 import {
   applyInquiryHighlights,
@@ -131,6 +144,15 @@ function readError(error: unknown): string {
 }
 
 function App() {
+  const bookmarkFeedback=useBookmarkFeedback();
+  const {failure:bookmarkFailure,notice:bookmarkNotice,version:bookmarkVersion,retrying:bookmarkRetrying,saved:bookmarkSaved}=bookmarkFeedback;
+  const [bookmarksOpen,setBookmarksOpen]=useState(false);
+  const bookmarkPositionRef=useRef<ReturnType<typeof capturePosition>|null>(null);
+  const [bookmarkTarget,setBookmarkTarget]=useState<(ReadingBookmark&{locateNonce:number})|null>(null);
+  const bookmarkLocateNonce=useRef(0);
+  const bookmarkPreparing=useRef<{entryId:string;documentId:string;nonce:number;keepList:boolean}|null>(null);
+  const bookmarkFocus=useRef<HTMLElement|null>(null);
+  const [directoryTarget,setDirectoryTarget]=useState<{id:string;nonce:number}|null>(null);
   const [pdfDirectoryTarget, setPdfDirectoryTarget] = useState<{documentId:string;item:PdfOutlineItem;nonce:number}|null>(null);
   const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
   const [workspace, setWorkspace] = useState<Workspace>(() => {
@@ -145,19 +167,24 @@ function App() {
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsError, setModelsError] = useState("");
   const [providers, setProviders] = useState<ProviderStatus[]>(FALLBACK_PROVIDERS);
+  const [bookmarkDraft,setBookmarkDraft]=useState<BookmarkDraft|null>(null);
+  const bookmarkSelectionOperation=useRef<{draft:BookmarkDraft;operationId:string}|null>(null);
+  const [bookmarkCompleted,setBookmarkCompleted]=useState<BookmarkCreate|null>(null);
+  const bookmarkDraftRef=useRef(bookmarkDraft);bookmarkDraftRef.current=bookmarkDraft;
+  const [inquirySelectionError,setInquirySelectionError]=useState('');
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
   useEffect(() => {
-    if (!selectionDraft) return;
+    if (!selectionDraft&&!bookmarkDraft) return;
     const dismissSelection = (event: PointerEvent) => {
       if (event.button !== 0 || (event.target instanceof Element && event.target.closest('.selection-toolbar'))) return;
       // Dismiss before focus changes; otherwise the first click only blurs the
       // textarea and mouseup can reopen the toolbar from the old DOM selection.
       window.getSelection()?.removeAllRanges();
-      setSelectionDraft(null);
+      setSelectionDraft(null);setBookmarkDraft(null);setInquirySelectionError('');
     };
     document.addEventListener('pointerdown', dismissSelection, true);
     return () => document.removeEventListener('pointerdown', dismissSelection, true);
-  }, [selectionDraft]);
+  }, [selectionDraft,bookmarkDraft]);
   const [deleteMode, setDeleteMode] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [focusedInquiryId, setFocusedInquiryId] = useState<string | null>(null);
@@ -173,7 +200,7 @@ function App() {
     if (!viewport || !provider) return;
     const align = () => {
       const trigger = provider.querySelector('.provider-trigger');
-      if (trigger) viewport.style.setProperty('--reader-adjustment-inset', `${Math.max(0, viewport.getBoundingClientRect().right - trigger.getBoundingClientRect().right)}px`);
+      if (trigger) {viewport.style.setProperty('--reader-adjustment-inset', `${Math.max(0, viewport.getBoundingClientRect().right - trigger.getBoundingClientRect().right)}px`);}
     };
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(align);
     observer?.observe(viewport); observer?.observe(provider);
@@ -212,11 +239,14 @@ function App() {
   useEffect(() => () => { for (const request of requests.current.values()) request.controller.abort(); }, []);
   const toastTimerRef = useRef<number | null>(null);
 
-  const installLibraryWorkspace = useCallback((next: Workspace) => {
+  const installLibraryWorkspace = useCallback((next: Workspace,entryId?:string) => {
     navigationSequence.current++;
-    setPdfDirectoryTarget(null);
+    const pending=bookmarkPreparing.current;
+    if(!pending||pending.entryId!==entryId||pending.documentId!==next.document.id){bookmarkPreparing.current=null;setBookmarkTarget(null);setBookmarksOpen(false);}
+    else if(!pending.keepList)setBookmarksOpen(false);
+    setPdfDirectoryTarget(null);setDirectoryTarget(null);
     workspaceRef.current = next; setWorkspace(next); setDocumentLoadId(v => v + 1);
-    setDocumentQuestionOpen(false); setPdfTarget(null); setProgress({}); setSelectionDraft(null); setFocusedInquiryId(null); setMobileSidebarOpen(false); setMobilePanelOpen(false); setProviderOpen(false);
+    setDocumentQuestionOpen(false); setPdfTarget(null); setProgress({}); setSelectionDraft(null);setBookmarkDraft(null);setInquirySelectionError(''); setFocusedInquiryId(null); setMobileSidebarOpen(false); setMobilePanelOpen(false); setProviderOpen(false);
     window.getSelection()?.removeAllRanges();
   }, []);
   const interruptForSwitch = useCallback(() => {
@@ -226,12 +256,56 @@ function App() {
     workspaceRef.current = next; setWorkspace(next); return next;
   }, []);
   const library = useReadingLibrary({ workspace, install: installLibraryWorkspace, interrupt: interruptForSwitch, getWorkspace: () => workspaceRef.current, update: (next) => { workspaceRef.current=next;setWorkspace(next); } });
+  const documentBookmarks=useDocumentBookmarks(library.entry?.id,bookmarkVersion);
+  const activeBookmarkRevision=library.historyId||library.entry?.revisionId;
+  const currentBookmarks=documentBookmarks.bookmarks.filter(bookmark=>bookmark.revisionId===activeBookmarkRevision);
+  function beginBookmarkSave(request:BookmarkCreate){bookmarkFeedback.started(request);const draft=bookmarkDraftRef.current;if(draft)bookmarkSelectionOperation.current={draft,operationId:request.operationId};}
+  function finishBookmarkSave(result:BookmarkResult,request:BookmarkCreate){
+    bookmarkSaved(result,request);setBookmarkCompleted(request);
+    const current=bookmarkDraftRef.current;
+    if(current&&bookmarkSelectionOperation.current?.draft===current&&bookmarkSelectionOperation.current.operationId===request.operationId&&library.entry&&bookmarkPosition({entryId:library.entry.id,revisionId:library.entry.revisionId,anchor:current.anchor})===bookmarkPosition(request)){setBookmarkDraft(null);setSelectionDraft(null);setInquirySelectionError('');window.getSelection()?.removeAllRanges();}
+  }
   const saveStatus = useSaveStatus(library.status, workspace.document.id + ":" + documentLoadId);
 
   const rendered = useMemo(
     () => workspace.document.kind === "pdf" ? {html:"",outline:[]} : workspace.document.kind === "web" ? translatedRendering(workspace) : renderMarkdown(workspace.document.markdown),
     [workspace.document, workspace.webTranslation, workspace.readingSide],
   );
+  async function openBookmarks(){
+    bookmarkPreparing.current=null;setBookmarkTarget(null);
+    try {await library.prepareBookmarks();bookmarkPositionRef.current=capturePosition();setSelectionDraft(null);setBookmarkDraft(null);setInquirySelectionError('');window.getSelection()?.removeAllRanges();setBookmarksOpen(true);setMobileSidebarOpen(false);setMobilePanelOpen(false);}
+    catch(e){showToast(e instanceof Error?e.message:"无法打开收藏，请重试。");}
+  }
+  function closeBookmarks(){bookmarkPreparing.current=null;setBookmarkTarget(null);setBookmarksOpen(false);requestAnimationFrame(()=>{if(bookmarkPositionRef.current)restorePosition(bookmarkPositionRef.current);const trigger=document.querySelector<HTMLButtonElement>(window.matchMedia('(max-width:780px)').matches?'.drawer-navigation-trigger':'.bookmarks-nav');trigger?.focus();});}
+  async function locateBookmark(bookmark:ReadingBookmark){
+    const attempt={entryId:bookmark.entryId,documentId:bookmark.documentId,nonce:++bookmarkLocateNonce.current,keepList:bookmarksOpen};bookmarkPreparing.current=attempt;
+    try{if(!await library.openBookmark(bookmark.id))throw new Error('无法打开对应原文版本，收藏仍保留。请检查阅读库状态后重试。');
+    if(bookmarkPreparing.current===attempt)setBookmarkTarget({...bookmark,locateNonce:attempt.nonce});}
+    catch(error){if(bookmarkPreparing.current===attempt)bookmarkPreparing.current=null;throw error;}
+  }
+  useLayoutEffect(()=>{
+    if(!bookmarkTarget)return;
+    if(workspace.document.id!==bookmarkTarget.documentId)return;
+    if(workspace.document.kind==='pdf')return;
+    // Center while the list still covers the reader, then reveal the prepared source.
+      library.rendered();
+      const ranges=articleRef.current&&bookmarkDomRanges(articleRef.current,bookmarkTarget.anchor);
+      const block=ranges?.[0]?.startContainer.parentElement?.closest<HTMLElement>('[data-block-id],[data-bookmark-block-id]');
+      if(ranges&&block&&revealBookmarkRanges(ranges)) {bookmarkFocus.current=block;setBookmarksOpen(false);if(bookmarkSegments(bookmarkTarget.anchor).some(segment=>segment.translation))showToast('已定位对应原文段落（非逐词对齐）。');}
+      else {showToast('无法定位收藏原文，摘录与上下文仍保留。');setBookmarksOpen(true);}
+      bookmarkPreparing.current=null;setBookmarkTarget(null);
+  },[bookmarkTarget,documentLoadId,rendered.html]);
+  useLayoutEffect(()=>{if(bookmarksOpen||!bookmarkFocus.current)return;const block=bookmarkFocus.current;bookmarkFocus.current=null;if(block.isConnected)focusReadingTarget(block);},[bookmarksOpen,bookmarkTarget]);
+  function jumpToHeading(id:string){
+    setMobileSidebarOpen(false);
+    if(bookmarksOpen){bookmarkPreparing.current=null;setBookmarkTarget(null);setBookmarksOpen(false);setDirectoryTarget({id,nonce:Date.now()});return;}
+    const target=document.getElementById(id);if(target){revealReadingTarget(target,{align:'start'});setCurrentHeading(id);}
+  }
+  useEffect(()=>{
+    if(!directoryTarget||bookmarksOpen)return;let jumpFrame=0;
+    const frame=requestAnimationFrame(()=>{library.rendered();jumpFrame=requestAnimationFrame(()=>{const target=document.getElementById(directoryTarget.id);if(target){revealReadingTarget(target,{align:'start'});setCurrentHeading(directoryTarget.id);}setDirectoryTarget(null);});});
+    return()=>{cancelAnimationFrame(frame);cancelAnimationFrame(jumpFrame);};
+  },[directoryTarget,bookmarksOpen]);
   useEffect(() => {
     const doc = workspace.document;
     if (doc.kind !== "web" || !articleRef.current || !library.entry) return;
@@ -412,6 +486,7 @@ function App() {
 
     return cleanup;
   }, [rendered.html, workspace.activeInquiryId, workspace.inquiries]);
+  useEffect(()=>{const article=articleRef.current;if(!article)return;return applyBookmarkHighlights(article,currentBookmarks);},[rendered.html,workspace.activeInquiryId,workspace.inquiries,documentBookmarks.bookmarks,activeBookmarkRevision]);
 
   useEffect(() => {
     const article = articleRef.current;
@@ -526,22 +601,13 @@ function App() {
       const article = articleRef.current;
       const selection = window.getSelection();
       if (!article || !selection || selection.isCollapsed) {
-        setSelectionDraft(null);
+        setSelectionDraft(null);setBookmarkDraft(null);
         return;
       }
-      const result = createAnchorFromSelection(
-        selection,
-        article,
-        workspace.document.id,
-      );
-      if ("error" in result) {
-        setSelectionDraft(null);
-        showToast(result.error);
-        return;
-      }
-      const canonical = canonicalTranslationDraft(result, workspace);
-      if (!canonical) { showToast("译文无法对应原文段落，请切回原文后选择。"); return; }
-      setSelectionDraft(canonical);
+      const bookmark=createBookmarkDraft(selection,article,workspace);
+      if('error' in bookmark){setBookmarkDraft(null);setSelectionDraft(null);showToast(bookmark.error);return;}
+      setBookmarkDraft(bookmark);
+      setSelectionDraft(bookmark);setInquirySelectionError('');
     });
   }, [showToast, workspace.document.id, workspace.webTranslation, workspace.readingSide, library.readOnly, library.busy, library.ready]);
 
@@ -556,12 +622,14 @@ function App() {
       const existing = intentHistory(matches, intent).find(i => intent !== "ask" || i.question === customQuestion?.trim());
       if (existing) {
         updateWorkspace(current => ({ ...current, activeInquiryId: existing.id, visitedInquiryIds: rememberInquiry(current, existing.id), activeTab: { anchorInquiryId: existing.id, intent: categoryIntent(intent) } }));
-        setSelectionDraft(null); setMobilePanelOpen(true); openResultPanel(); window.getSelection()?.removeAllRanges(); return;
+        setSelectionDraft(null);setBookmarkDraft(null); setMobilePanelOpen(true); openResultPanel(); window.getSelection()?.removeAllRanges(); return;
       }
       if (matches.some(i => i.status === "answering") || [...pendingCreations.current.values()].some(a => sameAnchor(a, draft.anchor))) return;
       const createdAt = now();
       const id = newId("inquiry");
-      const question = intent === "ask" ? customQuestion!.trim() : INTENT_META[intent].prompt(selectedQuote(draft.anchor));
+      const question = intent === "ask" ? customQuestion!.trim() : draft.anchor.segments ? INTENT_META[intent].prompt('这段完整选区') : INTENT_META[intent].prompt(selectedQuote(draft.anchor));
+      const context=selectionContext(articleRef.current,draft.anchor,intent,question);
+      const requestError=selectionRequestError(draft.anchor,question,context,intent);if(requestError){showToast(requestError);return;}
       const userMessage: ThreadMessage = {
         id: newId("message"),
         role: "user",
@@ -595,12 +663,12 @@ function App() {
         ...(["explain", "ask"].includes(intent) ? {explanationMode:"auto" as const} : {}),
         ...(draft.anchor.scope === "document" ? { readingScope: "document" as const } : {}),
         quote: selectedQuote(draft.anchor),
-        context: translationContext(draft.anchor) ?? (intent === "ask" ? questionContext(articleRef.current, draft.anchor, question) : readingContext(articleRef.current, draft.anchor)),
+        context,
         documentTitle: workspace.document.filename,
         question,
         history: copyContextHistory(contextHistory),
       };
-      setSelectionDraft(null);
+      setSelectionDraft(null);setBookmarkDraft(null);
       setMobilePanelOpen(true); openResultPanel();
       window.getSelection()?.removeAllRanges();
       pendingCreations.current.set(id, draft.anchor);
@@ -615,6 +683,8 @@ function App() {
       if (activeInquiry.intent === "verify" || (action === "detail") !== (activeInquiry.intent === "entity")) return;
       if (action === "web" && !activeProvider.supportsWebSearch) return;
       const content = REFINEMENTS[action].prompt;
+      const followContext=selectionContext(articleRef.current,activeInquiry.anchor,activeInquiry.intent==='why'?'explain':activeInquiry.intent,content);
+      const followError=selectionRequestError(activeInquiry.anchor,content,followContext,activeInquiry.intent==='why'?'explain':activeInquiry.intent);if(followError){showToast(followError);return;}
       const userMessage: ThreadMessage = {
         id: newId("message"),
         role: "user",
@@ -639,7 +709,7 @@ function App() {
         operation: action === "detail" ? "entity" : "explain",
         ...(action !== "detail" ? { explanationMode: action === "web" ? "web" as const : "auto" as const } : {}),
         quote: selectedQuote(activeInquiry.anchor),
-        context: translationContext(activeInquiry.anchor) ?? readingContext(articleRef.current, activeInquiry.anchor),
+        context:followContext,
         documentTitle: workspace.document.filename,
         question: content,
         history,
@@ -654,9 +724,11 @@ function App() {
       return;
     }
     if (!question.trim() || question.length > 2000 || requests.current.has(activeInquiry.id)) return;
+    const nextContext=selectionContext(articleRef.current,activeInquiry.anchor,'ask',question);
+    const nextError=selectionRequestError(activeInquiry.anchor,question,nextContext,'ask');if(nextError){showToast(nextError);return;}
     const history = [...(activeInquiry.contextHistory ?? []), ...activeInquiry.messages].filter(m => m.content.trim()).slice(-8).map(({role,content}) => ({role,content:content.slice(0,3000)}));
     updateInquiry(activeInquiry.id, i => ({...i,status:'answering',lastError:undefined,messages:[...i.messages,{id:newId('message'),role:'user',content:question.trim(),createdAt:now()}]}));
-    void askProvider(activeInquiry.id, {providerId:workspace.activeProviderId,intent:'ask',operation:'ask',explanationMode:'auto',readingScope:activeInquiry.anchor.scope,quote:selectedQuote(activeInquiry.anchor),context:translationContext(activeInquiry.anchor) ?? questionContext(articleRef.current,activeInquiry.anchor,question),documentTitle:workspace.document.filename,question:question.trim(),history});
+    void askProvider(activeInquiry.id, {providerId:workspace.activeProviderId,intent:'ask',operation:'ask',explanationMode:'auto',readingScope:activeInquiry.anchor.scope,quote:selectedQuote(activeInquiry.anchor),context:nextContext,documentTitle:workspace.document.filename,question:question.trim(),history});
   };
 
   const retryInquiry = useCallback(() => {
@@ -667,6 +739,9 @@ function App() {
     const lastUserMessage = [...activeInquiry.messages]
       .reverse()
       .find((message) => message.role === "user");
+    const retryQuestion=lastUserMessage?.content??activeInquiry.question;
+    const retryContext=selectionContext(articleRef.current,activeInquiry.anchor,activeInquiry.intent==='why'?'explain':activeInquiry.intent,retryQuestion);
+    const retryError=selectionRequestError(activeInquiry.anchor,retryQuestion,retryContext,activeInquiry.intent==='why'?'explain':activeInquiry.intent);if(retryError){showToast(retryError);return;}
     updateInquiry(activeInquiry.id, (inquiry) => ({
       ...inquiry,
       status: "answering",
@@ -677,7 +752,7 @@ function App() {
       intent: activeInquiry.intent,
       readingScope: activeInquiry.anchor.scope,
       quote: selectedQuote(activeInquiry.anchor),
-      context: translationContext(activeInquiry.anchor) ?? (activeInquiry.intent === "ask" ? questionContext(articleRef.current, activeInquiry.anchor, lastUserMessage?.content ?? activeInquiry.question) : readingContext(articleRef.current, activeInquiry.anchor)),
+      context:retryContext,
       documentTitle: workspace.document.filename,
       modelConfig: failed?.modelConfig,
       explanationMode: failed?.explanationMode,
@@ -837,7 +912,7 @@ function App() {
 
   return (
     <div
-      className={`app-frame ${!sidebar.pinned ? "sidebar-collapsed" : ""} ${sidebar.peek ? "sidebar-peek" : ""} ${!resultPanel.expanded ? "result-collapsed" : ""} ${mobileSidebarOpen ? "sidebar-open" : ""} ${mobilePanelOpen ? "panel-open" : ""}`}
+      className={`app-frame ${bookmarksOpen ? "bookmarks-mode" : ""} ${!sidebar.pinned ? "sidebar-collapsed" : ""} ${sidebar.peek ? "sidebar-peek" : ""} ${!resultPanel.expanded ? "result-collapsed" : ""} ${mobileSidebarOpen ? "sidebar-open" : ""} ${mobilePanelOpen ? "panel-open" : ""}`}
       onDragEnter={(event) => {
         event.preventDefault();
         setIsDragging(true);
@@ -848,7 +923,7 @@ function App() {
       }}
       onDrop={handleDrop}
       onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) {
-        if (providerOpen || selectionDraft) return;
+        if (providerOpen || selectionDraft || bookmarkDraft) return;
         if (deleteMode) { setDeleteMode(false); setPendingDeleteId(null); document.getElementById("inquiry-delete-toggle")?.focus(); return; }
         sidebar.close(); resultPanel.close(); sidebarDrawer.close(); resultDrawer.close(); } }}
     >
@@ -885,7 +960,7 @@ function App() {
 
         <nav className="sidebar-scroll">
           <section className="nav-section">
-            {workspace.document.kind === "pdf" && library.entry ? <PdfOutline key={library.entry.id+workspace.document.pdf.resourceId+documentLoadId} entryId={library.entry.id} fileHash={workspace.document.pdf.resourceId} pages={workspace.document.pdf.pages.length} currentPage={pdfCurrentPage} readOnly={library.readOnly} onJump={item=>{setPdfDirectoryTarget({documentId:workspace.document.id,item,nonce:Date.now()});setMobileSidebarOpen(false);}}/> : <>
+            {workspace.document.kind === "pdf" && library.entry ? <PdfOutline key={library.entry.id+workspace.document.pdf.resourceId+documentLoadId} entryId={library.entry.id} fileHash={workspace.document.pdf.resourceId} pages={workspace.document.pdf.pages.length} currentPage={pdfCurrentPage} readOnly={library.readOnly} onJump={item=>{bookmarkPreparing.current=null;setBookmarkTarget(null);setBookmarksOpen(false);setPdfDirectoryTarget({documentId:workspace.document.id,item,nonce:Date.now()});setMobileSidebarOpen(false);}}/> : <>
             <div className="section-label">
               <span>{workspace.document.kind === "pdf" ? "PDF 原页" : "文档结构"}</span>
               <span>{workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页` : rendered.outline.length}</span>
@@ -900,9 +975,7 @@ function App() {
                   title={item.text}
                   aria-current={currentHeading === item.id ? "location" : undefined}
                   onClick={() => {
-                    const target = document.getElementById(item.id);
-                    if (target) { revealReadingTarget(target, { align: "start" }); setCurrentHeading(item.id); }
-                    setMobileSidebarOpen(false);
+                    jumpToHeading(item.id);
                   }}
                 >
                   {item.text}
@@ -913,9 +986,10 @@ function App() {
           </section>
 
         </nav>
+        <div className="sidebar-bookmark-footer"><button type="button" className="bookmarks-nav" aria-pressed={bookmarksOpen} disabled={!library.ready||library.busy} onClick={()=>void openBookmarks()}><Bookmark size={16} aria-hidden="true"/>全部收藏</button></div>
       </aside>
 
-      <main className="reader-column" inert={(sidebar.narrow && mobileSidebarOpen) || (resultPanel.narrow && mobilePanelOpen)}>
+      <main className="reader-column" aria-hidden={bookmarksOpen||undefined} inert={bookmarksOpen||(sidebar.narrow && mobileSidebarOpen) || (resultPanel.narrow && mobilePanelOpen)}>
         <header className="reader-toolbar">
           <div className="toolbar-title">
             <button
@@ -937,6 +1011,7 @@ function App() {
           </div>
 
           <div className="toolbar-actions">
+          <DocumentBookmarks bookmarks={documentBookmarks.bookmarks} loading={documentBookmarks.loading} error={documentBookmarks.error} revisionId={activeBookmarkRevision} disabled={!library.entry||library.busy} onLocate={locateBookmark} onRetry={bookmarkFeedback.changed} onChanged={bookmarkFeedback.changed}/>
             <div className="provider-control" ref={providerControlRef}>
               <button
                 className="provider-trigger"
@@ -999,7 +1074,7 @@ function App() {
 
         <div className={`reader-tools${workspace.document.kind === "web" ? " reader-tools--web" : ""}`}>
         <ReadingLibraryStatus library={library} hideWebSource={workspace.document.kind === "web"} onImport={() => fileInputRef.current?.click()} />
-        <WebTranslationControls key={workspace.document.id+":"+documentLoadId} workspace={workspace} library={library} saveStatus={saveStatus} onSide={side => { setSelectionDraft(null);window.getSelection()?.removeAllRanges(); const position = capturePosition();updateWorkspace(current=>({...current,readingSide:side})); requestAnimationFrame(()=>restorePosition(position)); }} />
+        <WebTranslationControls key={workspace.document.id+":"+documentLoadId} workspace={workspace} library={library} saveStatus={saveStatus} onSide={side => { setSelectionDraft(null);setBookmarkDraft(null);setInquirySelectionError('');window.getSelection()?.removeAllRanges(); const position = capturePosition();updateWorkspace(current=>({...current,readingSide:side})); requestAnimationFrame(()=>restorePosition(position)); }} />
         <div ref={setPdfToolbarHost} className="reader-status-host" />
         {workspace.document.kind !== "pdf" && workspace.document.kind !== "web" ? <div className="markdown-toolbar"><div className="markdown-toolbar-row"><div className="library-save-status" role="status">{saveStatus}{library.busy ? " · 正在处理…" : ""}</div></div></div> : null}
         <div ref={setAdjustmentHost} className="reader-adjustment-layer">
@@ -1015,7 +1090,7 @@ function App() {
               <button type="button" onClick={() => void library.choose()}>换成我的文档</button>
             </div>
           ) : null}
-          {workspace.document.kind === "pdf" && library.entry ? <Suspense fallback={<p className="pdf-status">正在加载 PDF 阅读器…</p>}><PdfReader toolbarHost={pdfToolbarHost} adjustmentHost={adjustmentHost} onReadingTime={receivePdfMinutes} outlineTarget={pdfDirectoryTarget?.documentId===workspace.document.id?pdfDirectoryTarget:null} onCurrentPage={setPdfCurrentPage} key={workspace.document.id+documentLoadId} document={workspace.document} entryId={library.entry.id} inquiries={workspace.inquiries} activeId={workspace.activeInquiryId} target={pdfTarget} onLocated={finishSourceNavigation} initialPosition={library.initialPosition} readOnly={library.readOnly} saveStatus={saveStatus} saveBusy={library.busy} saveError={library.blocked||library.status==="阅读进度暂未保存"} onCreate={createInquiry} onActivate={openAnchor} onReady={library.rendered} onView={library.scrolled}/></Suspense> : <article
+          {workspace.document.kind === "pdf" && library.entry ? <Suspense fallback={<p className="pdf-status">正在加载 PDF 阅读器…</p>}><PdfReader toolbarHost={pdfToolbarHost} adjustmentHost={adjustmentHost} onReadingTime={receivePdfMinutes} outlineTarget={pdfDirectoryTarget?.documentId===workspace.document.id?pdfDirectoryTarget:null} onCurrentPage={setPdfCurrentPage} key={workspace.document.id+documentLoadId} document={workspace.document} revisionId={library.entry.revisionId} onBookmarkSaved={finishBookmarkSave} bookmarkCompleted={bookmarkCompleted} bookmarks={currentBookmarks} bookmarkVersion={bookmarkVersion} onBookmarkStarted={beginBookmarkSave} onBookmarkFailed={bookmarkFeedback.failed} bookmarkTarget={bookmarkTarget} onBookmarkLocated={success=>{if(!bookmarkTarget||bookmarkPreparing.current?.nonce!==bookmarkTarget.locateNonce)return;bookmarkPreparing.current=null;if(!success){showToast("无法定位收藏原文，摘录仍保留。");setBookmarksOpen(true);}else setBookmarksOpen(false);setBookmarkTarget(null);}} entryId={library.entry.id} inquiries={workspace.inquiries} activeId={workspace.activeInquiryId} target={pdfTarget} onLocated={finishSourceNavigation} initialPosition={library.initialPosition} readOnly={library.readOnly} saveStatus={saveStatus} saveBusy={library.busy} saveError={library.blocked||library.status==="阅读进度暂未保存"} onCreate={createInquiry} onActivate={openAnchor} onReady={library.rendered} onView={library.scrolled}/></Suspense> : <article
             ref={articleRef}
             className="markdown-article"
             data-reading-side={workspace.readingSide ?? "original"}
@@ -1034,11 +1109,11 @@ function App() {
         </div>
       </main>
 
-      {workspace.document.kind === "web" ? <WebImageViewer article={articleRef} documentKey={workspace.document.id+":"+documentLoadId}/> : null}
+      {workspace.document.kind === "web" ? <><WebImageViewer article={articleRef} documentKey={workspace.document.id+":"+documentLoadId}/><WebMediaRetry key={workspace.document.id+":"+documentLoadId+":"+library.historyId} article={articleRef} web={workspace.document.web} documentKey={workspace.document.id+":"+documentLoadId+":"+rendered.html} disabled={library.readOnly||!library.ready} retry={library.retryWebMedia}/></> : null}
       <div className="result-rail" onMouseEnter={resultPanel.hoverReveal} onMouseLeave={resultPanel.leave}>
         <button ref={resultPanel.triggerRef} type="button" className="icon-button" aria-label="展开知识贴" aria-controls="knowledge-panel" aria-expanded={resultPanel.expanded} onClick={resultPanel.reveal}><PanelRightOpen size={17} /></button>
       </div>
-      <aside id="knowledge-panel" ref={resultPanel.ref} className="right-panel" aria-label="活动知识贴" inert={(sidebar.narrow && mobileSidebarOpen) || (resultPanel.narrow ? !mobilePanelOpen : !resultPanel.expanded)} onMouseEnter={resultPanel.enter} onMouseLeave={resultPanel.leave} onFocus={resultPanel.cancel} onBlur={resultPanel.deferClose}>
+      <aside id="knowledge-panel" ref={resultPanel.ref} className="right-panel" aria-label="活动知识贴" aria-hidden={bookmarksOpen||undefined} inert={bookmarksOpen||(sidebar.narrow && mobileSidebarOpen) || (resultPanel.narrow ? !mobilePanelOpen : !resultPanel.expanded)} onMouseEnter={resultPanel.enter} onMouseLeave={resultPanel.leave} onFocus={resultPanel.cancel} onBlur={resultPanel.deferClose}>
         <PanelResizeHandle panel={resultPanel.ref} onStart={resultPanel.openReading} onCollapse={resultPanel.collapseFromDrag} />
 
         <div className="panel-mobile-head">
@@ -1097,6 +1172,7 @@ function App() {
             key={activeInquiry.id}
             inquiry={activeInquiry}
             groupBusy={groupBusy || library.readOnly || library.busy}
+            groupGenerating={groupBusy}
             modelReady={modelReady && !library.readOnly && !library.busy}
             onCancel={cancelInquiry}
             provider={activeProvider}
@@ -1112,13 +1188,18 @@ function App() {
         </div>
       </aside>
 
-      {selectionDraft ? (
+      {bookmarksOpen?<BookmarksView onChanged={bookmarkFeedback.changed} version={bookmarkVersion} onClose={closeBookmarks} onLocate={locateBookmark}/>:null}
+      {bookmarkFailure?<div className="bookmark-toast" role="alert"><span>收藏失败：{bookmarkFailure.error}（{bookmarkQuote(bookmarkFailure.request.anchor).slice(0,36)}）</span><button type="button" disabled={bookmarkRetrying} onClick={()=>void bookmarkFeedback.retry(finishBookmarkSave)}>{bookmarkRetrying?'保存中…':'重试收藏'}</button><button type="button" onClick={bookmarkFeedback.closeFailure}>关闭</button></div>:null}
+      <span className="bookmark-live" role="status" aria-live="polite">{bookmarkNotice?'已收藏':''}</span>
+      {bookmarkDraft && !bookmarksOpen ? (
         <SelectionToolbar
-          draft={selectionDraft}
+          draft={bookmarkDraft}
+          hint={inquirySelectionError}
+          bookmark={library.entry&&!library.readOnly?<BookmarkAction entryId={library.entry.id} revisionId={library.entry.revisionId} anchor={bookmarkDraft.anchor} iconOnly onSaved={finishBookmarkSave} version={bookmarkVersion} onStarted={beginBookmarkSave} onFailed={bookmarkFeedback.failed}/>:null}
           onSelect={(intent, question) => createInquiry(intent, undefined, question)}
-          disabled={!modelReady || workspace.inquiries.some(i => i.status === "answering" && sameAnchor(i.anchor, selectionDraft.anchor)) || library.readOnly || library.busy}
+          disabled={!selectionDraft || !modelReady || workspace.inquiries.some(i => i.status === "answering" && sameAnchor(i.anchor, selectionDraft.anchor)) || library.readOnly || library.busy}
           onClose={() => {
-            setSelectionDraft(null);
+            setSelectionDraft(null);setBookmarkDraft(null);setInquirySelectionError('');
             window.getSelection()?.removeAllRanges();
           }}
         />
@@ -1220,8 +1301,12 @@ function SelectionToolbar({
   onSelect,
   onClose,
   disabled,
+  bookmark,
+  hint,
 }: {
-  draft: SelectionDraft;
+  draft: BookmarkDraft;
+  hint?:string;
+  bookmark?: ReactNode;
   onSelect: (intent: ActiveInquiryIntent, question?: string) => void;
   disabled?: boolean;
   onClose: () => void;
@@ -1237,8 +1322,9 @@ function SelectionToolbar({
       style={{ left, top }}
       onMouseDown={(event) => { if (!(event.target instanceof HTMLTextAreaElement)) event.preventDefault(); }}
     >
-      <div className="selection-quote">“{selectedQuote(draft.anchor)}”</div>
-      <SelectionActions onSelect={onSelect} onClose={onClose} disabled={disabled}/>
+      <div className="selection-understanding"><div className="selection-quote">“{bookmarkQuote(draft.anchor)}”</div>
+      {hint?<p className="bookmark-selection-hint">{hint}</p>:null}
+      <SelectionActions bookmark={bookmark} onSelect={onSelect} onClose={onClose} disabled={disabled}/></div>
     </div>
   );
 }
@@ -1247,6 +1333,7 @@ interface InquiryPanelProps {
   onCancel: () => void;
   modelReady: boolean;
   groupBusy: boolean;
+  groupGenerating: boolean;
   inquiry: Inquiry;
   provider: ProviderStatus;
   onFollowUp: (action: Refinement) => void;
@@ -1260,6 +1347,7 @@ function InquiryPanel({
   onCancel,
   modelReady,
   groupBusy,
+  groupGenerating,
   inquiry,
   provider,
   onFollowUp,
@@ -1273,7 +1361,8 @@ function InquiryPanel({
     .find((message) => message.role === "assistant");
 
   const actionsEnabled = !groupBusy && canCompleteInquiry(inquiry);
-  const verificationRetryVisible = inquiry.intent === "verify" && inquiry.status !== "answering" && !!(inquiry.lastError || latestAssistant?.completion === "interrupted" || latestAssistant?.verification?.completion === "interrupted" || latestAssistant?.search?.status === "failed");
+  const latestRequestFailed = !!(inquiry.lastError || latestAssistant?.completion === "interrupted" || latestAssistant?.verification?.completion === "interrupted" || latestAssistant?.search?.status === "failed");
+  const verificationRetryVisible = inquiry.intent === "verify" && inquiry.status !== "answering" && latestRequestFailed;
   const recheckDisabledReason = groupBusy ? "当前请求正在进行，请等待完成或先停止" : !modelReady ? "请先连接可用模型" : !provider.supportsWebSearch ? "当前提供方不支持联网查找来源，请切换支持搜索的提供方" : undefined;
   const followUpDisabledReason = groupBusy ? "当前请求正在进行，请等待完成或先停止" : !modelReady ? "请先连接可用模型" : !actionsEnabled ? "需要完整回答后才能继续；失败或中断时请重试" : undefined;
   const threadRef = useRef<HTMLDivElement>(null);
@@ -1311,7 +1400,7 @@ function InquiryPanel({
           <button className="secondary-action regenerate-action" type="button" disabled={groupBusy} onClick={onRetry}><RefreshCw size={14} aria-hidden="true" />重新生成</button>
         ) : null}
         {inquiry.status === "answering" ? <button className="secondary-action stop-action" type="button" onClick={onCancel}>停止本次请求</button> : null}
-      <QuestionComposer prompt={inquiry.intent === "explain" || inquiry.intent === "why" || inquiry.intent === "verify" ? "还是不懂？" : undefined} disabled={groupBusy || !modelReady} followUp={inquiry.intent === "ask"} onSubmit={onQuestion} />
+      <QuestionComposer prompt={inquiry.intent === "explain" || inquiry.intent === "why" || inquiry.intent === "verify" ? "还是不懂？" : undefined} disabled={groupBusy || !modelReady} hideTrigger={inquiry.intent !== "ask" && (groupGenerating || latestRequestFailed)} followUp={inquiry.intent === "ask"} onSubmit={onQuestion} />
       </footer>
       {inquiry.intent === "entity" && followUpDisabledReason ? <p className="recheck-unavailable" id="followup-unavailable">{followUpDisabledReason}</p> : null}
       {verificationRetryVisible && recheckDisabledReason ? <p className="recheck-unavailable" id="recheck-unavailable">{recheckDisabledReason}</p> : null}

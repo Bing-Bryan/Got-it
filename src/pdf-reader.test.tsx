@@ -226,3 +226,13 @@ it('retries a failed PDF resource without generating an inquiry', async () => {
  expect(host.querySelector('.pdf-error')?.textContent).toContain('重新加载 PDF');expect(host.querySelector('.reading-adjustment')).toBeNull();
  await click('.pdf-error button');expect(host.querySelector('.pdf-error')).toBeNull();expect(host.querySelector('.pdf-page')).not.toBeNull();expect(create).not.toHaveBeenCalled();
 });
+it('locates a bookmark using PDF point conversion without creating an inquiry or permanent mark',async()=>{
+ host.className='reader-scroll';host.scrollTo=vi.fn();const located=vi.fn();
+ const bookmark={id:'saved',anchor:inquiry.anchor} as import('./lib/bookmark-types').ReadingBookmark;
+ await act(async()=>root.render(<PdfReader document={pdf as Extract<DocumentSnapshot,{kind:'pdf'}>} entryId="entry" inquiries={[]} bookmarkTarget={bookmark} onBookmarkLocated={located}/>));
+ expect(located).toHaveBeenCalledWith(true);expect(host.scrollTo).toHaveBeenCalled();
+ const top=(host.scrollTo as ReturnType<typeof vi.fn>).mock.calls[0][0].top;
+ // PDF points are converted to rendered coordinates; raw y * page height is invalid.
+ expect(Math.abs(top)).toBeLessThan(300);expect(host.querySelector('[data-pdf-inquiry]')).toBeNull();expect(mocks.worker).not.toHaveBeenCalled();
+});
+it('reports a failed PDF resource to a pending bookmark without OCR or leaving its caller waiting',async()=>{mocks.binary.mockRejectedValueOnce(Error('controlled missing PDF'));const located=vi.fn(),bookmark={id:'pending',anchor:inquiry.anchor} as import('./lib/bookmark-types').ReadingBookmark;await act(async()=>root.render(<PdfReader document={pdf as Extract<DocumentSnapshot,{kind:'pdf'}>} entryId="entry" inquiries={[]} bookmarkTarget={bookmark} onBookmarkLocated={located}/>));expect(located).toHaveBeenCalledWith(false);expect(host.textContent).toContain('controlled missing PDF');expect(mocks.worker).not.toHaveBeenCalled();});

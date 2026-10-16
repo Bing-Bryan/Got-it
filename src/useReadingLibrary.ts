@@ -45,7 +45,7 @@ export function restorePosition(p: ReadingPosition) {
   if (typeof el.scrollTo === "function") el.scrollTo({left,top,behavior:"instant"});
   else { el.scrollLeft=left;el.scrollTop=top; }
 }
-interface Options { workspace: Workspace; install: (w: Workspace) => void; interrupt: () => Workspace; update?: (w: Workspace) => void; getWorkspace?: () => Workspace }
+interface Options { workspace: Workspace; install: (w: Workspace,entryId?:string) => void; interrupt: () => Workspace; update?: (w: Workspace) => void; getWorkspace?: () => Workspace }
 export function useReadingLibrary(options: Options) {
   const latest = useRef(options); latest.current = options;
   const entryRef = useRef<LibraryEntry | null>(null);
@@ -194,7 +194,7 @@ export function useReadingLibrary(options: Options) {
     const next = { ...w, activeProviderId: current.activeProviderId, modelPreferences: current.modelPreferences, modelDefaultsVersion: current.modelDefaultsVersion };
     desiredPosition.current = historic?.position ?? e.position;
     restorePending.current = true;
-    latest.current.install(next); latest.current.workspace = next;
+    latest.current.install(next,e.id); latest.current.workspace = next;
     saved.current = fingerprint(next, desiredPosition.current);
     setStatus(revision ? "正在回看旧版本 · 只读" : savedLabel(next));
   }
@@ -247,6 +247,28 @@ export function useReadingLibrary(options: Options) {
     };
     const job = pending.current.catch(() => {}).then(work); pending.current = job; return job;
   }
+  async function retryWebMedia(mediaId:string) {
+    const origin=entryRef.current,doc=latest.current.workspace.document;
+    if(!origin||doc.kind!=="web"||readonlyRef.current||recoveryRef.current||blockedDraft.current||busyRef.current)throw new Error("当前阅读版本不可重试图片。");
+    const revision=origin.revisionId,documentId=doc.id;
+    await flush();
+    const work=async()=>{
+      if(entryRef.current?.id!==origin.id||entryRef.current.revisionId!==revision||readonlyRef.current)throw new Error("阅读材料已切换，请在当前材料重试。");
+      const result=await api<LibraryEntry>(`/entries/${origin.id}/web-media/${encodeURIComponent(mediaId)}/retry`,{revisionId:revision});
+      const current=latest.current.getWorkspace?.()??latest.current.workspace;
+      if(entryRef.current?.id!==origin.id||entryRef.current.revisionId!==revision||current.document.id!==documentId||current.document.kind!=="web"||readonlyRef.current)return;
+      if(result.workspace.document.kind!=="web")throw new Error("图片恢复结果无效，请重试。");
+      const media=result.workspace.document.web.media.find(item=>item.id===mediaId);
+      if(!media||media.status!=="saved")throw new Error("图片尚未保存，请重试。");
+      const next={...current,document:{...current.document,web:{...current.document.web,media:current.document.web.media.map(item=>item.id===mediaId?media:item)}}};
+      remember(result);saved.current=fingerprint(result.workspace,result.position);
+      latest.current.workspace=next;(latest.current.update??latest.current.install)(next);
+      const position=capturePosition();
+      if(fingerprint(next,position)!==saved.current){writeDraft(next,position);setStatus("保存中…");if(!timer.current)timer.current=setTimeout(()=>{timer.current=null;void flush().catch(()=>{});},500);}
+      else {clearOwn(next,position);setStatus(savedLabel(next));}
+    };
+    const job=pending.current.catch(()=>{}).then(work);pending.current=job;return job;
+  }
   async function transition(work: () => Promise<void>, importing = false) {
     if (busyRef.current) return;
     importSequence.current++;
@@ -268,6 +290,20 @@ export function useReadingLibrary(options: Options) {
       install(e); for (const r of recoveries) if (r.entryId===id || r.resultEntryId===id) dismissedRecoveries.current.delete(r.id);
       await refresh(); await refreshRecoveries(); await checkSource();
     });
+  }
+  async function openBookmark(id:string):Promise<boolean> {
+    if(busyRef.current)return false;
+    let opened=false;
+    await transition(async()=>{
+      const target=await api<{entry:LibraryEntry;revisionId:string}>(`/bookmarks/${id}/location`);
+      await preserve();
+      const current=await api<LibraryEntry>(`/entries/${target.entry.id}/activate`,{});
+      if(target.revisionId!==current.revisionId&&!current.history.some(revision=>revision.id===target.revisionId))throw new Error('收藏对应的原文版本已不可用，摘录仍保留。');
+      install(current,target.revisionId===current.revisionId?'':target.revisionId);
+      const installed=latest.current.workspace;if(installed.readingSide==='translated'){const original={...installed,readingSide:'original' as const};latest.current.workspace=original;latest.current.install(original,current.id);}
+      await refresh();opened=true;
+    });
+    return opened;
   }
   async function addWorkspace(w: Workspace, selectionId?: string) {
     await preserve();
@@ -551,9 +587,9 @@ export function useReadingLibrary(options: Options) {
     if (!timer.current) timer.current = setTimeout(() => { timer.current = null; void flush().catch(() => {}); }, 500);
   }
   useEffect(()=> { if (!notice) return; const id=setTimeout(()=>setNotice(""),4500); return ()=>clearTimeout(id); },[notice]);
-  return { translate, stopTranslation, translationRunning, translationProgress, translationActivity, translationRepairCount, autoTranslate, setAutoTranslation, saveNow:flush, webImportOpen, webImportSuccess, webJob, webError, showWebImport, readWebUrl, readWebArticle, readXArticleFile, confirmWebImport, cancelWebImport, initialPosition: desiredPosition.current, entry, list, ready, busy, error, importError, clearError: () => { setError(""); setImportError(false); }, status, check, recovery, recoveries, blocked, draftWarning, notice, historyId,
+  return { retryWebMedia, translate, stopTranslation, translationRunning, translationProgress, translationActivity, translationRepairCount, autoTranslate, setAutoTranslation, saveNow:flush, webImportOpen, webImportSuccess, webJob, webError, showWebImport, readWebUrl, readWebArticle, readXArticleFile, confirmWebImport, cancelWebImport, initialPosition: desiredPosition.current, entry, list, ready, busy, error, importError, clearError: () => { setError(""); setImportError(false); }, status, check, recovery, recoveries, blocked, draftWarning, notice, historyId,
     readOnly: !!historyId || !!recovery || blocked || busy,
-    open, choose, importFile, checkSource: () => transition(checkSource), acceptUpdate, viewRevision, resolveRecovery, acknowledgeRecovery, showRecovery, closeRecovery,
+    openBookmark, prepareBookmarks:preserve, open, choose, importFile, checkSource: () => transition(checkSource), acceptUpdate, viewRevision, resolveRecovery, acknowledgeRecovery, showRecovery, closeRecovery,
     retry: () => ready && !blockedDraft.current ? transition(() => flush()) : initialize(),
     rendered, scrolled };
 }

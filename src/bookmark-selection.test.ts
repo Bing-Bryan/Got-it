@@ -1,0 +1,28 @@
+import {afterEach,expect,it,vi} from 'vitest';
+import {createInitialWorkspace} from './sample';
+import {renderMarkdown} from './lib/markdown';
+import {createAnchorFromSelection} from './lib/anchors';
+import {bookmarkQuote,bookmarkPosition} from './lib/bookmark-types';
+import {bookmarkBlocks,createBookmarkDraft,bookmarkDomRanges} from './lib/bookmark-selection';
+import {applyBookmarkHighlights} from './lib/bookmark-highlights';
+const markdown='# Header\n\nFirst paragraph useful end.\n\n## Middle heading\n\n- List first entry\n- List second entry\n\nLast paragraph.';
+function setup(text=markdown){const workspace=createInitialWorkspace();workspace.document={kind:'markdown',markdown:text,id:'safe-doc',filename:'safe.md',contentHash:'safehash',importedAt:'2026-10-15',isDemo:false};const article=document.createElement('article');article.innerHTML=renderMarkdown(text).html;document.body.append(article);return {workspace,article,blocks:bookmarkBlocks(article)};}
+function select(first:Element,start:number,last:Element,end:number){const a=document.createTreeWalker(first,NodeFilter.SHOW_TEXT).nextNode()!,b=document.createTreeWalker(last,NodeFilter.SHOW_TEXT).nextNode()!;const range=document.createRange();range.setStart(a,start);range.setEnd(b,end);const selection=window.getSelection()!;selection.removeAllRanges();selection.addRange(range);return selection;}
+afterEach(()=>{window.getSelection()?.removeAllRanges();document.body.replaceChildren();vi.unstubAllGlobals();});
+it('keeps headings and list items in one complete bookmark while AI still rejects the same range',()=>{
+ const {workspace,article,blocks}=setup();const selection=select(blocks[1],6,blocks[4],11),draft=createBookmarkDraft(selection,article,workspace);expect(draft).not.toHaveProperty('error');if('error'in draft)return;
+ expect(draft.anchor.segments?.map(s=>s.blockId)).toEqual(blocks.slice(1,5).map(b=>b.dataset.blockId));expect(bookmarkQuote(draft.anchor)).toBe('paragraph useful end.\nMiddle heading\nList first entry\nList second');expect(createAnchorFromSelection(selection,article,workspace.document.id)).toHaveProperty('error');expect(bookmarkDomRanges(article,draft.anchor)?.map(r=>r.toString())).toEqual(['paragraph useful end.','Middle heading','List first entry','List second']);
+});
+it('does not duplicate nested list or loose-list paragraph text',()=>{
+ const {workspace,article,blocks}=setup('- Parent text\n  - Child nested text\n\n- Next item\n\n  Second paragraph inside item\n\nTail.');expect(blocks).toHaveLength(3);const selection=select(blocks[0],0,blocks[2],5),draft=createBookmarkDraft(selection,article,workspace);expect(draft).not.toHaveProperty('error');if('error'in draft)return;expect(bookmarkQuote(draft.anchor).match(/Child nested text/g)).toHaveLength(1);expect(bookmarkQuote(draft.anchor).match(/Second paragraph inside item/g)).toHaveLength(1);
+});
+it('does not guess a range when any saved segment no longer matches',()=>{
+ const {workspace,article,blocks}=setup();const draft=createBookmarkDraft(select(blocks[1],0,blocks[3],8),article,workspace);if('error'in draft)throw Error(draft.error);blocks[2].textContent='Changed middle heading';expect(bookmarkDomRanges(article,draft.anchor)).toBeNull();
+});
+it('adds all saved ranges through Custom Highlight without changing original DOM or inquiry marks',()=>{
+ const {workspace,article,blocks}=setup();const draft=createBookmarkDraft(select(blocks[1],0,blocks[4],10),article,workspace);if('error'in draft)throw Error(draft.error);const inquiry=document.createElement('mark');inquiry.dataset.focusStickiesHighlight='true';inquiry.textContent='Existing inquiry';article.append(inquiry);const before=article.innerHTML;
+ const registry=new Map();vi.stubGlobal('CSS',{highlights:registry});vi.stubGlobal('Highlight',class{ranges:Range[];constructor(...ranges:Range[]){this.ranges=ranges;}});const cleanup=applyBookmarkHighlights(article,[{anchor:draft.anchor} as never]);expect(registry.get('got-it-bookmarks').ranges).toHaveLength(4);expect(article.innerHTML).toBe(before);expect(article.querySelector('[data-focus-stickies-highlight]')).toBe(inquiry);cleanup();expect(registry.size).toBe(0);expect(article.innerHTML).toBe(before);
+});
+it('keeps the exact historical single-block position key format',()=>{const {workspace,article,blocks}=setup();const draft=createBookmarkDraft(select(blocks[1],0,blocks[1],5),article,workspace);if('error'in draft)throw Error(draft.error);const a=draft.anchor;expect(bookmarkPosition({entryId:'entry',revisionId:'revision',anchor:a})).toBe(JSON.stringify(['entry','revision',a.documentId,a.blockId,a.start,a.end,null,null]));});
+it('includes safe div text between supported paragraphs with its own bookmark identity',()=>{const {workspace,article,blocks}=setup('<p>FIRST</p><div>DO NOT OMIT THIS</div><p>LAST</p>');const draft=createBookmarkDraft(select(blocks[0],0,blocks[2],4),article,workspace);if('error'in draft)throw Error(draft.error);expect(bookmarkQuote(draft.anchor)).toBe('FIRST\nDO NOT OMIT THIS\nLAST');expect(draft.anchor.segments?.[1].blockId).toMatch(/^bookmark-/);});
+it('preserves an existing paragraph position nested in a supplemental HTML root',()=>{const {workspace,article}=setup('<div>bare<p>KEEP THIS</p></div>');const paragraph=article.querySelector('p')!,selection=select(paragraph,0,paragraph,9),legacy=createAnchorFromSelection(selection,article,workspace.document.id),current=createBookmarkDraft(selection,article,workspace);if('error'in legacy||'error'in current)throw Error('valid paragraph');expect(current.anchor.blockId).toBe(legacy.anchor.blockId);expect(bookmarkPosition({entryId:'entry',revisionId:'rev',anchor:current.anchor})).toBe(bookmarkPosition({entryId:'entry',revisionId:'rev',anchor:legacy.anchor}));});

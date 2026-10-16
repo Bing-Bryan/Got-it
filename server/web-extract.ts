@@ -51,13 +51,13 @@ export async function extractWeb(input:string,options:{signal:AbortSignal;fetche
    if(kind==='svg')image=sanitizeStaticSvg(serializeOuter(n as Tree['element']),CLAUDE_PALETTE);
    else{
     const raw=attr(n,'data-src')||attr(n,'data-lazy-src')||attr(n,'src')||attr(n,'srcset').split(',')[0]?.trim().split(/\s/)[0];
-    if(!raw)throw new WebError('图片地址缺失。');const fetched=await fetcher(sourceImageUrl(raw,final).href,WEB_LIMITS.imageBytes,budget);mediaUrl(fetched.url);image=await validateStaticImage(fetched.bytes);if(fetched.type.split(';')[0].trim()!==image.mime)throw new WebError('图片响应类型与实际格式不一致。','web_image');
+    if(!raw)throw new WebError('图片地址缺失。');item.sourceUrl=sourceImageUrl(raw,final).href;const fetched=await fetcher(item.sourceUrl,WEB_LIMITS.imageBytes,budget);mediaUrl(fetched.url);image=await validateStaticImage(fetched.bytes);if(fetched.type.split(';')[0].trim()!==image.mime)throw new WebError('图片响应类型与实际格式不一致。','web_image');
    }
    options.signal.throwIfAborted();totalMedia+=image.bytes.length;if(totalMedia>WEB_LIMITS.mediaBytes)throw new WebError('正文媒体总容量超过限制。','web_budget');
    const id=sha(image.bytes);resources.set(id,image);Object.assign(item,{status:'saved',resourceId:id,mime:image.mime,bytes:image.bytes.length,width:image.width,height:image.height});
   }catch(error){
    options.signal.throwIfAborted();if(error instanceof WebError&&error.code==='web_budget')throw error;
-   item.status=error instanceof WebError&&error.code==='web_unsupported'?'unsupported':'missing';item.reason=error instanceof WebError?error.message:'图片暂时无法读取。';
+   item.status=error instanceof WebError&&error.code==='web_unsupported'?'unsupported':'missing';if(item.status==='unsupported')delete item.sourceUrl;item.reason=error instanceof WebError?error.message:'图片暂时无法读取。';
   }
   return `\n\n![${esc(item.alt)}](got-it-media:${item.id})\n\n`;
  }

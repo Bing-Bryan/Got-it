@@ -1,3 +1,4 @@
+import {projectDomWebAnchor} from './web-anchor-compat';
 import { sameAnchor } from "./inquiry-tabs";
 import { INTENT_META, NEW_INQUIRY_INTENTS } from "../types";
 import type { Anchor, Inquiry, SelectionDraft } from "../types";
@@ -28,7 +29,7 @@ export type AnchorCreationResult = SelectionDraft | { error: string };
 type TextNode = globalThis.Text;
 
 const BLOCK_SELECTOR =
-  "[data-block-id], [data-block], h1, h2, h3, h4, h5, h6, p, li, blockquote, pre, td, th";
+  "[data-block-id], [data-bookmark-block-id], [data-block], h1, h2, h3, h4, h5, h6, p, li, blockquote, pre, td, th";
 
 /**
  * Create a portable anchor from offsets into one rendered semantic block.
@@ -305,7 +306,7 @@ function blockForNode(node: Node, article: HTMLElement): HTMLElement | null {
 }
 
 function blockId(block: HTMLElement, article: HTMLElement): string {
-  const explicit = block.dataset.blockId || block.dataset.block;
+  const explicit = block.dataset.blockId || block.dataset.bookmarkBlockId || block.dataset.block;
   if (explicit) return explicit;
   if (block.id) return block.id;
   const blocks = blockElements(article);
@@ -450,7 +451,7 @@ export function findInquiryHighlight(article: HTMLElement, inquiries: readonly I
 export function emphasizeInquiryHighlight(article: HTMLElement, inquiries: readonly Inquiry[], inquiryId: string | null): void {
   const target = findInquiryHighlight(article, inquiries, inquiryId);
   article.querySelectorAll<HTMLElement>("mark[data-focus-stickies-highlight]").forEach(mark => {
-    mark.classList.toggle("is-emphasized", mark === target);
+    mark.classList.toggle("is-emphasized", !!target && mark.dataset.inquiryId===target.dataset.inquiryId);
   });
 }
 
@@ -472,41 +473,33 @@ export function applyInquiryHighlights(
     (other.id === activeInquiryId || (inquiry.id !== activeInquiryId && otherIndex < index))));
   for (const inquiry of highlighted) {
     if (inquiry.anchor.scope === "document") continue;
-    const block = findBlock(article, inquiry.anchor.blockId);
-    if (!block) {
-      onMissing?.(inquiry);
-      continue;
+    const translatedView=article.dataset.readingSide==='translated';
+    const segments=inquiry.anchor.segments??[inquiry.anchor];
+    const placements:Array<{block:HTMLElement;start:number;end:number}>=[];
+    let missing=false,translationMismatch=false;
+    for(const segment of segments){
+      const block=findBlock(article,segment.blockId);if(!block){missing=true;break;}
+      const translated=segment.translation;
+      if(translatedView&&translated&&(translated.translationId!==article.dataset.translationId||String(translated.version??1)!==article.dataset.translationVersion)){translationMismatch=true;break;}
+      const stored=translatedView&&translated?{...segment,...translated}:segment;
+      const projected=block.dataset.webAnchorLegacy?projectDomWebAnchor(block,stored):stored;
+      if(!projected){missing=true;break;}
+      const resolution=translatedView&&!translated?{start:0,end:(block.textContent??'').length}:inquiry.anchor.segments?((block.textContent??'').slice(projected.start,projected.end)===projected.quote?{start:projected.start,end:projected.end}:null):resolveAnchorDetailed(block.textContent??'',projected);
+      if(!resolution){missing=true;break;}placements.push({block,...resolution});
     }
-    const translatedView = article.dataset.readingSide === "translated";
-    const translated = inquiry.anchor.translation;
-    if (translatedView && translated && (translated.translationId !== article.dataset.translationId || String(translated.version ?? 1) !== article.dataset.translationVersion)) continue;
-    const projected = translatedView && translated?.translationId === article.dataset.translationId ? {...inquiry.anchor,...translated} : inquiry.anchor;
-    // A source-only inquiry has a proven paragraph relationship in the translated view,
-    // but no translated word offsets. Mark its block without changing the saved anchor.
-    const resolution = translatedView && !translated ? {start:0,end:(block.textContent ?? "").length} : resolveAnchorDetailed(block.textContent ?? "", projected);
-    if (!resolution) {
-      if (!translatedView) onMissing?.(inquiry);
-      continue;
-    }
-    if (!translatedView) onResolved?.(inquiry);
-    const start = boundaryForOffset(block, resolution.start);
-    const end = boundaryForOffset(block, resolution.end);
-    if (!start || !end) {
-      onMissing?.(inquiry);
-      continue;
-    }
-
-    const range = article.ownerDocument.createRange();
-    range.setStart(start.node, start.offset);
-    range.setEnd(end.node, end.offset);
-    if (range.collapsed) {
-      onMissing?.(inquiry);
-      continue;
-    }
+    if(translationMismatch)continue;
+    if(missing){if(!translatedView)onMissing?.(inquiry);continue;}
+    let decorated=true;
+    for(const [segmentIndex,placement] of placements.entries()){
+      const start=boundaryForOffset(placement.block,placement.start),end=boundaryForOffset(placement.block,placement.end);
+      if(!start||!end){decorated=false;break;}
+      const range=article.ownerDocument.createRange();range.setStart(start.node,start.offset);range.setEnd(end.node,end.offset);
+      if(range.collapsed){decorated=false;break;}
 
     const mark = article.ownerDocument.createElement("mark");
     mark.dataset.focusStickiesHighlight = "true";
     mark.dataset.inquiryId = inquiry.id;
+    mark.dataset.segmentIndex=String(segmentIndex);
     mark.dataset.intent = inquiry.intent;
     const intents = new Set(inquiries.filter(other => other.id === inquiry.id || sameAnchor(other.anchor, inquiry.anchor)).map(other => other.intent));
     const orderedIntents = [...NEW_INQUIRY_INTENTS, "entity" as const, "why" as const].filter(intent => intents.has(intent));
@@ -515,6 +508,8 @@ export function applyInquiryHighlights(
     mark.setAttribute("aria-label", `知识贴（${orderedIntents.map(intent => INTENT_META[intent].label).join("、")}）：${inquiry.question}`);
     mark.appendChild(range.extractContents());
     range.insertNode(mark);
+    }
+    if(!translatedView){if(decorated)onResolved?.(inquiry);else onMissing?.(inquiry);}
   }
 
   return () => clearHighlightMarks(article);

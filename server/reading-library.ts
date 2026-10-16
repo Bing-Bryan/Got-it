@@ -1,3 +1,4 @@
+import { safeImageSourceUrl } from '../src/lib/web-data';
 import {xArticleIdentity} from '../src/lib/x-article-url';
 import { hasRecoveryDifference } from "../src/lib/recovery-diff";
 import { PdfResources } from "./pdf-resources";
@@ -183,12 +184,16 @@ export class ReadingLibrary {
     });
   }
   async save(id: string, expectedVersion: number, revisionId: string, value: unknown, view: unknown) {
-    const workspace = safeWorkspace(value);
+    let workspace = safeWorkspace(value);
     return this.serialize(async () => {
       const e = await this.get(id); this.version(e, expectedVersion);
       if (e.revisionId !== revisionId || e.workspace.document.id !== workspace.document.id || e.workspace.document.kind !== workspace.document.kind || e.workspace.document.contentHash !== workspace.document.contentHash || e.workspace.document.markdown !== workspace.document.markdown) fail("原文版本已变化，请重新打开。", 409);
       await this.resources.validate(id,workspace);
-      await this.validateWeb(id,workspace);
+      await this.validateWeb(id,workspace,false);
+      // Media promotion is server-owned. A valid older draft may retain new reading work,
+      // but must never downgrade an already recovered image, even with a fresh version.
+      if(workspace.document.kind==='web'&&e.workspace.document.kind==='web')workspace={...workspace,document:{...workspace.document,web:e.workspace.document.web}};
+      await this.webResources.validate(workspace);
       e.workspace = workspace; e.position = position(view); e.version++; e.updatedAt = now(); return this.commit(e);
     });
   }
@@ -221,6 +226,22 @@ export class ReadingLibrary {
       }
     });
   }
+  async promoteWebMedia(id:string,revisionId:string,mediaId:string,sourceUrl:string,resourceId:string,image:ValidImage,signal:AbortSignal){
+    return this.serialize(async()=>{
+      signal.throwIfAborted();const entry=await this.get(id),doc=entry.workspace.document;
+      if(entry.revisionId!==revisionId||doc.kind!=="web")throw new WebError("原文版本已变化，图片未写入其他材料。","web_media_revision",409);
+      const previous=doc.web.media.find(m=>m.id===mediaId);
+      if(!previous||previous.kind!=="image"||previous.status==='unsupported'||previous.sourceUrl!==sourceUrl)throw new WebError("图片来源已变化，请重新打开材料。","web_media_changed",409);
+      const media=doc.web.media.map(m=>m.id===mediaId?{...m,...(m.status==='missing'&&!m.legacyMissing?{legacyMissing:{reason:m.reason??'未导入',linked:!!safeImageSourceUrl(m.sourceUrl)}}:{}),status:'saved' as const,reason:undefined,resourceId,mime:image.mime,bytes:image.bytes.length,width:image.width,height:image.height}:m);
+      if(media.reduce((n,m)=>n+(m.bytes??0),0)>128*1024*1024)throw new WebError("正文媒体总容量超过限制。","web_budget");
+      const inserted=new Set<string>();
+      try{
+        await this.webResources.put(new Map([[resourceId,image]]),inserted);signal.throwIfAborted();
+        entry.workspace={...entry.workspace,document:{...doc,web:{...doc.web,media}}};
+        await this.webResources.read(media.find(m=>m.id===mediaId)!);signal.throwIfAborted();entry.version++;entry.updatedAt=now();return await this.commit(entry);
+      }catch(error){try{await this.webResources.removeUnreferenced(inserted,await this.webReferences());}catch{/* Preserve uncertain references. */}throw error;}
+    });
+  }
   private webOriginal(w:Workspace){
     if(w.document.kind!=="web")return null;
     return {id:w.document.id,contentHash:w.document.contentHash,markdown:w.document.markdown,web:w.document.web};
@@ -232,7 +253,7 @@ export class ReadingLibrary {
     for(const original of originals){const digest=hash(JSON.stringify(original));await this.atomic(join(dir,digest+".json"),JSON.stringify({entryId:entry.id,original}));}
     await this.syncDirectory(dir);
   }
-  private async validateWeb(id:string,w:Workspace){
+  private async validateWeb(id:string,w:Workspace,validateResources=true){
     const original=this.webOriginal(w);if(!original)return;
     // This evidence is created only after a trusted record has durably committed;
     // it survives damaged CURRENT pointers and contains the full original/media graph.
@@ -240,7 +261,7 @@ export class ReadingLibrary {
     try{const proof=JSON.parse(await readFile(join(this.dir,"web-authorizations",id,hash(JSON.stringify(original))+".json"),"utf8"));allowed=proof.entryId===id&&JSON.stringify(proof.original)===JSON.stringify(original);}catch{/* Backward-compatible migration of valid earlier static implementation records. */}
     if(!allowed){const e=await this.maybeEntry(id);if(e){allowed=[e.workspace,...e.history.map(h=>h.workspace)].some(a=>JSON.stringify(this.webOriginal(a))===JSON.stringify(original));if(allowed)await this.authorizeWeb(e);}}
     if(!allowed)fail("网页原文或资源不属于此阅读条目。",400,"web_resource_unauthorized");
-    await this.webResources.validate(w);
+    if(validateResources)await this.webResources.validate(w);
   }
   private async webReferences():Promise<Set<string>>{
     const ids=new Set<string>();

@@ -387,7 +387,7 @@ it('historical fixed explanation retry keeps local history and auto mode',async(
 });
 it('historical explanation retry locks while running and stops without losing history',async()=>{
  stream.mockImplementation((_r:InquiryRequest,_cb:any,s:AbortSignal)=>new Promise((_,reject)=>s.addEventListener('abort',()=>reject(new Error('已中断')))));
- await mountLegacyRetry();await click('.regenerate-action');expect((host.querySelector('.question-toggle') as HTMLButtonElement).disabled).toBe(true);await click('.stop-action');expect(host.querySelector('.stop-action')).toBeNull();expect(host.querySelector('.regenerate-action')).not.toBeNull();expect(testWorkspace().inquiries[0].messages[0].content).toBe('已有解释');
+ await mountLegacyRetry();expect(host.querySelector('.question-toggle')).toBeNull();await click('.regenerate-action');expect(host.querySelector('.question-toggle')).toBeNull();expect(host.querySelector('.question-prompt')?.textContent).toBe('还是不懂？');await click('.stop-action');expect(host.querySelector('.question-toggle')).toBeNull();expect(host.querySelector('.stop-action')).toBeNull();expect(host.querySelector('.regenerate-action')).not.toBeNull();expect(testWorkspace().inquiries[0].messages[0].content).toBe('已有解释');
 });
 it('does not expose retired explanation shortcuts when the provider cannot search',async()=>{
  vi.stubGlobal('fetch',vi.fn(async()=>({ok:true,json:async()=>({models:TEST_MODELS,providers:[{id:'codex',name:'Codex',availability:'connected',supportsWebSearch:false}],defaultProviderId:'codex'})})));
@@ -494,7 +494,7 @@ it('allows explicit source selection without default explanation overriding it a
  const base=w.inquiries[0];w.inquiries.push({...base,id:'v',intent:'verify',lastError:'受控失败'});stream.mockImplementation(()=>new Promise(()=>{}));await mount();
  await click('#intent-tab-verify');await click('[data-inquiry-id=v]');
  expect(host.querySelector('.anchor-requests [aria-current=true]')?.textContent).toBe('来源');expect(stream).not.toHaveBeenCalled();
- await click('.verify-again-action');expect((host.querySelector('.question-toggle')as HTMLButtonElement).disabled).toBe(true);expect(stream).toHaveBeenCalledTimes(1);
+ await click('.verify-again-action');expect(host.querySelector('.question-toggle')).toBeNull();expect(stream).toHaveBeenCalledTimes(1);
 });
 
 it('opens a collapsed result from its original mark and preserves it through explicit hide and reopen',async()=>{
@@ -561,4 +561,30 @@ it('isolates PDF scrolling and layout when switching back to Markdown', async()=
  expect(testWorkspace().document.id).toBe(w.document.id);
  expect(markdown.id).not.toBe(entry.id);
  expect(stream).not.toHaveBeenCalled();
+});
+
+
+it.each(['explain','verify','entity','why'] as const)('hides only the question trigger for %s generation and failure, then restores it after successful retry',async intent=>{
+ w.inquiries[0].intent=intent;w.inquiries[0].lastError='受控失败';
+ let emit!:(event:InquiryEvent)=>void,finish!:()=>void,fail!:(error:Error)=>void;
+ stream.mockImplementation((_r:InquiryRequest,cb:any)=>{emit=cb;return new Promise<void>((resolve,reject)=>{finish=resolve;fail=reject;});});
+ await mount();expect(host.querySelector('.question-toggle')).toBeNull();expect(stream).not.toHaveBeenCalled();
+ const retry=intent==='verify'?'.verify-again-action':'.regenerate-action';
+ await click(retry);expect(host.querySelector('.question-toggle')).toBeNull();expect(host.querySelector<HTMLButtonElement>('.stop-action')!.disabled).toBe(false);
+ if(intent!=='entity')expect(host.querySelector('.question-prompt')?.textContent).toBe('还是不懂？');
+ await act(async()=>fail(new Error('受控失败')));expect(host.querySelector('.question-toggle')).toBeNull();expect(host.querySelector(retry)).not.toBeNull();
+ await click(retry);const request=stream.mock.calls[1][0];await act(async()=>{emit({type:'complete',requestId:request.requestId,sequence:1,response:{answer:'重试成功',mode:'live',providerId:'codex',providerName:'Codex',sources:[],evidenceStatus:'not-applicable'}});finish();});
+ expect(host.querySelector('.question-toggle')?.textContent).toBe('问一问');expect(host.querySelector<HTMLButtonElement>('.question-toggle')!.disabled).toBe(false);expect(host.querySelector('.stop-action')).toBeNull();
+});
+it.each(['interrupted-answer','interrupted-verification','failed-search'] as const)('hides questions for restored %s without requiring lastError',async reason=>{
+ w.inquiries[0].intent='verify';const message=w.inquiries[0].messages[0];
+ if(reason==='interrupted-answer')message.completion='interrupted';
+ if(reason==='interrupted-verification')message.verification={verdict:'incomplete',summary:'已中断',reason:'',readingAdvice:'',claims:[],round:1,scope:'initial',completion:'interrupted'};
+ if(reason==='failed-search')message.search={status:'failed',completedSearches:0,failedSearches:1};
+ await mount();expect(host.querySelector('.question-toggle')).toBeNull();expect(host.querySelector('.verify-again-action')).not.toBeNull();expect(host.querySelector('.question-prompt')?.textContent).toBe('还是不懂？');expect(stream).not.toHaveBeenCalled();
+});
+it('keeps the existing continue-question trigger during generation',async()=>{
+ w.inquiries[0].intent='ask';w.inquiries[0].lastError='受控失败';
+ stream.mockImplementation(()=>new Promise(()=>{}));await mount();await click('.regenerate-action');
+ expect(host.querySelector('.question-toggle')?.textContent).toBe('继续追问…');expect(host.querySelector<HTMLButtonElement>('.question-toggle')!.disabled).toBe(true);
 });

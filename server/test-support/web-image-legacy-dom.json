@@ -1,0 +1,60 @@
+{
+  "provenance": "Generated once from git show 48c2523 markdown.ts/web-media-markup.ts/bookmark-dom.ts via jsdom; safe synthetic X public data; not new missing renderer",
+  "markdown": "# Safety fixture\n\n| Evidence |\n| --- |\n| FIRST repeated ![diagram](got-it-media:legacy-image) LAST repeated |\n| FIRST repeated unrelated LAST repeated |\n\nFIRST repeated separate paragraph LAST repeated\n\nLast final text.",
+  "web": {
+    "version": 1,
+    "originalUrl": "https://x.com/i/status/123",
+    "finalUrl": "https://x.com/i/status/123",
+    "extractorVersion": "x-fxtwitter-public-v1",
+    "retrieval": {
+      "kind": "public-service",
+      "provider": "fxtwitter",
+      "url": "https://api.fxtwitter.com/2/status/123"
+    },
+    "contentVersion": "d2f5ae94f9d29efaae70d8c803365982f2c9fc3b43a9c7a0e938cc54f3cef7c0",
+    "media": [
+      {
+        "id": "legacy-image",
+        "kind": "image",
+        "status": "missing",
+        "alt": "diagram",
+        "reason": "fixture download unavailable",
+        "sourceUrl": "https://pbs.twimg.com/media/SafeFixture.png"
+      }
+    ],
+    "fragments": []
+  },
+  "html": "<h1 data-block-id=\"block-0-1x490xz\" id=\"section-0-1xq0t4\" data-heading-path=\"[&quot;Safety fixture&quot;]\">Safety fixture</h1>\n<table>\n<thead>\n<tr>\n<th data-block-id=\"block-1-wy54sw\" data-heading-path=\"[&quot;Safety fixture&quot;]\">Evidence</th>\n</tr>\n</thead>\n<tbody><tr>\n<td data-block-id=\"block-2-xe5gcw\" data-heading-path=\"[&quot;Safety fixture&quot;]\">FIRST repeated <span class=\"image-unavailable\">diagram：图片未保存到本机。fixture download unavailable <a href=\"https://pbs.twimg.com/media/SafeFixture.png\" target=\"_blank\" rel=\"noreferrer noopener\">查看原图</a></span> LAST repeated</td>\n</tr>\n<tr>\n<td data-block-id=\"block-3-oq43g1\" data-heading-path=\"[&quot;Safety fixture&quot;]\">FIRST repeated unrelated LAST repeated</td>\n</tr>\n</tbody></table>\n<p data-block-id=\"block-4-1c9gaoc\" data-heading-path=\"[&quot;Safety fixture&quot;]\">FIRST repeated separate paragraph LAST repeated</p>\n<p data-block-id=\"block-5-ya4e6w\" data-heading-path=\"[&quot;Safety fixture&quot;]\">Last final text.</p>\n",
+  "translationUnits": [
+    {
+      "id": "block-0-1x490xz--v2-part0",
+      "blockId": "block-0-1x490xz",
+      "text": "Safety fixture"
+    },
+    {
+      "id": "block-1-wy54sw--v2-part0",
+      "blockId": "block-1-wy54sw",
+      "text": "Evidence"
+    },
+    {
+      "id": "block-2-xe5gcw--v2-part0",
+      "blockId": "block-2-xe5gcw",
+      "text": "FIRST repeated [GOTIT_KEEP_0] LAST repeated"
+    },
+    {
+      "id": "block-3-oq43g1--v2-part0",
+      "blockId": "block-3-oq43g1",
+      "text": "FIRST repeated unrelated LAST repeated"
+    },
+    {
+      "id": "block-4-1c9gaoc--v2-part0",
+      "blockId": "block-4-1c9gaoc",
+      "text": "FIRST repeated separate paragraph LAST repeated"
+    },
+    {
+      "id": "block-5-ya4e6w--v2-part0",
+      "blockId": "block-5-ya4e6w",
+      "text": "Last final text."
+    }
+  ]
+}

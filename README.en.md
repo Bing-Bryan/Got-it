@@ -44,7 +44,7 @@ This screenshot shows a saved historical record: its quotation excerpt was check
 
 ![A specific question answered from figures in the original](docs/images/question.png)
 
-Explanations, sources, and questions for the same passage remain separate. Click the excerpt above a card to return to the original location. Finding a link does not establish a claim. Missing or unchecked excerpts stay explicit, and failures, interruptions, and completed lookups with no useful sources are never presented as success.
+Continuous selections across paragraphs, headings, and lists also support Explain, Find sources, and Ask. The complete selection is sent with bounded context; oversized input is rejected explicitly instead of truncated. Explanations, sources, and questions for the same passage remain separate. Click the excerpt above a card to return to the original location. Finding a link does not establish a claim. Missing or unchecked excerpts stay explicit, and failures, interruptions, and completed lookups with no useful sources are never presented as success.
 
 Use **Ask about the whole document** when the question concerns the broader material. Short documents provide all available text; long documents provide up to 16,000 characters of structure and relevant excerpts, with the coverage disclosed. A PDF without enough native text does not silently substitute OCR as document-wide input.
 
@@ -64,7 +64,7 @@ Choose **+ → Web link** and paste a public HTTPS article URL. For ordinary web
 
 **X content:** Paste an X/Twitter post or article URL into the same input and select **Read article**. Public articles, regular posts, and long posts are retrieved through FxTwitter. The service receives the public content ID and, when locating an article requires it, the public account name in the link—not your library, cards, or credentials. Source details retain the retrieval channel and saved scope; a service response is not independent verification of the complete original. Existing copies open without replacing their cards.
 
-Complete text, code, supported tables, and successfully retrieved images are saved locally. An unavailable X image does not block reading: its position shows that it was not saved and offers a safe original-image link, while the save status distinguishes saved text from missing images. Images are not automatically refetched. Embedded posts in articles retain an original-post link and an explicit notice that their body was not saved; no additional post is fetched. X videos retain an original-page playback link and attempt to save a local preview image when the source provides one; video files are not downloaded. Only the linked post and bounded quotes already included by the service are saved, without fetching an entire thread. An internal article ID that cannot be safely linked requires the original sharing-post URL. Articles with an account name use at most one bounded candidate page, without scanning the account. Older captures and their original source scope remain intact.
+Complete text, code, supported tables, and successfully retrieved images are saved locally. An unavailable X image does not block reading: its position shows that it was not saved and offers a safe original-image link, while the save status distinguishes saved text from missing images. Images are not automatically refetched. If a missing image has a reliable public source address, you can explicitly retry it in place; success saves a local resource. Older records without such an address cannot be retried by guessing a URL. Embedded posts in articles retain an original-post link and an explicit notice that their body was not saved; no additional post is fetched. X videos retain an original-page playback link and attempt to save a local preview image when the source provides one; video files are not downloaded. Only the linked post and bounded quotes already included by the service are saved, without fetching an entire thread. An internal article ID that cannot be safely linked requires the original sharing-post URL. Articles with an account name use at most one bounded candidate page, without scanning the account. Older captures and their original source scope remain intact.
 
 ![A Chinese translation of an English web article with a knowledge card beside the text](docs/images/web-reading.png)
 
@@ -80,7 +80,15 @@ Code blocks, inline code, link destinations, images, image alt text, and text in
 
 Ordinary URL import targets readable static articles and cannot support every website. The X adapter depends on FxTwitter availability and structure. Private, deleted, mismatched or unrepresentable text and unsafe resources produce explicit errors, without signing in or inventing original text. Temporarily unavailable images retain explicit missing-image notices. Unavailable quotes retain an explicit state and original link instead of claiming their body was saved. Ordinary static import continues to reject signed-in pages, challenges, JavaScript-only bodies, and unsupported media. Static articles with reliable public text and a clear visible paywall boundary can save the public portion before that boundary, with a persistent scope notice; permission is no longer tied to one exact article URL. Login requirements, insufficient public text, or an unclear boundary still fail. Hidden or post-paywall content is not read, and required missing media still prevent one-click import.
 
-### 6. Wait for confirmed saving before leaving
+### 6. Bookmark passages and find them by text
+
+Select text and use the purple Bookmark icon at the left of the selection toolbar to save locally, without AI. Continuous selections can span paragraphs, headings, and lists. A successful save closes the toolbar and adds a light source marker; a failure stays explicit and can be retried. PDF bookmarks use trustworthy existing text only; bookmarking does not recognize images or start OCR.
+
+The top Bookmark icon opens bookmarks for the current document. **All bookmarks** at the bottom of navigation opens the global list. The document popover shows three-line summaries; the global list shows complete excerpts, surrounding text, source, and time. Search matches excerpt or context text, with recent bookmarks first. Both lists support confirmed deletion, updating counts and current-source markers. **Locate source** opens the bookmarked version at its selection; **Back to reading** restores the prior reading position. If a version or position is unavailable, the saved snapshot remains readable with an explicit error.
+
+Bookmarks and text search run locally without model calls. **AI semantic search is not implemented.** Bookmark records live in the local reading library and do not alter original files.
+
+### 7. Wait for confirmed saving before leaving
 
 The interface reports the actual persistence state: **Saving** while a write is pending and **Saved** after it succeeds, with some locations using the fuller **Saved locally** label. Translation progress and errors remain separate, so a completed translation cannot hide a pending or failed save. Failed saves can be retried. When records conflict, both versions are retained for review.
 
@@ -132,7 +140,7 @@ The frontend runs at `127.0.0.1:5173` and the API at `127.0.0.1:8787`. Set `BROW
 
 ## Storage and privacy
 
-- Markdown and web text copies, static web media, PDF copies, recognition assets, crops, cards, translations, answers, and learning state are stored on disk. Original files remain unchanged. Browser storage holds preferences and emergency recovery data only.
+- Markdown and web text copies, static web media, PDF copies, recognition assets, crops, cards, bookmarks, translations, answers, and learning state are stored on disk. Original files remain unchanged. Browser storage holds preferences and emergency recovery data only.
 - Default data directories: macOS `~/Library/Application Support/Got-it`; Windows `%LOCALAPPDATA%/Got-it`; Linux `$XDG_DATA_HOME/got-it` or `~/.local/share/got-it`. Override with `GOT_IT_DATA_DIR`, and run only one service per data directory.
 - PDF OCR runs locally with Simplified Chinese and English assets prepared during installation. Image explanations send the crop you confirmed to the model.
 - Local saving is not an off-device backup. Stop the service and back up the complete application data directory for important work. Do not clear browser data to address a save problem.
@@ -144,7 +152,7 @@ The frontend runs at `127.0.0.1:5173` and the API at `127.0.0.1:8787`. Set `BROW
 - PDFs must be unencrypted, at most 50 MiB and 200 pages. OCR initially covers Simplified Chinese and English with a 60-second limit per task. Complex layouts, figures, and small text can be misread; check the original page. Crops are limited to 8 MiB and 4096 pixels on the longest side.
 - Generated PDF outlines can omit or misread headings and cannot currently be edited. Document-wide questions may also miss parts of long material.
 - Web import saves only reliably extracted static text and supported media; it does not run source-site interactions. Dynamic WebP, APNG, and video are unsupported, and ambiguous structures may be rejected. Media limits fail explicitly rather than silently truncating content.
-- Local relative images in Markdown are not yet supported, and selections cannot cross paragraphs. Major source changes may require relocating existing card anchors.
+- Local relative images in Markdown are not yet supported. Major source changes may require relocating existing card anchors.
 - There is no backup-download button. PDF and web records require the full application data directory. Legacy Focus Stickies workspaces, `.focus` files, and complete JSON exports remain importable.
 - A saved answer does not imply understanding or verification. Cancellation, disconnection, and timeout are never replaced with demo answers.
 

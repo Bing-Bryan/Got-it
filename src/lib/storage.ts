@@ -42,8 +42,14 @@ function providerId(value: unknown): value is ProviderId {
   return value === "codex" || value === "deepseek" || value === "demo";
 }
 
-function isAnchor(value: unknown): value is Anchor {
+function isAnchor(value: unknown,nested=false): value is Anchor {
   if (!isRecord(value) || (value.scope !== undefined && value.scope !== "document") || (value.scope === "document" && (value.pdf !== undefined || value.blockId !== "document" || value.start !== 0 || value.end !== 0)) || (value.pdf !== undefined && !copyPdfLocation(value.pdf))) return false;
+  if(value.segments!==undefined){
+    if(nested||value.scope!==undefined||value.pdf!==undefined||value.translation!==undefined||!Array.isArray(value.segments)||value.segments.length<2||value.segments.length>1000||!value.segments.every(segment=>isAnchor(segment,true)))return false;
+    const segments=value.segments as Anchor[];if(segments.some(segment=>segment.documentId!==value.documentId||segment.scope!==undefined||segment.pdf!==undefined||segment.start<0||segment.end<=segment.start||segment.end-segment.start!==segment.quote.length||!!segment.translation!==!!segments[0].translation)||new Set(segments.map(segment=>segment.blockId)).size!==segments.length)return false;
+    const quote=segments.map(segment=>segment.quote).join('\n');
+    if(quote.length>100000||value.quote!==quote||value.start!==0||value.end!==quote.length||value.blockId!==segments[0].blockId||value.prefix!==segments[0].prefix||value.suffix!==segments.at(-1)!.suffix||segments.some(segment=>segment.translation&&!copyTranslationSelection(segment.translation)))return false;
+  }
   return (
     stringField(value.documentId) &&
     stringField(value.blockId) &&
@@ -155,6 +161,7 @@ function optionalString(value: string | undefined): string | undefined {
 
 function copyAnchor(anchor: Anchor): Anchor {
   return {
+    ...(anchor.segments?{segments:anchor.segments.map(copyAnchor)}:{}),
     ...(copyTranslationSelection(anchor.translation) ? {translation:copyTranslationSelection(anchor.translation)} : {}),
     ...(anchor.scope === "document" ? {scope: "document" as const} : {}),
     ...(anchor.pdf ? { pdf: copyPdfLocation(anchor.pdf)! } : {}),

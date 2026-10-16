@@ -1,6 +1,6 @@
 // Explicit allowlist: do not copy local evidence, report files, credentials or Git history.
 import { cp, mkdir, readFile, readdir, lstat, writeFile } from 'node:fs/promises';
-import { resolve, join, relative } from 'node:path';
+import { resolve, join, relative, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 const roots = ['src', 'server', 'scripts', '.github', 'docs/updates',
   ...['reading', 'explain', 'sources', 'question', 'pdf-reading', 'pdf-selection', 'library', 'web-reading'].map(name => `docs/images/${name}.png`),
@@ -11,7 +11,9 @@ const roots = ['src', 'server', 'scripts', '.github', 'docs/updates',
 const root = process.cwd();
 const dest = resolve(root, 'release', `got-it-${new Date().toISOString().replaceAll(/[:.]/g, '-')}`);
 const files = [];
+const excluded = new Set(["scripts/bookmark-ai-spike", "scripts/bookmark-retrieval-spike"]);
 async function walk(path) {
+  if (excluded.has(relative(root, path).replaceAll("\\", "/"))) return;
   const info = await lstat(path);
   if (info.isSymbolicLink()) throw Error(`Symlinks are not permitted in public snapshot: ${relative(root, path)}`);
   if (info.isDirectory()) { for (const name of await readdir(path)) await walk(join(path, name)); }
@@ -27,6 +29,10 @@ for (const file of files) {
   manifest.push({ path: name, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
 }
 await mkdir(dest, { recursive: true });
-for (const name of roots) await cp(resolve(root, name), resolve(dest, name), { recursive: true, dereference: false });
+for (const file of files) {
+  const target = resolve(dest, relative(root, file));
+  await mkdir(dirname(target), { recursive: true });
+  await cp(file, target, { dereference: false });
+}
 await writeFile(join(dest, 'PUBLIC-MANIFEST.json'), JSON.stringify({ note: 'Allowlisted snapshot; no original Git history. Images reviewed separately; scan is not a security certification.', files: manifest }, null, 2) + '\n');
 console.log(`Prepared ${manifest.length} files at ${dest}`);
