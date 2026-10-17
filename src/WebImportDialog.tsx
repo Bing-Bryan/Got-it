@@ -1,3 +1,4 @@
+import {HOSTED} from './lib/runtime-mode';
 import {normalizeXArticleUrl} from "./lib/x-article-url";
 import { useEffect, useRef, useState } from "react";
 import type { useReadingLibrary } from "./useReadingLibrary";
@@ -30,7 +31,7 @@ export function WebImportDialog({ library }: { library: Library }) {
     onClick={event => { if (backdropDown.current && outside(event) && !library.busy) void library.cancelWebImport(true); backdropDown.current = false; }}
     onKeyDown={event => { if (event.key === "Escape") event.stopPropagation(); }}
     onCancel={event => { event.preventDefault(); if (!library.busy) void library.cancelWebImport(true); }}>
-    <header><div><h2 id="web-import-title">添加文章链接</h2><p>读取后保存到本机，并在当前阅读器打开。</p></div></header>
+    <header><div><h2 id="web-import-title">添加文章链接</h2><p>{HOSTED?"公开链接将发送到托管服务进行有界读取，材料及图片随后保存在当前浏览器；服务端不持久保存正文。":"读取后保存到本机，并在当前阅读器打开。"}</p></div></header>
     <form className="web-import-form" onSubmit={event => { event.preventDefault(); void library.readWebArticle(url); }}>
       <label htmlFor="web-import-url">公开文章链接</label>
       <div><input id="web-import-url" type="url" value={url} placeholder="https://www.anthropic.com/research/…" autoComplete="off" autoFocus required disabled={pending} onChange={event => setUrl(event.target.value)} /><button type="submit" disabled={pending || !url.trim()}>{library.busy ? "正在保存…" : reading ? "正在读取…" : "阅读文章"}</button></div>

@@ -1,3 +1,4 @@
+import {track} from './lib/hosted-usage';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { PdfPageInfo } from './lib/pdf-data';
 
@@ -34,6 +35,7 @@ export function usePdfZoom(root: RefObject<HTMLDivElement | null>, id: string, p
   };
   const change = (value: number | null, point?: Point) => {
     if (value !== null && !Number.isFinite(value)) return;
+    track('zoom');
     capture(point);
     const next = value === null ? null : clampZoom(value);
     current.current.manual = next; setManual(next);

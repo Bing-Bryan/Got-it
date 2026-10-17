@@ -1,6 +1,8 @@
+import {HOSTED} from './lib/runtime-mode';
+import {HostedStorageControls,HostedSampleAttribution} from './HostedControls';
 import {X_PUBLIC_SCOPE} from "./lib/x-article-url";
 import {X_CAPTURE_EXTRACTOR, X_CAPTURE_SCOPE} from "./lib/x-article-capture";
-import { Copy, Check, Plus } from "lucide-react";
+import { Copy, Check, Plus, ChevronDown } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { useReadingLibrary } from "./useReadingLibrary";
 import { ReadingRecoveryView } from "./ReadingRecoveryView";
@@ -81,7 +83,7 @@ export function ReadingLibraryNavigation({ library, importCopy }: { library: Lib
         }}>
         <button ref={trigger} type="button" className="library-current" title={library.entry?.workspace.document.filename ?? "选择文件"} aria-label={`切换文件：${library.entry?.workspace.document.filename ?? "选择文件"}`} aria-expanded={open} aria-controls={popupId}
           onClick={openSearch} onKeyDown={event => { if (event.key === "ArrowDown") { event.preventDefault(); event.stopPropagation(); openSearch(); } }}>
-          <span>{library.entry?.workspace.document.filename ?? "选择文件"}</span><span aria-hidden="true">▸</span>
+          <span>{library.entry?.workspace.document.filename ?? "选择文件"}</span><ChevronDown size={13} className="disclosure-chevron" aria-hidden="true"/>
         </button>
         {open ? <div className="library-popup" id={popupId} aria-label="切换阅读文件">
           <div className="library-popup-panel">
@@ -112,6 +114,7 @@ export function ReadingLibraryStatus({ library, onImport, hideWebSource = false 
   const saveBlocked = library.blocked || library.status === "阅读进度暂未保存";
   const duplicateImportError = library.webImportOpen && library.webError && library.error === library.webError;
   return <div className="library-state">
+    {HOSTED?<div className="hosted-library-controls"><HostedStorageControls save={()=>library.saveNow()} onRestore={()=>onImport?.()}/>{library.entry?<HostedSampleAttribution hash={library.entry.workspace.document.contentHash}/>:null}</div>:null}
     {((library.error && !duplicateImportError) || saveBlocked) && !library.recovery ? <div role="alert" className="library-warning"><span>{library.error}{saveBlocked ? <small>当前内容仍保留，保存成功后才能离开。</small> : null}</span>
       {saveBlocked || !library.ready ? <button type="button" disabled={library.busy} onClick={() => void library.retry()}>{saveBlocked ? "重试保存" : "重新连接"}</button> : library.importError && onImport ? <button type="button" disabled={library.busy} onClick={onImport}>重新选择文件</button> : <button type="button" disabled={library.busy} onClick={library.clearError}>关闭提示</button>}
     </div> : null}

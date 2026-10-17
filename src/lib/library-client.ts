@@ -1,7 +1,10 @@
+import {HOSTED} from './runtime-mode';
+import {browserRequest,browserBinary} from './browser-library';
 import {librarySession,invalidateLibrarySession} from "./library-session";
 export {librarySession} from "./library-session";
 export class LibraryClientError extends Error { constructor(message: string, public status: number, public code?: string) { super(message); } }
 export async function libraryRequest<T>(path = "", body?: unknown, retry = true): Promise<T> {
+  if(HOSTED)return browserRequest<T>(path,body);
   const response = await fetch(`/api/library${path}`, { method: body === undefined ? "GET" : "POST", headers: { "Content-Type": "application/json", "X-Got-It-Session": await librarySession() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   if (response.status === 401 && retry) { invalidateLibrarySession(); return libraryRequest(path, body, false); }
   const result = await response.json();
@@ -10,7 +13,11 @@ export async function libraryRequest<T>(path = "", body?: unknown, retry = true)
 }
 
 export async function libraryBinary(path:string,body?:Blob,retry=true,signal?:AbortSignal):Promise<Response>{
+ if(HOSTED)return browserBinary(path,body);
  const response=await fetch('/api/library'+path,{method:body?'POST':'GET',headers:{'X-Got-It-Session':await librarySession(),...(body?{'Content-Type':body.type}: {})},...(body?{body}:{}),...(signal?{signal}:{})});
  if(response.status===401&&retry){invalidateLibrarySession();return libraryBinary(path,body,false,signal);}
  if(!response.ok){const result=await response.json();throw new LibraryClientError(result.error||'文件传输失败。',response.status, typeof result.code === "string" ? result.code : undefined);}return response;
 }
+
+export interface StorageAdapter {request:typeof libraryRequest;binary:typeof libraryBinary}
+export const storageAdapter:StorageAdapter={request:libraryRequest,binary:libraryBinary};

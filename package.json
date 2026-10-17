@@ -17,7 +17,13 @@
     "prepare:pdf": "node scripts/prepare-pdf-assets.mjs",
     "postinstall": "npm run prepare:pdf",
     "prebuild": "npm run prepare:pdf",
-    "predev:web": "npm run prepare:pdf"
+    "predev:web": "npm run prepare:pdf",
+    "dev:hosted": "concurrently -k -n web,api \"npm:dev:hosted:web\" \"npm:dev:hosted:api\"",
+    "dev:hosted:web": "VITE_GOT_IT_MODE=hosted vite --host 127.0.0.1 --port 5174",
+    "dev:hosted:api": "tsx watch server/hosted-index.ts",
+    "build:hosted": "tsc --noEmit && VITE_GOT_IT_MODE=hosted vite build --outDir dist-hosted",
+    "start:hosted": "tsx server/hosted-index.ts",
+    "prebuild:hosted": "npm run prepare:pdf"
   },
   "dependencies": {
     "@tesseract.js-data/chi_sim": "1.0.0",
@@ -44,6 +50,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "concurrently": "^10.0.5",
+    "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

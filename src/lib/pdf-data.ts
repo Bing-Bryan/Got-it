@@ -1,6 +1,19 @@
 export const MAX_PDF_BYTES = 50 * 1024 * 1024;
 export const MAX_PDF_PAGES = 200;
 export const MAX_CROP_BYTES = 8 * 1024 * 1024;
+// Hosted trial uploads are smaller: the image travels in the request body.
+export const HOSTED_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
+// Context sent for a selected region when local OCR found no text.
+export const REGION_NO_TEXT_CONTEXT = '未提取到辅助文字，请依据所选原图处理。';
+// Hosted prompts are bounded in UTF-8 bytes; dense Chinese OCR must fit with room to spare.
+export const HOSTED_OCR_CONTEXT_BYTES = 3000;
+export function trimToBytes(text: string, maxBytes: number): string {
+ const encoder = new TextEncoder();
+ if (encoder.encode(text).length <= maxBytes) return text;
+ let out = '', used = 0;
+ for (const ch of text) { const size = encoder.encode(ch).length; if (used + size > maxBytes) break; out += ch; used += size; }
+ return out;
+}
 export type PdfRect = [number, number, number, number];
 export interface PdfPageInfo { view: PdfRect; rotation: number }
 export interface PdfDocumentData { resourceId: string; pages: PdfPageInfo[] }

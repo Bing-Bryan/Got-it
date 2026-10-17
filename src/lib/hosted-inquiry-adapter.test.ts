@@ -1,0 +1,21 @@
+import {expect,it,vi} from 'vitest';
+vi.mock('./runtime-mode',()=>({HOSTED:true,trialId:()=> '123e4567-e89b-42d3-a456-426614174000'}));
+const binary=vi.hoisted(()=>vi.fn());
+vi.mock('./library-client',()=>({libraryBinary:binary}));
+import {readInquiryStream} from './inquiry-stream';
+import type {InquiryRequest} from '../types';
+it('sends hosted verification through the original stream contract with only allowed fields',async()=>{const onEvent=vi.fn(),fetcher=vi.fn().mockResolvedValue(new Response(JSON.stringify({requestId:'r',sequence:1,type:'complete',response:{answer:'controlled',sources:[]}})+'\n'));const request={requestId:'r',providerId:'codex',intent:'verify',operation:'verify',quote:'selected statement',context:'bounded nearby text',question:'check this',documentTitle:'PRIVATE_FILE_NAME.md',modelConfig:{model:'private'},apiKey:'SECRET',scope:'initial',round:2,parentMessageId:'parent',history:[{role:'user',content:'previous question',apiKey:'SECRET'}]} as unknown as InquiryRequest;await readInquiryStream(request,onEvent,undefined,fetcher);expect(fetcher.mock.calls[0][0]).toBe('/api/hosted/inquiry/stream');const body=JSON.parse(fetcher.mock.calls[0][1].body);expect(body).toMatchObject({intent:'verify',round:2,parentMessageId:'parent',scope:'initial'});expect(Object.keys(body).sort()).toEqual(['requestId','intent','quote','context','question','history','scope','round','parentMessageId'].sort());expect(JSON.stringify(body)).not.toMatch(/SECRET|PRIVATE_FILE_NAME|providerId|modelConfig|operation/);expect(onEvent).toHaveBeenCalledOnce();});
+it('attaches the stored region crop to a hosted request and never sends library identifiers',async()=>{
+ const png=new Uint8Array([0x89,0x50,0x4e,0x47,1,2,3]);binary.mockResolvedValue(new Response(png,{headers:{'Content-Type':'image/png'}}));
+ const fetcher=vi.fn().mockResolvedValue(new Response(JSON.stringify({requestId:'r',sequence:1,type:'complete',response:{answer:'controlled',sources:[]}})+'\n'));
+ await readInquiryStream({requestId:'r',intent:'ask',quote:'第 1 页 · 所选区域',context:'ocr',question:'q',history:[],image:{entryId:'e',fileHash:'f',cropId:'c'}} as unknown as InquiryRequest,vi.fn(),undefined,fetcher);
+ expect(binary).toHaveBeenCalledWith('/entries/e/resources/c');
+ const [,init]=fetcher.mock.calls[0];const sent=JSON.parse(init.body);
+ expect(sent.image).toEqual({data:btoa(String.fromCharCode(...png))});expect(JSON.stringify(sent)).not.toContain('cropId');expect(init.headers['X-Got-It-Session']).toBeUndefined();
+});
+it('rejects an oversized stored crop before contacting the hosted service',async()=>{
+ binary.mockResolvedValue(new Response(new Uint8Array(4*1024*1024+1)));const fetcher=vi.fn();
+ await expect(readInquiryStream({requestId:'r',intent:'ask',quote:'x',context:'',question:'q',history:[],image:{entryId:'e',fileHash:'f',cropId:'c'}} as unknown as InquiryRequest,vi.fn(),undefined,fetcher)).rejects.toThrow('过大');expect(fetcher).not.toHaveBeenCalled();
+});
+it('preserves a requested web explanation instead of silently downgrading to local',async()=>{const fetcher=vi.fn().mockResolvedValue(new Response(JSON.stringify({requestId:'r',sequence:1,type:'complete',response:{answer:'controlled',sources:[]}})+'\n'));await readInquiryStream({requestId:'r',intent:'explain',explanationMode:'web',quote:'selected',context:'nearby',question:'explain'} as InquiryRequest,vi.fn(),undefined,fetcher);expect(JSON.parse(fetcher.mock.calls[0][1].body).explanationMode).toBe('web');});
+it('keeps safe failed-search metadata while rejecting an error stream',async()=>{const fetcher=vi.fn().mockResolvedValue(new Response(JSON.stringify({requestId:'r',sequence:1,type:'error',error:'controlled search failure',response:{search:{status:'failed',completedSearches:0,failedSearches:1,apiKey:'SECRET'}}})+'\n')),onEvent=vi.fn();let failure:any;try{await readInquiryStream({requestId:'r',intent:'verify',quote:'selected',context:'nearby',question:'check'} as InquiryRequest,onEvent,undefined,fetcher);}catch(error){failure=error;}expect(failure?.message).toBe('controlled search failure');expect(failure?.search).toEqual({status:'failed',completedSearches:0,failedSearches:1});expect(JSON.stringify(failure)).not.toContain('SECRET');expect(onEvent).not.toHaveBeenCalled();});

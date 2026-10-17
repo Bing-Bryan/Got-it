@@ -1,10 +1,13 @@
+import {HOSTED} from './lib/runtime-mode';
 import {X_PUBLIC_SCOPE} from "./lib/x-article-url";
 import {X_CAPTURE_EXTRACTOR, X_CAPTURE_SCOPE} from "./lib/x-article-capture";
 import {confidentlyChinese} from "./lib/translation-policy";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Languages } from "lucide-react";
-import { buildTranslationSource, friendlyTranslationError, validUnitTranslation, TRANSLATION_PLACEHOLDER } from "./lib/web-translation";
+import { ChevronDown, Languages } from "lucide-react";
+import { friendlyTranslationError, validUnitTranslation, TRANSLATION_PLACEHOLDER, type TranslationUnit } from "./lib/web-translation";
+import { documentTranslationSource } from "./lib/document-translation";
+import { pdfTranslationSummary, usePdfTranslationSource } from "./usePdfTranslationSource";
 import type { Workspace } from "./types";
 import type { TranslationActivity, useReadingLibrary } from "./useReadingLibrary";
 
@@ -41,6 +44,8 @@ function TranslationCountHelp({completed,total}:{completed:number;total:number})
   </span>;
 }
 
+const completedUnits=(source:{units:TranslationUnit[]},state:Workspace["webTranslation"])=>source.units.filter(unit=>validUnitTranslation(unit,state?.units[unit.id])).length;
+
 function RunningTranslationProgress({activity}:{activity:TranslationActivity}) {
   const [now,setNow] = useState(Date.now);
   useEffect(() => {
@@ -64,33 +69,41 @@ export function WebTranslationControls({workspace,library,onSide,saveStatus}:{wo
   const trigger = useRef<HTMLButtonElement>(null);
   const panelId = useId();
   const sourceDescriptionId = useId();
-  const source = useMemo(() => workspace.document.kind === "web" ? buildTranslationSource(workspace.document.markdown,workspace.document.web) : null,[workspace.document]);
-  const canTranslate = !!source?.units.length && !confidentlyChinese(source.units.map(unit => unit.text.replace(TRANSLATION_PLACEHOLDER, "")).join("\n"));
-  if(workspace.document.kind!=="web")return null;
-  const excerpt=workspace.document.web.coverage==="public-excerpt";
-  const sourceFacts = `${workspace.document.web.retrieval?.provider === "fxtwitter" ? X_PUBLIC_SCOPE : workspace.document.web.extractorVersion === X_CAPTURE_EXTRACTOR ? X_CAPTURE_SCOPE : "正在阅读本机保存副本"} · 导入于 ${new Date(workspace.document.importedAt).toLocaleString()}${excerpt ? " · 仅保存公开部分，付费内容未导入" : ""}`;
+  const doc=workspace.document,pdf=doc.kind==="pdf"?doc.pdf:undefined;
+  // PDF: the text layer is read locally only once a translation exists or is running.
+  const pdfSource = usePdfTranslationSource(library.entry?.id,pdf?.resourceId??"",!!pdf&&(!!workspace.webTranslation||library.translationRunning));
+  const source = useMemo(() => pdf ? pdfSource.source?.source ?? null : documentTranslationSource(doc)?.source ?? null,[doc,pdf,pdfSource.source]);
+  const canTranslate = pdf ? true : !!source?.units.length && !confidentlyChinese(source.units.map(unit => unit.text.replace(TRANSLATION_PLACEHOLDER, "")).join("\n"));
+  // Web-only facts (original link, import scope, media) stay hidden for local Markdown.
+  const web=workspace.document.kind==="web"?workspace.document.web:undefined;
+  const excerpt=web?.coverage==="public-excerpt";
+  const sourceFacts = !web ? "" : `${web.retrieval?.provider === "fxtwitter" ? X_PUBLIC_SCOPE : web.extractorVersion === X_CAPTURE_EXTRACTOR ? X_CAPTURE_SCOPE : "正在阅读本机保存副本"} · 导入于 ${new Date(workspace.document.importedAt).toLocaleString()}${excerpt ? " · 仅保存公开部分，付费内容未导入" : ""}`;
   const state=workspace.webTranslation, disabled=library.readOnly || !library.ready;
-  const hasTranslation = !!state && Object.values(state.units).some(text => text.trim().length > 0);
+  const hasTranslation = !pdf && !!state && Object.values(state.units).some(text => text.trim().length > 0);
+  const pdfSummary = pdf && pdfSource.source ? pdfTranslationSummary(pdfSource.source,state) : null;
   const translated = workspace.readingSide === "translated";
-  const partial = !!state && state.status !== "complete";
+  const partial = !!state && (state.status !== "complete" || (!!pdf && !!source && completedUnits(source,state) < source.units.length));
   const sideLabel = translated ? `切换到原文${partial ? "（当前为部分中文译文）" : ""}` : `切换到中文译文${partial ? "（部分）" : ""}`;
   const actionLabel = library.translationRunning ? "停止翻译" : hasTranslation ? sideLabel : "翻译为中文";
   const completed = source?.units.filter(unit => validUnitTranslation(unit,state?.units[unit.id])).length ?? 0;
   const total = source?.units.length ?? 0;
   const idleIncomplete = !!state && partial && !library.translationRunning;
-  const resumeLabel = completed === total ? "重试保存译文" : "继续翻译";
-  const resumeDescription = completed === total ? "只保存已有译文，不重新生成。" : "仅翻译未完成的文本块，保留已有译文、原文和知识贴。";
+  const allDone = total > 0 && completed === total;
+  const resumeLabel = allDone ? "重试保存译文" : "继续翻译";
+  const resumeDescription = allDone ? "只保存已有译文，不重新生成。" : "仅翻译未完成的文本块，保留已有译文、原文和知识贴。";
   const currentSaveStatus = saveStatus ?? library.status;
-  const publicMissing=workspace.document.web.extractorVersion==='x-fxtwitter-public-v1'?workspace.document.web.media.filter(m=>m.status!=='saved').length:0;
-  const status = publicMissing && /^(?:已保存|正文已保存)/.test(currentSaveStatus) ? `正文已保存到本机，${publicMissing}张图片未保存` : currentSaveStatus.startsWith("已保存") ? "已保存" : currentSaveStatus.startsWith("保存中") ? "保存中" : currentSaveStatus;
+  const publicMissing=web?.extractorVersion==='x-fxtwitter-public-v1'?web.media.filter(m=>m.status!=='saved').length:0;
+  const status = pdf ? "" : publicMissing && /^(?:已保存|正文已保存)/.test(currentSaveStatus) ? `正文已保存到本机，${publicMissing}张图片未保存` : currentSaveStatus.startsWith("已保存") ? "已保存" : currentSaveStatus.startsWith("保存中") ? "保存中" : currentSaveStatus;
   const progress = library.translationProgress;
   const rawTranslationStatus = progress === "全文译中已保存" || progress === "已保存公开正文译中已保存" ? "" : progress || (state?.status !== "complete" ? state?.error : "");
   const translationStatus = friendlyTranslationError((idleIncomplete ? rawTranslationStatus?.replace(/^已翻译 \d+ \/ \d+ 个文本块；/, "") : rawTranslationStatus)??"");
   const closePanel = () => { setPermission(false); trigger.current?.focus(); };
   const switchSide = () => { onSide(translated ? "original" : "translated"); closePanel(); };
-  return <section className="web-translation-controls" aria-label="网页正文翻译" onKeyDown={event => { if (event.key === "Escape" && permission) { event.stopPropagation(); closePanel(); } }}>
+  const permissionText = pdf ? "将有文字层页面的正文段落分批发送给当前 AI，生成按页中文稿；图片、扫描页和原页内容不发送也不改动。" : null;
+  const hostedPermissionDetail = "正文会分批发送给托管服务及模型服务商，每批使用体验额度；停止后已完成部分保留，服务端不持久保存正文或译文。";
+  return <section className="web-translation-controls" aria-label={web?"网页正文翻译":pdf?"PDF 中文稿":"正文翻译"} onKeyDown={event => { if (event.key === "Escape" && permission) { event.stopPropagation(); closePanel(); } }}>
     <div className="translation-toolbar">
-      <a className="translation-source" href={workspace.document.web.originalUrl} target="_blank" rel="noopener noreferrer" title={sourceFacts} aria-describedby={sourceDescriptionId}>打开原网页</a><span id={sourceDescriptionId} className="translation-source-description">{sourceFacts}</span>
+      {web ? <><a className="translation-source" href={web.originalUrl} target="_blank" rel="noopener noreferrer" title={sourceFacts} aria-describedby={sourceDescriptionId}>打开原网页</a><span id={sourceDescriptionId} className="translation-source-description">{sourceFacts}</span></> : null}
       <div className="translation-actions">
         {hasTranslation || (!state && canTranslate) || library.translationRunning ? <button ref={trigger} type="button" className={`translation-side-toggle${library.translationRunning ? " translation-stop" : ""}`} aria-label={actionLabel} title={actionLabel} aria-pressed={translated} aria-expanded={hasTranslation || library.translationRunning ? undefined : permission} aria-controls={permission ? panelId : undefined} disabled={!library.translationRunning && !hasTranslation && disabled} onClick={() => {
           if (library.translationRunning) { library.stopTranslation(); closePanel(); }
@@ -100,14 +113,20 @@ export function WebTranslationControls({workspace,library,onSide,saveStatus}:{wo
         {idleIncomplete ? <button type="button" className="translation-resume" disabled={disabled} title={resumeDescription} aria-description={resumeDescription} onClick={()=>void library.translate()}>{resumeLabel}</button> : null}
         {excerpt ? <span className="translation-scope-warning" role="status">仅保存公开部分，付费内容未导入。</span> : null}
       </div>
-      {idleIncomplete ? <TranslationCountHelp completed={completed} total={total}/> : null}
+      {idleIncomplete && !pdf ? <TranslationCountHelp completed={completed} total={total}/> : null}
+      {pdfSummary ? <span className="translation-count pdf-translation-pages" role="status">中文稿 {pdfSummary.done} / {pdfSummary.textPages} 页{pdfSummary.scanned ? ` · ${pdfSummary.scanned} 页为图片暂不能翻译` : ""}{!library.translationRunning ? " · 在每页上方切换原页 / 中文稿" : ""}</span> : pdf && state && pdfSource.error ? <span className="translation-progress" role="status">PDF 文字层读取失败，中文稿暂不能显示。</span> : null}
       {library.translationRepairCount>0 && <span className="translation-progress" role="status">已修复 {library.translationRepairCount} 块排版</span>}
       {library.translationRunning && library.translationActivity ? <RunningTranslationProgress activity={library.translationActivity}/> : translationStatus ? <span className="translation-progress" role="status">{translationStatus}</span> : null}
       {status ? <span className="translation-status" role="status">{status}</span> : null}
     </div>
-    {permission && !library.translationRunning ? <div id={panelId} className="translation-permission" role="group" aria-label="网页正文翻译授权"><p>{excerpt?"将已保存公开部分的全部可翻译正文分批发送给当前 AI，生成中文译文，不包含原站付费内容。":"将全部可翻译正文分批发送给当前 AI，生成中文译文。"}代码、URL和图片不发送，原文保留。</p><label><input type="checkbox" checked={autoChoice} onChange={event=>setAutoChoice(event.target.checked)}/>以后自动翻译确认加入的新英文网页</label><div><button type="button" disabled={disabled} onClick={()=>{closePanel();library.setAutoTranslation(autoChoice);void library.translate();}}>开始译中</button><button type="button" onClick={closePanel}>取消</button></div></div>:null}
-    {!permission && library.autoTranslate?<label><input type="checkbox" checked onChange={()=>library.setAutoTranslation(false)}/>自动翻译新加入英文网页（可关闭）</label>:null}
-    {workspace.document.web.extractorVersion !== 'x-fxtwitter-public-v1' && workspace.document.web.media.some(media => media.status !== "saved") ? <p className="translation-media-warning" role="status">部分图片／图表未导入</p> : null}
+    {permission && !library.translationRunning ? <div id={panelId} className="translation-permission" role="group" aria-label={web?"网页正文翻译授权":"正文翻译授权"}>
+      <p>{permissionText ?? <>{excerpt?"将已保存公开部分的全部可翻译正文分批发送给当前 AI，生成中文译文，不包含原站付费内容。":"将全部可翻译正文分批发送给当前 AI，生成中文译文。"}代码、URL和图片不发送，原文保留。</>}</p>
+      {web ? <label><input type="checkbox" checked={autoChoice} onChange={event=>setAutoChoice(event.target.checked)}/>以后自动翻译确认加入的新英文网页</label> : null}
+      <div><button type="button" disabled={disabled} onClick={()=>{closePanel();if(web)library.setAutoTranslation(autoChoice);void library.translate();}}>开始译中</button><button type="button" onClick={closePanel}>取消</button></div>
+      {HOSTED ? <details className="hosted-inline-details"><summary className="disclosure-summary"><span>发送与存储说明</span><ChevronDown size={13} className="disclosure-chevron" aria-hidden="true"/></summary><p>{hostedPermissionDetail}</p></details> : null}
+    </div>:null}
+    {web && !permission && library.autoTranslate?<label><input type="checkbox" checked onChange={()=>library.setAutoTranslation(false)}/>自动翻译新加入英文网页（可关闭）</label>:null}
+    {web && web.extractorVersion !== 'x-fxtwitter-public-v1' && web.media.some(media => media.status !== "saved") ? <p className="translation-media-warning" role="status">部分图片／图表未导入</p> : null}
     {workspace.translationNotice?<p role="alert">{workspace.translationNotice}</p>:null}
   </section>;
 }

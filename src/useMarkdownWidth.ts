@@ -1,3 +1,4 @@
+import {track} from './lib/hosted-usage';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 
 export const MARKDOWN_WIDTH_KEY = 'got-it.markdown-width.v1';
@@ -17,6 +18,7 @@ export function useMarkdownWidth(article: RefObject<HTMLElement | null>) {
   useEffect(() => () => cancelAnimationFrame(frame.current), []);
   const change = (value: number) => {
     if (!Number.isFinite(value)) return;
+    track('width');
     const next = clampMarkdownWidth(value);
     if (next === width) return;
     const scroll = article.current?.closest<HTMLElement>('.reader-scroll');

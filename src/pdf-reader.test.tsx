@@ -2,18 +2,21 @@ import {act} from 'react';
 import {createRoot,type Root} from 'react-dom/client';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import type {Inquiry,DocumentSnapshot,SelectionDraft} from './types';
-const mocks=vi.hoisted(()=>({binary:vi.fn(),request:vi.fn(),worker:vi.fn(),render:vi.fn()}));
+const mocks=vi.hoisted(()=>({binary:vi.fn(),request:vi.fn(),worker:vi.fn(),render:vi.fn(),hosted:false,images:false as boolean|'error',capabilityCalls:0}));
+vi.mock('./lib/runtime-mode',()=>({get HOSTED(){return mocks.hosted;},hostedCapabilities:async()=>{mocks.capabilityCalls++;if(mocks.images==='error')throw new Error('offline');return {supportsImages:mocks.images};}}));
 vi.mock('./lib/library-client',()=>({libraryBinary:mocks.binary,libraryRequest:mocks.request}));
 vi.mock('tesseract.js',()=>({createWorker:mocks.worker,PSM:{AUTO:'3'}}));
 function mockViewport(scale:number):any { return {scale,width:400*scale,height:300*scale,clone:({scale:next}:{scale:number})=>mockViewport(next),convertToViewportPoint:(x:number,y:number)=>[x*scale,(300-y)*scale],convertToPdfPoint:(x:number,y:number)=>[x/scale,300-y/scale]}; }
 vi.mock('pdfjs-dist',()=>({GlobalWorkerOptions:{},getDocument:()=>({destroy:async()=>{},promise:Promise.resolve({getPage:async(pageNumber:number)=>({pageNumber,getViewport:({scale}:{scale:number})=>mockViewport(scale),render:mocks.render,getTextContent:async()=>({items:[]})})})}),TextLayer:class {async render(){} cancel(){}}}));
-import PdfReader from './PdfReader';
+import PdfReader,{OCR_DEADLINE_MS} from './PdfReader';
 let root:Root,host:HTMLDivElement;
 const hash='a'.repeat(64),ocrId='b'.repeat(64);
 const pdf:DocumentSnapshot={id:'doc',filename:'safe.pdf',kind:'pdf',isDemo:false,contentHash:hash,importedAt:'2026',pdf:{resourceId:hash,pages:[{view:[0,0,400,300],rotation:0},{view:[0,0,400,300],rotation:0}]}};
 const inquiry:Inquiry={id:'i',intent:'explain',question:'q',status:'ready',createdAt:'2026',updatedAt:'2026',understanding:'',messages:[],anchor:{documentId:'doc',blockId:'pdf',headingPath:[],quote:'20%',prefix:'',suffix:'',start:0,end:3,matchStatus:'matched',pdf:{kind:'text',source:'ocr',fileHash:hash,page:1,rects:[[20,200,80,220]],ocrId,originalText:'2096'}}};
 const click=async(selector:string)=>act(async()=>{(host.querySelector(selector)as HTMLElement).click();});
 beforeEach(()=>{
+ mocks.hosted=false;mocks.images=false;
+ HTMLCanvasElement.prototype.toBlob=function(cb:BlobCallback){cb(new Blob(['png'],{type:'image/png'}));};
  localStorage.clear();
  (globalThis as unknown as {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
  vi.stubGlobal('IntersectionObserver',class{constructor(private cb:(entries:{isIntersecting:boolean}[])=>void){}observe(){this.cb([{isIntersecting:true}]);}disconnect(){}});
@@ -236,3 +239,60 @@ it('locates a bookmark using PDF point conversion without creating an inquiry or
  expect(Math.abs(top)).toBeLessThan(300);expect(host.querySelector('[data-pdf-inquiry]')).toBeNull();expect(mocks.worker).not.toHaveBeenCalled();
 });
 it('reports a failed PDF resource to a pending bookmark without OCR or leaving its caller waiting',async()=>{mocks.binary.mockRejectedValueOnce(Error('controlled missing PDF'));const located=vi.fn(),bookmark={id:'pending',anchor:inquiry.anchor} as import('./lib/bookmark-types').ReadingBookmark;await act(async()=>root.render(<PdfReader document={pdf as Extract<DocumentSnapshot,{kind:'pdf'}>} entryId="entry" inquiries={[]} bookmarkTarget={bookmark} onBookmarkLocated={located}/>));expect(located).toHaveBeenCalledWith(false);expect(host.textContent).toContain('controlled missing PDF');expect(mocks.worker).not.toHaveBeenCalled();});
+
+it('keeps hosted crop selection and preview without OCR or model actions while hosted image reading is disabled',async()=>{
+ mocks.hosted=true;
+ const create=await drawRegion();
+ expect(host.querySelector('.pdf-selection-preview img')).not.toBeNull();
+ expect(host.textContent).toContain('体验版读图暂未开启');
+ const actions=[...host.querySelectorAll<HTMLButtonElement>('.pdf-card-actions button')].filter(button=>button.className!=='selection-close');
+ expect(actions.length).toBeGreaterThan(0);expect(actions.every(button=>button.disabled)).toBe(true);
+ expect(mocks.worker).not.toHaveBeenCalled();expect(create).not.toHaveBeenCalled();
+ expect(mocks.binary.mock.calls.some(([path])=>path.includes('/crops?'))).toBe(false);
+ await click('.selection-close');expect(host.querySelector('.pdf-selection-card')).toBeNull();
+});
+
+it('uploads a vector re-render of the region when hosted image reading is enabled',async()=>{
+ mocks.hosted=true;mocks.images=true;mocks.worker.mockResolvedValue({setParameters:async()=>{},terminate:async()=>{},recognize:async()=>({data:{blocks:[]}})});
+ const create=await drawRegion();
+ expect(host.textContent).not.toContain('体验版读图暂未开启');
+ const before=mocks.render.mock.calls.length;await click('.pdf-card-actions button:first-child');
+ const regionRender=mocks.render.mock.calls.slice(before).map(([arg])=>arg).find(arg=>arg.transform);
+ expect(regionRender).toBeDefined();expect(regionRender.viewport.scale).toBeLessThanOrEqual(4);expect(regionRender.viewport.scale).toBeGreaterThan(2);
+ const upload=mocks.binary.mock.calls.find(([path])=>path.includes('/crops?'));expect(upload?.[1]).toBeInstanceOf(Blob);expect((upload![1] as Blob).type).toBe('image/png');
+ expect(create.mock.calls[0][1].anchor.pdf.cropId).toBe('c'.repeat(64));
+});
+
+it('reports an unknown hosted image capability truthfully and re-checks it',async()=>{
+ mocks.hosted=true;mocks.images='error';mocks.capabilityCalls=0;
+ const create=await drawRegion();
+ expect(host.textContent).toContain('暂时无法确认体验版读图能力');expect(host.textContent).not.toContain('暂未开启');
+ expect(mocks.capabilityCalls).toBe(1);expect(create).not.toHaveBeenCalled();
+});
+
+it('runs OCR on the high-resolution region render and maps recognized lines back to the selection',async()=>{
+ mocks.hosted=true;mocks.images=true;let recognizedOn:unknown;
+ mocks.worker.mockResolvedValue({setParameters:async()=>{},terminate:async()=>{},recognize:async(image:HTMLCanvasElement,options:unknown)=>{recognizedOn={image,options};return {data:{blocks:[{paragraphs:[{lines:[{text:'Max Logits',bbox:{x0:0,y0:0,x1:image.width,y1:image.height}}]}]}]}};}});
+ mocks.request.mockImplementation(async(path:string,body:{lines:{rect:number[]}[]})=>path.endsWith('/ocr')?{id:'d'.repeat(64),data:{version:1,fileHash:hash,page:1,lines:body.lines}}:{});
+ const create=await drawRegion();await click('.pdf-card-actions button:first-child');
+ const {image,options}=recognizedOn as {image:HTMLCanvasElement;options:unknown};
+ expect(image).toBeInstanceOf(HTMLCanvasElement);expect(options).toEqual({});
+ const ocrCall=mocks.request.mock.calls.find(([path])=>String(path).endsWith('/ocr'))!;
+ const saved=(ocrCall[1] as {lines:{rect:number[]}[]}).lines[0].rect,selected=create.mock.calls[0][1].anchor.pdf.rects[0];
+ saved.forEach((v:number,i:number)=>expect(v).toBeCloseTo(selected[i],0));
+ expect(create.mock.calls[0][1].anchor.pdf.context).toBe('Max Logits');
+});
+
+it('continues with the image when OCR exceeds its own deadline instead of cancelling the question',async()=>{
+ mocks.worker.mockReturnValue(new Promise(()=>{}));
+ const create=await drawRegion();
+ vi.useFakeTimers();
+ try{
+  await click('.pdf-card-actions button:first-child');
+  await act(async()=>{vi.advanceTimersByTime(OCR_DEADLINE_MS+10);});
+ }finally{vi.useRealTimers();}
+ await act(async()=>{await new Promise(r=>setTimeout(r,0));});
+ expect(create).toHaveBeenCalledTimes(1);
+ const a=create.mock.calls[0][1].anchor.pdf;expect(a.cropId).toBe('c'.repeat(64));expect(a.context).toContain('未提取到辅助文字');
+ expect(host.querySelector('.pdf-error')).toBeNull();
+});

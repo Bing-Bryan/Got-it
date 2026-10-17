@@ -1,7 +1,14 @@
+import {sampleForFile} from './lib/hosted-sample-data';
+import { documentTranslationSource } from "./lib/document-translation";
+import { loadPdfTranslationSource } from "./lib/pdf-translation-loader";
+import { confidentlyChinese } from "./lib/translation-policy";
+import {HOSTED} from './lib/runtime-mode';
+import {track,markMaterial} from './lib/hosted-usage';
+import {browserStorageStatus,restoreBrowserBackup} from './lib/browser-library';
 import {normalizeXArticleUrl} from "./lib/x-article-url";
 import {X_CAPTURE_MAX_BYTES, type XArticleCapture} from "./lib/x-article-capture";
 import { confidentlyEnglish } from "./lib/translation-policy";
-import { buildTranslationSource, copyWebTranslation, translationModelConfig, isTranslationModelConfig, translationModelsUsed, unionTranslationModels, TRANSLATION_CONTRACT_VERSION, TRANSLATION_QUALITY_VERSION, TRANSLATION_LIMITS, TRANSLATION_BATCH_TARGET, type WebTranslationState } from "./lib/web-translation";
+import { buildTranslationSource, copyWebTranslation, translationModelConfig, isTranslationModelConfig, translationModelsUsed, unionTranslationModels, TRANSLATION_CONTRACT_VERSION, TRANSLATION_QUALITY_VERSION, TRANSLATION_LIMITS, TRANSLATION_BATCH_TARGET, type TranslationSource, type WebTranslationState } from "./lib/web-translation";
 import { modelConfig } from "./lib/model-routing";
 import { hasRecoveryDifference } from "./lib/recovery-diff";
 import { useEffect, useRef, useState } from "react";
@@ -24,9 +31,9 @@ const translationCount = (completed: number, total: number) => `已翻译 ${comp
 const MIGRATION_KEY = "got-it.library.migration.v1";
 const PREFS_KEY = "got-it.model-preferences.v1";
 
-function savedLabel(w: Workspace) { if(w.document.kind==='web'&&w.document.web.extractorVersion==='x-fxtwitter-public-v1'){const missing=w.document.web.media.filter(m=>m.status!=='saved').length;if(missing)return `正文已保存到本机，${missing}张图片未保存`;}return w.document.kind === "web" && w.document.web.media.some(m => m.status !== "saved") ? "已保存，部分内容未导入" : "已保存到本机"; }
+function savedLabel(w: Workspace) { if(HOSTED)return "已保存到当前浏览器"; if(w.document.kind==='web'&&w.document.web.extractorVersion==='x-fxtwitter-public-v1'){const missing=w.document.web.media.filter(m=>m.status!=='saved').length;if(missing)return `正文已保存到本机，${missing}张图片未保存`;}return w.document.kind === "web" && w.document.web.media.some(m => m.status !== "saved") ? "已保存，部分内容未导入" : "已保存到本机"; }
 const emptyList: LibraryList = { entries: [], activeId: null, warnings: [], nativePicker: true };
-const message = (e: unknown) => e instanceof TypeError && /fetch|network|load/i.test(e.message) ? "无法连接本机阅读服务，请确认服务正在运行后重试。" : e instanceof Error ? e.message : "本机阅读操作失败，请重试。";
+const message = (e: unknown) => e instanceof TypeError && /fetch|network|load/i.test(e.message) ? HOSTED?"无法连接体验服务，请检查网络后重试。":"无法连接本机阅读服务，请确认服务正在运行后重试。" : e instanceof Error ? e.message : "本机阅读操作失败，请重试。";
 export function capturePosition(): ReadingPosition {
   const el = document.querySelector<HTMLElement>(".reader-scroll");
   if (!el) return { ratio: 0 };
@@ -58,7 +65,7 @@ export function useReadingLibrary(options: Options) {
   const importSequence = useRef(0);
   const readonlyRef = useRef(false);
   const [historyId, setHistoryId] = useState("");
-  const [status, setStatus] = useState("正在连接本机阅读库…");
+  const [status, setStatus] = useState(HOSTED?"正在打开浏览器阅读库…":"正在连接本机阅读库…");
   const [error, setError] = useState("");
   const [importError, setImportError] = useState(false);
   const [check, setCheck] = useState<SourceCheck | null>(null);
@@ -80,7 +87,7 @@ export function useReadingLibrary(options: Options) {
   const captureSequence = useRef(0);
   const webPoll = useRef<ReturnType<typeof setTimeout> | null>(null);
   const desiredFragment = useRef<string | null>(null);
-  const translationOperation = useRef<{id:string;entryId:string;cancelled:boolean} | null>(null);
+  const translationOperation = useRef<{id:string;entryId:string;cancelled:boolean;readingPdf?:boolean} | null>(null);
   const [translationRunning, setTranslationRunning] = useState(false);
   const [translationProgress, setTranslationProgress] = useState("");
   const [translationRepairCount,setTranslationRepairCount]=useState(0);
@@ -92,7 +99,9 @@ export function useReadingLibrary(options: Options) {
   const [autoTranslate, setAutoTranslate] = useState(() => { try { return localStorage.getItem("got-it.web-translation-auto.v1") === "true"; } catch { return false; } });
   function setAutoTranslation(value:boolean) { setAutoTranslate(value); try { localStorage.setItem("got-it.web-translation-auto.v1",String(value)); } catch { setNotice("自动翻译偏好未能保存，请检查浏览器存储。"); } }
   function updateTranslation(state:WebTranslationState) {
-    const next = {...(latest.current.getWorkspace?.() ?? latest.current.workspace),webTranslation:state,readingSide:"translated" as const,translationNotice:undefined,updatedAt:new Date().toISOString(),hasUnexportedChanges:true};
+    const base = latest.current.getWorkspace?.() ?? latest.current.workspace;
+    // PDF has no whole-document translated side; each page chooses original or Chinese draft.
+    const next = {...base,webTranslation:state,readingSide:base.document.kind === "pdf" ? "original" as const : "translated" as const,translationNotice:undefined,updatedAt:new Date().toISOString(),hasUnexportedChanges:true};
     latest.current.workspace=next; (latest.current.update ?? latest.current.install)(next);
     writeDraft(next, capturePosition());
     return next;
@@ -103,6 +112,8 @@ export function useReadingLibrary(options: Options) {
     const activity = activityRef.current;
     operation.cancelled=true;translationOperation.current=null;setTranslationRunning(false);
     reportTranslationActivity(null);setTranslationRepairCount(0);
+    // Stopped while the PDF text layer was still being read locally: nothing was sent, nothing to mark.
+    if(operation.readingPdf){setTranslationProgress("已停止，尚未发送任何正文");return;}
     setTranslationProgress(`${activity ? translationCount(activity.completed, activity.total) + "；" : ""}翻译已中断，可主动续译`);
     const state=latest.current.workspace.webTranslation;
     if(state) updateTranslation({...state,batchEpoch:(state.batchEpoch??0)+1,status:"interrupted",updatedAt:new Date().toISOString()});
@@ -112,13 +123,30 @@ export function useReadingLibrary(options: Options) {
     const startedAt=Date.now();
     if (translationOperation.current || busyRef.current || readonlyRef.current || blockedDraft.current || !ready) return;
     const e=entryRef.current, doc=latest.current.workspace.document;
-    if (!e || doc.kind!=="web") return;
-    const source=buildTranslationSource(doc.markdown,doc.web);
-    let state=copyWebTranslation(latest.current.workspace.webTranslation,doc.id,doc.web.contentVersion,source);
+    // Web and Markdown share this flow; each kind supplies its own source and version.
+    if (!e) return;
+    let pdfImagePages=0;
+    let translationSource:{source:TranslationSource;sourceVersion:string;pages?:{scanned:boolean}[]}|null=documentTranslationSource(doc);
+    if (!translationSource && doc.kind==="pdf") {
+      // PDF units come from the saved file's text layer; reading it is local and costs no model call.
+      const loading={id:crypto.randomUUID(),entryId:e.id,cancelled:false,readingPdf:true};translationOperation.current=loading;setTranslationRunning(true);
+      setTranslationProgress("正在读取 PDF 文字层…");
+      try { translationSource=await loadPdfTranslationSource(doc.pdf.resourceId,async()=>new Uint8Array(await (await libraryBinary(`/entries/${e.id}/resources/${doc.pdf.resourceId}`)).arrayBuffer())); }
+      catch { if(translationOperation.current===loading)setTranslationProgress("PDF 文字层读取失败，暂不能全文翻译；原页和知识贴不受影响。");return; }
+      finally { if(translationOperation.current===loading){translationOperation.current=null;setTranslationRunning(false);} }
+      if (loading.cancelled || entryRef.current?.id!==e.id || latest.current.workspace.document.id!==doc.id) return;
+      if (!translationSource.source.units.length) { setTranslationProgress("这份 PDF 没有可翻译的文字层，可框选后提问。"); return; }
+      if (confidentlyChinese(translationSource.source.units.map(u=>u.text).join("\n"))) { setTranslationProgress("这份 PDF 正文已是中文，无需翻译。"); return; }
+      pdfImagePages=translationSource.pages?.filter(p=>p.scanned).length??0;
+      setTranslationProgress("");
+    }
+    if (!translationSource) return;
+    const {source,sourceVersion}=translationSource;
+    let state=copyWebTranslation(latest.current.workspace.webTranslation,doc.id,sourceVersion,source);
     if(state?.status==="complete")return;
     setTranslationRepairCount(0);
-    const requestConfig=translationModelConfig();
-    state=state ?? {version:TRANSLATION_CONTRACT_VERSION,id:crypto.randomUUID(),target:"zh",documentId:doc.id,sourceVersion:doc.web.contentVersion,status:"partial",modelConfig:requestConfig,units:{},updatedAt:new Date().toISOString()};
+    const requestConfig=translationModelConfig(HOSTED);
+    state=state ?? {version:TRANSLATION_CONTRACT_VERSION,id:crypto.randomUUID(),target:"zh",documentId:doc.id,sourceVersion:sourceVersion,status:"partial",modelConfig:requestConfig,units:{},updatedAt:new Date().toISOString()};
     const operation:{id:string;roundId:string;entryId:string;cancelled:boolean}={id:crypto.randomUUID(),roundId:crypto.randomUUID(),entryId:e.id,cancelled:false};translationOperation.current=operation;setTranslationRunning(true);
     reportTranslationActivity({phase:"preparing",completed:Object.keys(state.units).length,total:source.units.length,startedAt,phaseStartedAt:Date.now()});
     setTranslationProgress("");
@@ -132,15 +160,15 @@ export function useReadingLibrary(options: Options) {
         if(!batch.length)throw new Error("正文单元超过翻译预算，请检查分块。");
         setTranslationProgress("");
         reportTranslationActivity({phase:"preparing",completed:Object.keys(state.units).length,total:source.units.length,startedAt,phaseStartedAt:Date.now()});
-        const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify({entryId:e.id,revisionId:e.revisionId,contractVersion:state.version,qualityVersion:TRANSLATION_QUALITY_VERSION,sourceVersion:doc.web.contentVersion,translationId:state.id,batchEpoch:state.batchEpoch??0,modelConfig:requestConfig,unitIds:batch.map(unit=>unit.id)})));
+        const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify({entryId:e.id,revisionId:e.revisionId,contractVersion:state.version,qualityVersion:TRANSLATION_QUALITY_VERSION,sourceVersion:sourceVersion,translationId:state.id,batchEpoch:state.batchEpoch??0,modelConfig:requestConfig,unitIds:batch.map(unit=>unit.id)})));
         operation.id=`${state.id}-${Array.from(new Uint8Array(digest)).map(byte=>byte.toString(16).padStart(2,"0")).join("").slice(0,32)}`;
         if(operation.cancelled || translationOperation.current!==operation)return;
         reportTranslationActivity({phase:"waiting",completed:Object.keys(state.units).length,total:source.units.length,startedAt,phaseStartedAt:Date.now()});
-        const result=await api<{repairCount?:number;operationId:string;translationId:string;sourceVersion:string;modelConfig:WebTranslationState['modelConfig'];units:Record<string,string>}>(`/entries/${e.id}/translation-batches`,{qualityVersion:TRANSLATION_QUALITY_VERSION,operationId:operation.id,roundId:operation.roundId,revisionId:e.revisionId,sourceVersion:doc.web.contentVersion,translationId:state.id,unitIds:batch.map(u=>u.id),modelConfig:requestConfig});
+        const result=await api<{repairCount?:number;operationId:string;translationId:string;sourceVersion:string;modelConfig:WebTranslationState['modelConfig'];providerId?:WebTranslationState['providerId'];units:Record<string,string>}>(`/entries/${e.id}/translation-batches`,{qualityVersion:TRANSLATION_QUALITY_VERSION,operationId:operation.id,roundId:operation.roundId,revisionId:e.revisionId,sourceVersion:sourceVersion,translationId:state.id,unitIds:batch.map(u=>u.id),modelConfig:requestConfig});
         if(operation.cancelled || translationOperation.current!==operation || latest.current.workspace.document.id!==doc.id) return;
-        if(!isTranslationModelConfig(result.modelConfig) || result.operationId!==operation.id || result.translationId!==state.id || result.sourceVersion!==doc.web.contentVersion || Object.keys(result.units).length!==batch.length || batch.some(u=>typeof result.units[u.id]!=="string"))throw new Error("翻译结果与正文批次不匹配。");
-        const candidate={...state,modelConfig:result.modelConfig,modelConfigsUsed:unionTranslationModels(translationModelsUsed(state),result.modelConfig),units:{...state.units,...result.units},status:remaining.length?"partial" as const:"complete" as const,updatedAt:new Date().toISOString(),error:undefined};
-        const checked=copyWebTranslation(candidate,doc.id,doc.web.contentVersion,source);
+        if(!isTranslationModelConfig(result.modelConfig,HOSTED)||(HOSTED&&result.providerId!=='deepseek') || result.operationId!==operation.id || result.translationId!==state.id || result.sourceVersion!==sourceVersion || Object.keys(result.units).length!==batch.length || batch.some(u=>typeof result.units[u.id]!=="string"))throw new Error("翻译结果与正文批次不匹配。");
+        const candidate={...state,modelConfig:result.modelConfig,...(result.providerId?{providerId:result.providerId}:{}),modelConfigsUsed:unionTranslationModels(translationModelsUsed(state),result.modelConfig),units:{...state.units,...result.units},status:remaining.length?"partial" as const:"complete" as const,updatedAt:new Date().toISOString(),error:undefined};
+        const checked=copyWebTranslation(candidate,doc.id,sourceVersion,source);
         if(!checked)throw new Error("翻译内容校验失败，已保存部分保留。");
         state=checked;
         if(Number.isInteger(result.repairCount)&&result.repairCount!>0&&result.repairCount!<=batch.length)setTranslationRepairCount(count=>count+result.repairCount!);
@@ -149,11 +177,14 @@ export function useReadingLibrary(options: Options) {
         if (readonlyRef.current || recoveryRef.current || blockedDraft.current || entryRef.current?.id!==e.id) throw new Error("翻译成果须先核对恢复记录，尚未确认保存。");
       }
       if(!operation.cancelled && !remaining.length && state.status !== "complete") { reportTranslationActivity({phase:"saving",completed:Object.keys(state.units).length,total:source.units.length,startedAt,phaseStartedAt:Date.now()}); state={...state,status:"complete",error:undefined,updatedAt:new Date().toISOString()};await flush(updateTranslation(state)); }
-      if(!operation.cancelled)setTranslationProgress(state.status==="complete"?(doc.web.coverage==="public-excerpt"?"已保存公开正文译中已保存":"全文译中已保存"):"部分译文已保存，可主动续译");
+      if(!operation.cancelled)setTranslationProgress(state.status==="complete"?(doc.kind==="web"&&doc.web.coverage==="public-excerpt"?"已保存公开正文译中已保存":pdfImagePages?`有文字的页面已译完并保存；${pdfImagePages} 页为图片，暂不能翻译`:"全文译中已保存"):"部分译文已保存，可主动续译");
     } catch(error) {
       if(operation.cancelled || translationOperation.current!==operation)return;
       if (readonlyRef.current || recoveryRef.current || blockedDraft.current || entryRef.current?.id!==e.id) { setTranslationProgress(`${translationCount(Object.keys(state.units).length,source.units.length)}；翻译成果待核对，尚未确认保存；已收到部分已保留。`);return; }
-      updateTranslation({...state,status:"failed",error:message(error),updatedAt:new Date().toISOString()});setTranslationProgress(`${translationCount(Object.keys(state.units).length,source.units.length)}；${message(error)}`);
+      // A batch the service reported as failed gets a fresh operation id on resume (the hosted service refuses
+      // ids that already failed); a lost response keeps its id so a completed result can be reused without a new charge.
+      const rejected=typeof (error as {status?:unknown})?.status==="number";
+      updateTranslation({...state,...(rejected?{batchEpoch:(state.batchEpoch??0)+1}:{}),status:"failed",error:message(error),updatedAt:new Date().toISOString()});setTranslationProgress(`${translationCount(Object.keys(state.units).length,source.units.length)}；${message(error)}`);
       if(!savePaused.current)void flush().catch(()=>{});
     } finally { if(translationOperation.current===operation){translationOperation.current=null;setTranslationRunning(false);reportTranslationActivity(null);} }
   }
@@ -218,6 +249,7 @@ export function useReadingLibrary(options: Options) {
       const draft = writeDraft(w, p); setStatus("保存中…"); saving.current=true;
       try {
         const next = await api<LibraryEntry>(`/entries/${e.id}/save`, { expectedVersion: e.version, revisionId: e.revisionId, workspace: w, position: p });
+        if(HOSTED)void browserStorageStatus(true);
         remember(next); savePaused.current = false; saved.current = fp; setError("");
         const currentPosition = restorePending.current ? desiredPosition.current : capturePosition();
         const hasNewerChanges = fingerprint(latest.current.workspace, currentPosition) !== fp;
@@ -228,6 +260,7 @@ export function useReadingLibrary(options: Options) {
         }
         if (draft) store().remove(draft);
       } catch (error) {
+        track('save-failed');
         if ((error as {status?:number}).status === 409) {
           const current = latest.current.interrupt(); latest.current.workspace=current;
           const latestDraft = writeDraft(current, restorePending.current ? desiredPosition.current : capturePosition()) ?? draft;
@@ -236,7 +269,7 @@ export function useReadingLibrary(options: Options) {
             try {
               const result=await api<RecoveryResult>(`/entries/${e.id}/recover`,latestDraft.draft);
               store().remove(latestDraft);blockedDraft.current=null;setBlocked(false);
-              if(result.kind === "review") { install(await api<LibraryEntry>(`/entries/${e.id}`)); if(result.record.state === "pending" && result.record.disk && hasRecoveryDifference(result.record.draft.workspace,result.record.disk.workspace)) { preview(result.record); readonlyRef.current=true; } setStatus("已保存到本机"); }
+              if(result.kind === "review") { install(await api<LibraryEntry>(`/entries/${e.id}`)); if(result.record.state === "pending" && result.record.disk && hasRecoveryDifference(result.record.draft.workspace,result.record.disk.workspace)) { preview(result.record); readonlyRef.current=true; } setStatus(HOSTED?"已保存到当前浏览器":"已保存到本机"); }
               else install(result.entry);
               await refreshRecoveries();setError("");return;
             } catch (failure) { error=failure; }
@@ -305,17 +338,35 @@ export function useReadingLibrary(options: Options) {
     });
     return opened;
   }
+  const ensuringEntry=useRef<Promise<LibraryEntry>|null>(null);
+  const [preparingEntry,setPreparingEntry]=useState(false);
+  async function ensureEntry():Promise<LibraryEntry>{
+    if(entryRef.current)return entryRef.current;
+    if(!HOSTED)throw new Error('请先添加阅读材料。');
+    if(ensuringEntry.current)return ensuringEntry.current;
+    if(busyRef.current)throw new Error('阅读材料正在切换，请稍后重试。');
+    const workspace=latest.current.getWorkspace?.()??latest.current.workspace,documentId=workspace.document.id;
+    busyRef.current=true;setPreparingEntry(true);
+    const job=(async()=>{const activated=await api<LibraryEntry>('/entries',{workspace,creationKey:`welcome:${documentId}`,activate:true});
+      const current=latest.current.getWorkspace?.()??latest.current.workspace;
+      if(current.document.id!==documentId)throw new Error('阅读材料已切换，本次操作已取消。');
+      remember(activated);saved.current=fingerprint(activated.workspace,activated.position);setStatus(savedLabel(activated.workspace));await refresh();return activated;})();
+    ensuringEntry.current=job;try{return await job;}finally{ensuringEntry.current=null;busyRef.current=false;setPreparingEntry(false);}
+
+  }
   async function addWorkspace(w: Workspace, selectionId?: string) {
     await preserve();
     const preferences = latest.current.workspace;
     const e = await api<LibraryEntry>("/entries", { workspace: { ...w, modelPreferences: preferences.modelPreferences, modelDefaultsVersion: preferences.modelDefaultsVersion, activeProviderId: preferences.activeProviderId }, creationKey: crypto.randomUUID(), selectionId });
-    install(await api<LibraryEntry>(`/entries/${e.id}/activate`, {})); await refresh(); await checkSource();
+    install(await api<LibraryEntry>(`/entries/${e.id}/activate`, {})); markMaterial(w.document.id.startsWith("sample-")?"sample":w.document.kind==="pdf"?"pdf":"markdown"); await refresh(); await checkSource();
   }
   async function importFile(file: File) {
+    const sample=HOSTED?sampleForFile(file):undefined;
+    const annotate=(w:Workspace):Workspace=>sample?{...w,document:{...w.document,id:`sample-${sample.id}-${sample.sha256}`,contentHash:sample.sha256}}:w;
     if (busyRef.current || !ready) return;
     const sequence = ++importSequence.current;
-    try { if(file.name.toLowerCase().endsWith('.pdf')){if(file.size>50*1024*1024)throw new Error('PDF 须不超过 50 MiB。');await transition(async()=>{const selected:SelectedFile=await (await libraryBinary('/pdf?filename='+encodeURIComponent(file.name),new Blob([file],{type:'application/pdf'}))).json();await addWorkspace(selected.workspace!,selected.selectionId);}, true);return;} const w = await readDocumentFile(file); if (sequence !== importSequence.current) return; await transition(() => addWorkspace(w), true); }
-    catch (e) { if (sequence === importSequence.current) { setImportError(true); setError(message(e)); } }
+    try { if(HOSTED && file.name.endsWith('.gotit')){await preserve();track('restore');await restoreBrowserBackup(await file.text());track('restore-success');await refresh();await initialize();return;} if(file.name.toLowerCase().endsWith('.pdf')){if(file.size>50*1024*1024)throw new Error('PDF 须不超过 50 MiB。');await transition(async()=>{const selected:SelectedFile=await (await libraryBinary('/pdf?filename='+encodeURIComponent(file.name),new Blob([file],{type:'application/pdf'}))).json();await addWorkspace(annotate(selected.workspace!),selected.selectionId);}, true);return;} const w = await readDocumentFile(file); if (sequence !== importSequence.current) return; await transition(() => addWorkspace(annotate(w)), true); }
+    catch (e) { if(HOSTED&&file.name.endsWith('.gotit'))track('restore-failed'); if (sequence === importSequence.current) { setImportError(true); setError(message(e)); } }
   }
   async function choose(relink = false) {
     await transition(async () => {
@@ -356,7 +407,7 @@ export function useReadingLibrary(options: Options) {
     const r = recoveryRef.current; if (!r) return;
     await transition(async()=>{
       try {
-        const result=await api<{record:RecoveryRecord;entry:LibraryEntry}>(`/recoveries/${r.id}/resolve`,{choice,expectedVersion:r.disk?.version ?? null});
+        const result=await api<{record:RecoveryRecord;entry:LibraryEntry}>(`/recoveries/${r.id}/resolve`,{choice,expectedVersion:r.current?.version ?? r.disk?.version ?? null});
         await api(`/recoveries/${r.id}/acknowledge`, {});
         install(await api<LibraryEntry>(`/entries/${result.entry.id}/activate`,{}));await refresh();await refreshRecoveries();await checkSource();
       } catch(e) {
@@ -505,7 +556,7 @@ export function useReadingLibrary(options: Options) {
     try {
       let result = await refresh();
       const old = latest.current.workspace;
-      if (!ready && !old.document.isDemo && !localStorage.getItem(MIGRATION_KEY)) {
+      if (!ready && !HOSTED && !old.document.isDemo && !localStorage.getItem(MIGRATION_KEY)) {
         // Deterministic idempotency key survives a lost response; this key is not a path or credential.
         let key = localStorage.getItem("got-it.library.migration-key.v1");
         if (!key) { key = `legacy:${crypto.randomUUID()}`; localStorage.setItem("got-it.library.migration-key.v1", key); }
@@ -539,7 +590,7 @@ export function useReadingLibrary(options: Options) {
       const records=await refreshRecoveries();
       const id = result.activeId ?? result.entries[0]?.id;
       if (id) { install(restored.get(id) ?? await api<LibraryEntry>(`/entries/${id}`)); await checkSource(); }
-      else setStatus("示例文档");
+      else setStatus(HOSTED?"请打开样例或添加本地文件":"示例文档");
       if (records.some(r=>r.state === "pending" && r.hasDifferences !== false)) setStatus("有阅读记录待核对 · 已安全保留");
       if (recovered) setNotice("已恢复上次阅读进度");
       setReady(true);
@@ -587,7 +638,7 @@ export function useReadingLibrary(options: Options) {
     if (!timer.current) timer.current = setTimeout(() => { timer.current = null; void flush().catch(() => {}); }, 500);
   }
   useEffect(()=> { if (!notice) return; const id=setTimeout(()=>setNotice(""),4500); return ()=>clearTimeout(id); },[notice]);
-  return { retryWebMedia, translate, stopTranslation, translationRunning, translationProgress, translationActivity, translationRepairCount, autoTranslate, setAutoTranslation, saveNow:flush, webImportOpen, webImportSuccess, webJob, webError, showWebImport, readWebUrl, readWebArticle, readXArticleFile, confirmWebImport, cancelWebImport, initialPosition: desiredPosition.current, entry, list, ready, busy, error, importError, clearError: () => { setError(""); setImportError(false); }, status, check, recovery, recoveries, blocked, draftWarning, notice, historyId,
+  return { ensureEntry, retryWebMedia, translate, stopTranslation, translationRunning, translationProgress, translationActivity, translationRepairCount, autoTranslate, setAutoTranslation, saveNow:flush, webImportOpen, webImportSuccess, webJob, webError, showWebImport, readWebUrl, readWebArticle, readXArticleFile, confirmWebImport, cancelWebImport, initialPosition: desiredPosition.current, entry, list, ready, busy:busy||preparingEntry, error, importError, clearError: () => { setError(""); setImportError(false); }, status, check, recovery, recoveries, blocked, draftWarning, notice, historyId,
     readOnly: !!historyId || !!recovery || blocked || busy,
     openBookmark, prepareBookmarks:preserve, open, choose, importFile, checkSource: () => transition(checkSource), acceptUpdate, viewRevision, resolveRecovery, acknowledgeRecovery, showRecovery, closeRecovery,
     retry: () => ready && !blockedDraft.current ? transition(() => flush()) : initialize(),

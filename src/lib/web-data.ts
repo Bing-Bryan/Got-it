@@ -36,7 +36,7 @@ export interface WebImportJob {
   status: "reading" | "ready" | "failed" | "cancelled" | "expired" | "existing";
   progress: string;
   error?: string;
-  preview?: { workspace: Workspace; candidateId: string };
+  preview?: { workspace: Workspace; candidateId: string; retryTickets?:Record<string,string> };
   entryId?: string;
   expiresAt?: string;
 }

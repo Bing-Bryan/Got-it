@@ -1,3 +1,8 @@
+import {InquiryStreamError} from './lib/inquiry-stream';
+import {loadSampleImages} from './lib/browser-library';
+import {HOSTED,hostedCapabilities} from './lib/runtime-mode';
+import {HostedSettings,HostedSamples,HostedSendDisclosure} from './HostedControls';
+import {installUsage,track,markMaterial} from './lib/hosted-usage';
 import {revealBookmarkRanges} from './lib/bookmark-navigation';
 import { selectionContext,selectionRequestError } from './lib/inquiry-selection';
 import { DocumentBookmarks } from './DocumentBookmarks';
@@ -108,7 +113,7 @@ import {
 } from "./lib/anchors";
 import { loadWorkspace, saveWorkspace, restoreWorkspace, copyContextHistory } from "./lib/storage";
 
-const FALLBACK_PROVIDERS: ProviderStatus[] = [
+const FALLBACK_PROVIDERS: ProviderStatus[] = HOSTED?[{id:"deepseek",name:"体验版默认模型",description:"选区解释与提问",availability:"checking",supportsWebSearch:false,localOnly:false}]:[
   {
     id: "codex",
     name: "Codex",
@@ -144,6 +149,7 @@ function readError(error: unknown): string {
 }
 
 function App() {
+  useEffect(installUsage,[]);
   const bookmarkFeedback=useBookmarkFeedback();
   const {failure:bookmarkFailure,notice:bookmarkNotice,version:bookmarkVersion,retrying:bookmarkRetrying,saved:bookmarkSaved}=bookmarkFeedback;
   const [bookmarksOpen,setBookmarksOpen]=useState(false);
@@ -156,9 +162,10 @@ function App() {
   const [pdfDirectoryTarget, setPdfDirectoryTarget] = useState<{documentId:string;item:PdfOutlineItem;nonce:number}|null>(null);
   const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
   const [workspace, setWorkspace] = useState<Workspace>(() => {
-    let loaded = migrateHighlightAnchors(loadWorkspace() ?? createInitialWorkspace());
+    let loaded = migrateHighlightAnchors((HOSTED?null:loadWorkspace()) ?? createInitialWorkspace());
+    if(HOSTED)loaded={...loaded,document:{id:"hosted-welcome",isDemo:true,importedAt:new Date().toISOString(),filename:"欢迎使用 Got-it",markdown:"# 阅读，从你的材料开始\n\n使用左侧 + 添加 Markdown / PDF、公开网页或 X 链接，也可打开公开样例。\n\n选中文字后，可解释、提问并收藏原句。提问时，选区、有限上下文及追问历史会发送到托管服务与模型服务商；服务端不保存正文或回答。\n\n主动全文译中会将全部可翻译正文分批发送给托管服务与模型服务商；每批使用体验额度，原文保留。\n\n成果只保存在当前浏览器，请定期下载完整备份。",contentHash:"hosted-welcome-v2"}};
     try { const preferences = JSON.parse(localStorage.getItem("got-it.model-preferences.v1") || "null"); if (preferences) loaded = restoreWorkspace({ ...loaded, ...preferences }) ?? loaded; } catch { /* retain defaults */ }
-    return { ...loaded, modelDefaultsVersion: 4, modelPreferences: loaded.modelDefaultsVersion === 4 ? loaded.modelPreferences : Object.fromEntries((["explain", "verify", "entity", "why", "ask"] as const).map(intent => [intent, modelConfig(intent)])), activeProviderId: "codex" };
+    return { ...loaded, modelDefaultsVersion: 4, modelPreferences: loaded.modelDefaultsVersion === 4 ? loaded.modelPreferences : Object.fromEntries((["explain", "verify", "entity", "why", "ask"] as const).map(intent => [intent, modelConfig(intent)])), activeProviderId: HOSTED?"deepseek":"codex" };
   });
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
@@ -265,19 +272,24 @@ function App() {
     const current=bookmarkDraftRef.current;
     if(current&&bookmarkSelectionOperation.current?.draft===current&&bookmarkSelectionOperation.current.operationId===request.operationId&&library.entry&&bookmarkPosition({entryId:library.entry.id,revisionId:library.entry.revisionId,anchor:current.anchor})===bookmarkPosition(request)){setBookmarkDraft(null);setSelectionDraft(null);setInquirySelectionError('');window.getSelection()?.removeAllRanges();}
   }
+  useEffect(()=>{if(HOSTED&&library.entry)markMaterial(workspace.document.id.startsWith('sample-')?'sample':workspace.document.kind==='pdf'?'pdf':'markdown');},[library.entry?.id,workspace.document.id]);
   const saveStatus = useSaveStatus(library.status, workspace.document.id + ":" + documentLoadId);
 
+  const [sampleImages,setSampleImages]=useState<Record<string,string>>({});
+  useEffect(()=>{let active=true;setSampleImages({});if(HOSTED)void loadSampleImages(workspace.document.contentHash).then(images=>{if(active)setSampleImages(images);}).catch(()=>{});return()=>{active=false;};},[workspace.document.contentHash]);
   const rendered = useMemo(
-    () => workspace.document.kind === "pdf" ? {html:"",outline:[]} : workspace.document.kind === "web" ? translatedRendering(workspace) : renderMarkdown(workspace.document.markdown),
-    [workspace.document, workspace.webTranslation, workspace.readingSide],
+    () => workspace.document.kind === "pdf" ? {html:"",outline:[]} : translatedRendering(workspace,sampleImages),
+    [workspace.document, workspace.webTranslation, workspace.readingSide,sampleImages],
   );
   async function openBookmarks(){
+    track("bookmarks-all");
     bookmarkPreparing.current=null;setBookmarkTarget(null);
     try {await library.prepareBookmarks();bookmarkPositionRef.current=capturePosition();setSelectionDraft(null);setBookmarkDraft(null);setInquirySelectionError('');window.getSelection()?.removeAllRanges();setBookmarksOpen(true);setMobileSidebarOpen(false);setMobilePanelOpen(false);}
     catch(e){showToast(e instanceof Error?e.message:"无法打开收藏，请重试。");}
   }
   function closeBookmarks(){bookmarkPreparing.current=null;setBookmarkTarget(null);setBookmarksOpen(false);requestAnimationFrame(()=>{if(bookmarkPositionRef.current)restorePosition(bookmarkPositionRef.current);const trigger=document.querySelector<HTMLButtonElement>(window.matchMedia('(max-width:780px)').matches?'.drawer-navigation-trigger':'.bookmarks-nav');trigger?.focus();});}
   async function locateBookmark(bookmark:ReadingBookmark){
+    track("bookmark-locate");
     const attempt={entryId:bookmark.entryId,documentId:bookmark.documentId,nonce:++bookmarkLocateNonce.current,keepList:bookmarksOpen};bookmarkPreparing.current=attempt;
     try{if(!await library.openBookmark(bookmark.id))throw new Error('无法打开对应原文版本，收藏仍保留。请检查阅读库状态后重试。');
     if(bookmarkPreparing.current===attempt)setBookmarkTarget({...bookmark,locateNonce:attempt.nonce});}
@@ -297,6 +309,7 @@ function App() {
   },[bookmarkTarget,documentLoadId,rendered.html]);
   useLayoutEffect(()=>{if(bookmarksOpen||!bookmarkFocus.current)return;const block=bookmarkFocus.current;bookmarkFocus.current=null;if(block.isConnected)focusReadingTarget(block);},[bookmarksOpen,bookmarkTarget]);
   function jumpToHeading(id:string){
+    track("outline");
     setMobileSidebarOpen(false);
     if(bookmarksOpen){bookmarkPreparing.current=null;setBookmarkTarget(null);setBookmarksOpen(false);setDirectoryTarget({id,nonce:Date.now()});return;}
     const target=document.getElementById(id);if(target){revealReadingTarget(target,{align:'start'});setCurrentHeading(id);}
@@ -401,6 +414,7 @@ function App() {
   }, []);
 
   const refreshModels = useCallback(async (refresh = false) => {
+    if(HOSTED){setModelsLoading(false);return;}
     setModelsLoading(true); setModelsError("");
     try {
       setCodexModels(await loadModelCatalog(refresh));
@@ -419,6 +433,7 @@ function App() {
   }, [codexModels, modelsLoading, modelsError, workspace.modelPreferences, showToast]);
 
   const refreshProviders = useCallback(async () => {
+    if(HOSTED){try{const c=await hostedCapabilities();setProviders([{...FALLBACK_PROVIDERS[0],supportsWebSearch:c.supportsWebSearch,availability:c.available?"connected":"unavailable",detail:c.quota.globalExhausted?"今日体验额度已用完":`今日剩余 ${c.quota.remaining} 次`}]);}catch{setProviders([{...FALLBACK_PROVIDERS[0],availability:"unavailable",detail:"体验服务暂不可用"}]);}return;}
     try {
       const response = await fetch("/api/providers");
       if (!response.ok) throw new Error("Provider 状态服务暂不可用");
@@ -442,7 +457,7 @@ function App() {
   }, [refreshProviders]);
 
   useEffect(() => {
-    if (!workspace.document.isDemo) return;
+    if (HOSTED || !workspace.document.isDemo) return;
     const result = saveWorkspace(workspace);
     if (!result.ok) showToast(result.error);
   }, [showToast, workspace]);
@@ -542,6 +557,8 @@ function App() {
   const askProvider = useCallback(
     async (inquiryId: string, request: InquiryRequest) => {
       if (library.readOnly || library.busy || !library.ready || requests.current.has(inquiryId)) return;
+      if(request.history?.length){const rounds=request.history.filter(m=>m.role==='user').length;track(rounds>=6?'follow-up-6plus':'follow-up-2to5');}
+      track(request.intent==='verify'?'verify':request.readingScope==='document'?'document-ask':request.history?.length?'follow-up':request.intent==='ask'?'ask':'explain');
       const requestId = newId("request"), messageId = newId("message"), controller = new AbortController();
       const operation = request.operation ?? (request.intent === "why" ? "explain" : request.intent);
       const imageAnchor=workspaceRef.current.inquiries.find(i=>i.id===inquiryId)?.anchor.pdf;
@@ -581,8 +598,10 @@ function App() {
           }));
         }, controller.signal);
       } catch (error) {
+        if(scoped.intent==='verify'&&!controller.signal.aborted)track('verify-failed');
+        track(controller.signal.aborted?'answer-stop':/额度/.test(readError(error))?'quota-exhausted':'model-failed');
         if (requests.current.get(inquiryId)?.id === requestId) updateInquiry(inquiryId, inquiry => ({ ...inquiry,
-          messages: inquiry.messages.map(message => message.id === messageId ? interruptMessage(message) : message),
+          messages: inquiry.messages.map(message => message.id === messageId ? {...interruptMessage(message),...(error instanceof InquiryStreamError&&error.search?{search:error.search}:{})} : message),
           status: "ready", updatedAt: now(), lastError: readError(error),
         }));
       } finally {
@@ -607,15 +626,16 @@ function App() {
       const bookmark=createBookmarkDraft(selection,article,workspace);
       if('error' in bookmark){setBookmarkDraft(null);setSelectionDraft(null);showToast(bookmark.error);return;}
       setBookmarkDraft(bookmark);
-      setSelectionDraft(bookmark);setInquirySelectionError('');
+      setSelectionDraft(bookmark);setInquirySelectionError('');track('selection-shown');
     });
   }, [showToast, workspace.document.id, workspace.webTranslation, workspace.readingSide, library.readOnly, library.busy, library.ready]);
 
   const createInquiry = useCallback(
-    (intent: ActiveInquiryIntent, draftOverride?: SelectionDraft, customQuestion?: string, contextHistory?: Inquiry["contextHistory"]) => {
+    async (intent: ActiveInquiryIntent, draftOverride?: SelectionDraft, customQuestion?: string, contextHistory?: Inquiry["contextHistory"]) => {
       if (library.readOnly || library.busy || !library.ready) return;
       const draft = draftOverride ?? selectionDraft;
       if (!draft) return;
+      if(HOSTED&&!library.entry){const sourceId=workspaceRef.current.document.id,visit=navigationSequence.current,selection=bookmarkDraftRef.current,nativeSelection=window.getSelection()?.toString();try{await library.ensureEntry();}catch(error){showToast(readError(error));return;}if(workspaceRef.current.document.id!==sourceId||navigationSequence.current!==visit||(!draftOverride&&(bookmarkDraftRef.current!==selection||window.getSelection()?.toString()!==nativeSelection)))return;}
       if (workspace.activeProviderId === "codex" && (modelsLoading || modelsError || !codexModels.length)) { showToast("请先等待模型列表加载完成，或刷新连接后再试。"); return; }
       const matches = workspace.inquiries.filter(i => sameAnchor(i.anchor, draft.anchor));
       if (intent === "ask" && (!customQuestion?.trim() || customQuestion.length > 2000)) return;
@@ -732,6 +752,7 @@ function App() {
   };
 
   const retryInquiry = useCallback(() => {
+    track("answer-regenerate");
     if (!activeInquiry || groupBusy || requests.current.has(activeInquiry.id)) return;
     const failed = activeInquiry.messages.at(-1);
     const parentMessageId = failed?.parentMessageId ?? failed?.verification?.parentMessageId;
@@ -867,7 +888,8 @@ function App() {
     const current = workspaceRef.current;
     const inquiry = current.inquiries.find(i => i.id === inquiryId);
     if (inquiry?.anchor.scope === "document") return;
-    if (current.readingSide === "translated" && inquiry?.anchor.translation && (inquiry.anchor.translation.translationId !== current.webTranslation?.id || inquiry.anchor.translation.version !== current.webTranslation?.version)) { showToast("旧译文摘录仍保留；当前译文版本不同，请用对应原文段落回看。"); return; }
+    // PDF stickies always keep their original-page boxes, so an older draft translation still locates there.
+    if (current.document.kind !== "pdf" && current.readingSide === "translated" && inquiry?.anchor.translation && (inquiry.anchor.translation.translationId !== current.webTranslation?.id || inquiry.anchor.translation.version !== current.webTranslation?.version)) { showToast("旧译文摘录仍保留；当前译文版本不同，请用对应原文段落回看。"); return; }
     const sequence = ++navigationSequence.current;
     if (!inquiry || inquiry.anchor.matchStatus !== 'matched') { finishSourceNavigation(inquiryId, false); return; }
     if (current.document.kind === 'pdf') {
@@ -930,7 +952,7 @@ function App() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,.md,.focus,.json,application/pdf,text/markdown,application/json"
+        accept={HOSTED?".pdf,.md,.markdown,.focus,.json,.gotit":".pdf,.md,.focus,.json,application/pdf,text/markdown,application/json"}
         aria-label="打开 PDF、Markdown 或阅读文档"
         hidden
         onChange={handleFileChange}
@@ -960,7 +982,8 @@ function App() {
 
         <nav className="sidebar-scroll">
           <section className="nav-section">
-            {workspace.document.kind === "pdf" && library.entry ? <PdfOutline key={library.entry.id+workspace.document.pdf.resourceId+documentLoadId} entryId={library.entry.id} fileHash={workspace.document.pdf.resourceId} pages={workspace.document.pdf.pages.length} currentPage={pdfCurrentPage} readOnly={library.readOnly} onJump={item=>{bookmarkPreparing.current=null;setBookmarkTarget(null);setBookmarksOpen(false);setPdfDirectoryTarget({documentId:workspace.document.id,item,nonce:Date.now()});setMobileSidebarOpen(false);}}/> : <>
+            {HOSTED?<details className="hosted-sample-picker" open={workspace.document.isDemo}><summary className="disclosure-summary"><span>公开样例</span><ChevronDown size={13} className="disclosure-chevron" aria-hidden="true"/></summary><HostedSamples onOpen={library.importFile}/></details>:null}
+          {workspace.document.kind === "pdf" && library.entry ? <PdfOutline key={library.entry.id+workspace.document.pdf.resourceId+documentLoadId} entryId={library.entry.id} fileHash={workspace.document.pdf.resourceId} pages={workspace.document.pdf.pages.length} currentPage={pdfCurrentPage} readOnly={library.readOnly} onJump={item=>{bookmarkPreparing.current=null;setBookmarkTarget(null);setBookmarksOpen(false);setPdfDirectoryTarget({documentId:workspace.document.id,item,nonce:Date.now()});setMobileSidebarOpen(false);}}/> : <>
             <div className="section-label">
               <span>{workspace.document.kind === "pdf" ? "PDF 原页" : "文档结构"}</span>
               <span>{workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页` : rendered.outline.length}</span>
@@ -1006,7 +1029,7 @@ function App() {
             <FileText size={15} />
             <div>
               <strong title={workspace.document.filename}>{workspace.document.filename}</strong>
-              <span className="document-metadata">{workspace.document.isDemo ? "示例文档" : workspace.document.kind === "web" ? (workspace.document.web.retrieval?.provider === "fxtwitter" ? "X 公开接口保存副本" : workspace.document.web.extractorVersion === "x-browser-visible-v1" ? "X 页面保存副本" : workspace.document.web.coverage === "public-excerpt" ? "网页公开部分副本" : "网页保存副本") : "本地文档"} · {workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页 PDF` : workspace.document.markdown.length < 1000 ? `${workspace.document.markdown.length} 字符` : `${Math.round(workspace.document.markdown.length / 1000)}k 字符`}{readingMinutes !== null ? <span className="reading-time"> · 预计阅读 {readingMinutes} 分钟</span> : null}</span>
+              <span className="document-metadata">{workspace.document.isDemo ? "示例文档" : workspace.document.kind === "web" ? (workspace.document.web.retrieval?.provider === "fxtwitter" ? "X 公开接口保存副本" : workspace.document.web.extractorVersion === "x-browser-visible-v1" ? "X 页面保存副本" : workspace.document.web.coverage === "public-excerpt" ? "网页公开部分副本" : "网页保存副本") : (HOSTED?"浏览器阅读副本":"本地文档")} · {workspace.document.kind === "pdf" ? `${workspace.document.pdf.pages.length} 页 PDF` : workspace.document.markdown.length < 1000 ? `${workspace.document.markdown.length} 字符` : `${Math.round(workspace.document.markdown.length / 1000)}k 字符`}{readingMinutes !== null ? <span className="reading-time"> · 预计阅读 {readingMinutes} 分钟</span> : null}</span>
             </div>
           </div>
 
@@ -1019,7 +1042,7 @@ function App() {
                 aria-label="AI 连接与模型设置"
                 type="button"
                 aria-expanded={providerOpen}
-                onClick={() => setProviderOpen((value) => !value)}
+                onClick={() => {setProviderOpen((value) => !value);if(HOSTED)void refreshProviders();}}
               >
                 <ProviderGlyph id={activeProvider.id} />
                 <span>{activeProvider.name}</span>
@@ -1033,7 +1056,7 @@ function App() {
                   onSelect={selectProvider}
                   onClose={() => setProviderOpen(false)}
                 >
-          <CodexLogin provider={activeProvider} onConnected={onCodexConnected} />
+          {HOSTED?<HostedSettings key={String(providerOpen)}/>:<><CodexLogin provider={activeProvider} onConnected={onCodexConnected} />
           <details className="model-settings" open onToggle={event => { if (event.currentTarget.open) void refreshModels(true); }}>
           <summary>模型设置</summary><div className="model-controls">
             <label className="settings-purpose">用途<select aria-label="设置用途" value={settingsIntent} onChange={e => setSettingsIntent(e.target.value as InquiryIntent)}>{NEW_INQUIRY_INTENTS.map(intent => <option key={intent} value={intent}>{INTENT_META[intent].label}</option>)}</select></label>
@@ -1054,7 +1077,7 @@ function App() {
               {modelsError ? <small role="alert">{modelsError}</small> : null}
             </> : <small>当前使用 {activeProvider.name}，模型由该连接配置。</small>}
           </div>
-          </details>
+          </details></>}
                 </ProviderPopover>
               </div>
             </div>
@@ -1072,7 +1095,7 @@ function App() {
           </div>
         </header>
 
-        <div className={`reader-tools${workspace.document.kind === "web" ? " reader-tools--web" : ""}`}>
+        <div className={`reader-tools${HOSTED ? " reader-tools--hosted" : ""}${workspace.document.kind === "web" ? " reader-tools--web" : ""}`}>
         <ReadingLibraryStatus library={library} hideWebSource={workspace.document.kind === "web"} onImport={() => fileInputRef.current?.click()} />
         <WebTranslationControls key={workspace.document.id+":"+documentLoadId} workspace={workspace} library={library} saveStatus={saveStatus} onSide={side => { setSelectionDraft(null);setBookmarkDraft(null);setInquirySelectionError('');window.getSelection()?.removeAllRanges(); const position = capturePosition();updateWorkspace(current=>({...current,readingSide:side})); requestAnimationFrame(()=>restorePosition(position)); }} />
         <div ref={setPdfToolbarHost} className="reader-status-host" />
@@ -1083,14 +1106,14 @@ function App() {
         </div>
         <div className="reader-viewport" ref={readerViewportRef}>
         <div key={workspace.document.id+":"+documentLoadId} className={`reader-scroll${workspace.document.kind === "pdf" ? " reader-scroll--pdf" : ""}`} onScroll={() => { if (!markdownWidth.adjusting.current) library.scrolled(); }}>
-          {workspace.document.isDemo ? (
+          {workspace.document.isDemo && !HOSTED ? (
             <div className="demo-document-note">
               <Sparkles size={15} />
               <span><strong>可直接体验：</strong>选中 “CAGR” 或 “67% 的 35 岁以下成人”，再选择一种追问方式。</span>
               <button type="button" onClick={() => void library.choose()}>换成我的文档</button>
             </div>
           ) : null}
-          {workspace.document.kind === "pdf" && library.entry ? <Suspense fallback={<p className="pdf-status">正在加载 PDF 阅读器…</p>}><PdfReader toolbarHost={pdfToolbarHost} adjustmentHost={adjustmentHost} onReadingTime={receivePdfMinutes} outlineTarget={pdfDirectoryTarget?.documentId===workspace.document.id?pdfDirectoryTarget:null} onCurrentPage={setPdfCurrentPage} key={workspace.document.id+documentLoadId} document={workspace.document} revisionId={library.entry.revisionId} onBookmarkSaved={finishBookmarkSave} bookmarkCompleted={bookmarkCompleted} bookmarks={currentBookmarks} bookmarkVersion={bookmarkVersion} onBookmarkStarted={beginBookmarkSave} onBookmarkFailed={bookmarkFeedback.failed} bookmarkTarget={bookmarkTarget} onBookmarkLocated={success=>{if(!bookmarkTarget||bookmarkPreparing.current?.nonce!==bookmarkTarget.locateNonce)return;bookmarkPreparing.current=null;if(!success){showToast("无法定位收藏原文，摘录仍保留。");setBookmarksOpen(true);}else setBookmarksOpen(false);setBookmarkTarget(null);}} entryId={library.entry.id} inquiries={workspace.inquiries} activeId={workspace.activeInquiryId} target={pdfTarget} onLocated={finishSourceNavigation} initialPosition={library.initialPosition} readOnly={library.readOnly} saveStatus={saveStatus} saveBusy={library.busy} saveError={library.blocked||library.status==="阅读进度暂未保存"} onCreate={createInquiry} onActivate={openAnchor} onReady={library.rendered} onView={library.scrolled}/></Suspense> : <article
+          {workspace.document.kind === "pdf" && library.entry ? <Suspense fallback={<p className="pdf-status">正在加载 PDF 阅读器…</p>}><PdfReader translation={workspace.webTranslation} toolbarHost={pdfToolbarHost} adjustmentHost={adjustmentHost} onReadingTime={receivePdfMinutes} outlineTarget={pdfDirectoryTarget?.documentId===workspace.document.id?pdfDirectoryTarget:null} onCurrentPage={setPdfCurrentPage} key={workspace.document.id+documentLoadId} document={workspace.document} revisionId={library.entry.revisionId} onBookmarkSaved={finishBookmarkSave} bookmarkCompleted={bookmarkCompleted} bookmarks={currentBookmarks} bookmarkVersion={bookmarkVersion} onBookmarkStarted={beginBookmarkSave} onBookmarkFailed={bookmarkFeedback.failed} bookmarkTarget={bookmarkTarget} onBookmarkLocated={success=>{if(!bookmarkTarget||bookmarkPreparing.current?.nonce!==bookmarkTarget.locateNonce)return;bookmarkPreparing.current=null;if(!success){showToast("无法定位收藏原文，摘录仍保留。");setBookmarksOpen(true);}else setBookmarksOpen(false);setBookmarkTarget(null);}} entryId={library.entry.id} inquiries={workspace.inquiries} activeId={workspace.activeInquiryId} target={pdfTarget} onLocated={finishSourceNavigation} initialPosition={library.initialPosition} readOnly={library.readOnly} saveStatus={saveStatus} saveBusy={library.busy} saveError={library.blocked||library.status==="阅读进度暂未保存"} onCreate={createInquiry} onActivate={openAnchor} onReady={library.rendered} onView={library.scrolled}/></Suspense> : <article
             ref={articleRef}
             className="markdown-article"
             data-reading-side={workspace.readingSide ?? "original"}
@@ -1133,15 +1156,16 @@ function App() {
               const busy = items.some(i => i.status === "answering");
               return <button key={intent} id={`intent-tab-${intent}`} data-intent={intent} aria-label={`${INTENT_META[intent].label}${items.length ? `(${items.length})` : ""}`} title={`${INTENT_META[intent].label} · ${items.length} 条${busy ? " · 处理中" : ""}`} type="button" role="tab" aria-selected={tabIntent === intent} aria-busy={busy} aria-controls="intent-result" tabIndex={tabIntent === intent || (tabIntent === "why" && index === 0) ? 0 : -1}
                 onClick={() => switchTab(intent)} onKeyDown={event => {
-                  const next = event.key === "ArrowRight" ? (index + 1) % 3 : event.key === "ArrowLeft" ? (index + 2) % 3 : event.key === "Home" ? 0 : event.key === "End" ? 2 : -1;
-                  if (next < 0) return; event.preventDefault(); switchTab(NEW_INQUIRY_INTENTS[next]); document.getElementById(`intent-tab-${NEW_INQUIRY_INTENTS[next]}`)?.focus();
+                  const tabs=NEW_INQUIRY_INTENTS,active=tabs.indexOf(intent);
+                  const next = event.key === "ArrowRight" ? (active + 1) % tabs.length : event.key === "ArrowLeft" ? (active + tabs.length-1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length-1 : -1;
+                  if (next < 0) return; event.preventDefault(); switchTab(tabs[next]); document.getElementById(`intent-tab-${tabs[next]}`)?.focus();
                 }}><Icon size={14} aria-hidden="true" /><span className="tab-label">{INTENT_META[intent].label}</span>{items.length > 0 ? <span className="tab-count">({items.length > 99 ? "99+" : items.length})</span> : null}{busy ? <i className="tab-busy" aria-label="处理中" /> : null}</button>;
             })}
           </div>
         </div>
         {!resultPanel.pinned ? <button className="result-collapse-action icon-button" type="button" aria-label="收起知识贴" title="收起知识贴（Esc）" onClick={resultPanel.close}><PanelRightClose size={15} /></button> : null}
         <div ref={listScrollRef} onScroll={rememberList} className={`intent-result${activeInquiry ? "" : " category-view"}`} id="intent-result" role="tabpanel" aria-labelledby={tabIntent !== "why" ? `intent-tab-${tabIntent}` : undefined}>
-        {activeInquiry ? <div className="result-navigation">{activeInquiry.anchor.translation ? <button type="button" className="source-excerpt" onClick={()=>{if(activeInquiry.anchor.translation?.translationId!==workspace.webTranslation?.id || activeInquiry.anchor.translation?.version!==workspace.webTranslation?.version){showToast("旧译文摘录仍保留；当前译文版本不同，请用对应原文段落回看。");return;}updateWorkspace(current=>({...current,readingSide:"translated"}));requestAnimationFrame(()=>locateInquiry(activeInquiry.id,true));}}>译文摘录：{activeInquiry.anchor.translation.quote}</button> : null}<button className="return-to-list" type="button" onClick={() => switchTab(tabIntent, true)}><ChevronLeft size={16} aria-hidden="true" />返回</button>{activeInquiry.anchor.scope === "document" ? <span className="source-excerpt">全文</span> : <button className="source-excerpt" type="button" title={activeInquiry.anchor.quote} aria-label={`定位原文：${activeInquiry.anchor.pdf?.kind === 'region' ? `第 ${activeInquiry.anchor.pdf.page} 页 · 所选区域` : activeInquiry.anchor.quote}`} onClick={() => { if(activeInquiry.anchor.translation)updateWorkspace(current=>({...current,readingSide:"original"}));requestAnimationFrame(()=>locateInquiry(activeInquiry.id, true)); }}>{activeInquiry.anchor.pdf ? <span className="source-page">第 {activeInquiry.anchor.pdf.page} 页{activeInquiry.anchor.pdf.kind === 'region' ? ' · 所选区域' : ''}</span> : null}{activeInquiry.anchor.pdf?.kind !== 'region' ? <span>{activeInquiry.anchor.translation?"对应原文段落：":""}{activeInquiry.anchor.quote}</span> : null}</button>}</div> : null}
+        {activeInquiry ? <div className="result-navigation">{activeInquiry.anchor.translation ? <button type="button" className="source-excerpt" onClick={()=>{if(activeInquiry.anchor.translation?.translationId!==workspace.webTranslation?.id || activeInquiry.anchor.translation?.version!==workspace.webTranslation?.version){showToast("旧译文摘录仍保留；当前译文版本不同，请用对应原文段落回看。");return;}if(workspace.document.kind!=="pdf")updateWorkspace(current=>({...current,readingSide:"translated"}));requestAnimationFrame(()=>locateInquiry(activeInquiry.id,true));}}>译文摘录：{activeInquiry.anchor.translation.quote}</button> : null}<button className="return-to-list" type="button" onClick={() => switchTab(tabIntent, true)}><ChevronLeft size={16} aria-hidden="true" />返回</button>{activeInquiry.anchor.scope === "document" ? <span className="source-excerpt">全文</span> : <button className="source-excerpt" type="button" title={activeInquiry.anchor.quote} aria-label={`定位原文：${activeInquiry.anchor.pdf?.kind === 'region' ? `第 ${activeInquiry.anchor.pdf.page} 页 · 所选区域` : activeInquiry.anchor.quote}`} onClick={() => { track("source-return"); if(activeInquiry.anchor.translation)updateWorkspace(current=>({...current,readingSide:"original"}));requestAnimationFrame(()=>locateInquiry(activeInquiry.id, true)); }}>{activeInquiry.anchor.pdf ? <span className="source-page">第 {activeInquiry.anchor.pdf.page} 页{activeInquiry.anchor.pdf.kind === 'region' ? ' · 所选区域' : ''}</span> : null}{activeInquiry.anchor.pdf?.kind !== 'region' ? <span>{activeInquiry.anchor.translation?"对应原文段落：":""}{activeInquiry.anchor.quote}</span> : null}</button>}</div> : null}
           <div hidden={!!activeInquiry} className="category-heading category-toolbar"><strong>本文的{tabIntent === "ask" ? "问题" : INTENT_META[tabIntent].shortLabel}</strong><div className="category-heading-actions"><span>{categoryItems.length} 条</span>
             <button id="inquiry-delete-toggle" className="category-delete-toggle" type="button" aria-label={deleteMode ? "退出删除模式" : "删除知识贴"} title={deleteMode ? "退出删除模式（Esc）" : "删除知识贴"} aria-pressed={deleteMode}
               disabled={!categoryItems.length || library.readOnly || library.busy || !library.ready}
@@ -1158,6 +1182,7 @@ function App() {
               onClick={() => deleteInquiry(item.id)}>{pendingDeleteId === item.id ? <><Check size={16} aria-hidden="true" /><span>确认删除</span></> : <Trash2 size={16} aria-hidden="true" />}</button> : null}
           </div>) : <p>{tabIntent === "ask" ? "可以向全文提问，也可以选中原文问一问。" : <>还没有{INTENT_META[tabIntent].label}条目。在原文选中文字，再选择“{INTENT_META[tabIntent].label}”即可创建。</>}</p>}
           {tabIntent === "ask" ? <div className="document-question-entry">
+            {HOSTED?<HostedSendDisclosure/>:null}
             {documentQuestionOpen ? <QuestionComposer initialOpen disabled={documentQuestionBusy || library.readOnly || library.busy || !library.ready || !modelReady} onClose={() => setDocumentQuestionOpen(false)} onSubmit={question => createInquiry("ask", { anchor: documentAnchor(workspace.document), context: "", rect: { top: 0, left: 0, width: 0, height: 0 } }, question)} /> : <button className="document-question-trigger" type="button" disabled={documentQuestionBusy || library.readOnly || library.busy || !library.ready || !modelReady} onClick={() => setDocumentQuestionOpen(true)}><span aria-hidden="true">＋</span>向全文提问</button>}
           </div> : null}
         </nav>
@@ -1195,7 +1220,7 @@ function App() {
         <SelectionToolbar
           draft={bookmarkDraft}
           hint={inquirySelectionError}
-          bookmark={library.entry&&!library.readOnly?<BookmarkAction entryId={library.entry.id} revisionId={library.entry.revisionId} anchor={bookmarkDraft.anchor} iconOnly onSaved={finishBookmarkSave} version={bookmarkVersion} onStarted={beginBookmarkSave} onFailed={bookmarkFeedback.failed}/>:null}
+          bookmark={(library.entry||HOSTED)&&!library.readOnly?<BookmarkAction prepareEntry={!library.entry?library.ensureEntry:undefined} entryId={library.entry?.id??""} revisionId={library.entry?.revisionId??""} anchor={bookmarkDraft.anchor} iconOnly onSaved={finishBookmarkSave} version={bookmarkVersion} onStarted={beginBookmarkSave} onFailed={bookmarkFeedback.failed}/>:null}
           onSelect={(intent, question) => createInquiry(intent, undefined, question)}
           disabled={!selectionDraft || !modelReady || workspace.inquiries.some(i => i.status === "answering" && sameAnchor(i.anchor, selectionDraft.anchor)) || library.readOnly || library.busy}
           onClose={() => {

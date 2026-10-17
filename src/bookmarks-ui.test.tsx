@@ -56,3 +56,26 @@ it('shows the entire excerpt once with direct context and a named icon-only retu
  api.mockResolvedValue({bookmarks:[{...b,excerpt,contextBefore:'Before context '+excerpt,contextAfter:excerpt+' After context'}],total:1,revision:1,warnings:[]});const close=vi.fn();await act(async()=>root.render(<BookmarksView version={0} onClose={close} onLocate={async()=>{}}/>));await act(async()=>vi.advanceTimersByTimeAsync(1));
  expect(host.querySelector('details')).toBeNull();expect(host.querySelector('.bookmark-excerpt')?.textContent).toBe(excerpt);expect(host.textContent?.split(excerpt)).toHaveLength(2);expect(host.querySelector('.bookmark-full')?.textContent).toBe('前文Before context '+excerpt+'后文 After context');const back=host.querySelector<HTMLButtonElement>('.bookmark-back')!;expect(back.textContent).toBe('');expect(back.getAttribute('aria-label')).toBe('返回阅读');expect(back.title).toBe('返回阅读');back.focus();expect(document.activeElement).toBe(back);await click('.bookmark-back');expect(close).toHaveBeenCalledOnce();expect(host.querySelector('.bookmark-delete')?.querySelector('.lucide-trash-2')).not.toBeNull();
 });
+
+it('prepares a durable welcome entry before saving the original selected anchor',async()=>{
+ const prepare=vi.fn().mockResolvedValue({id:'entry',revisionId:'rev'}),onSaved=vi.fn();api.mockResolvedValue(result);
+ await act(async()=>root.render(<BookmarkAction entryId="" revisionId="" anchor={anchor} prepareEntry={prepare} onSaved={onSaved}/>));expect(api).not.toHaveBeenCalled();await click('button');expect(prepare).toHaveBeenCalledOnce();expect(api).toHaveBeenCalledWith('/bookmarks',expect.objectContaining({entryId:'entry',revisionId:'rev',anchor}));expect(onSaved).toHaveBeenCalledOnce();
+});
+it('retains a retryable welcome bookmark when entry creation fails',async()=>{
+ const prepare=vi.fn().mockRejectedValueOnce(new Error('quota blocked')).mockResolvedValueOnce({id:'entry',revisionId:'rev'}),onSaved=vi.fn();api.mockResolvedValue(result);
+ await act(async()=>root.render(<BookmarkAction entryId="" revisionId="" anchor={anchor} prepareEntry={prepare} onSaved={onSaved}/>));await click('button');expect(api).not.toHaveBeenCalled();expect(host.textContent).toContain('quota blocked');expect(onSaved).not.toHaveBeenCalled();await click('button');expect(onSaved).toHaveBeenCalledOnce();
+});
+
+it('ignores an old welcome preparation after selecting B, so B never reuses A operation',async()=>{
+ const prep=deferred<{id:string;revisionId:string}>(),prepare=vi.fn().mockReturnValueOnce(prep.promise).mockResolvedValueOnce({id:'entry',revisionId:'rev'}),onSaved=vi.fn();api.mockResolvedValue(result);
+ const render=(quote:string)=>root.render(<BookmarkAction entryId="" revisionId="" anchor={{...anchor,quote,blockId:quote}} prepareEntry={prepare} onSaved={onSaved}/>);
+ await act(async()=>render('A'));await click('button');await act(async()=>render('B'));await act(async()=>prep.resolve({id:'entry',revisionId:'rev'}));expect(api).not.toHaveBeenCalled();await click('button');expect(api).toHaveBeenCalledTimes(1);expect(api.mock.calls[0][1].anchor.quote).toBe('B');expect(onSaved).toHaveBeenCalledOnce();
+});
+it('cancels a welcome preparation when the selection is closed before it completes',async()=>{
+ const prep=deferred<{id:string;revisionId:string}>(),onSaved=vi.fn();api.mockResolvedValue(result);
+ await act(async()=>root.render(<BookmarkAction entryId="" revisionId="" anchor={anchor} prepareEntry={()=>prep.promise} onSaved={onSaved}/>));await click('button');await act(async()=>root.render(null));await act(async()=>prep.resolve({id:'entry',revisionId:'rev'}));expect(api).not.toHaveBeenCalled();expect(onSaved).not.toHaveBeenCalled();
+});
+it('cancels delayed welcome preparation if the browser selection changes while React actions are locked',async()=>{
+ const prep=deferred<{id:string;revisionId:string}>(),onSaved=vi.fn();let selection='A';const spy=vi.spyOn(window,'getSelection').mockImplementation(()=>({toString:()=>selection} as Selection));api.mockResolvedValue(result);
+ try{await act(async()=>root.render(<BookmarkAction entryId="" revisionId="" anchor={anchor} prepareEntry={()=>prep.promise} onSaved={onSaved}/>));await click('button');selection='B';await act(async()=>prep.resolve({id:'entry',revisionId:'rev'}));expect(api).not.toHaveBeenCalled();expect(onSaved).not.toHaveBeenCalled();}finally{spy.mockRestore();}
+});

@@ -100,3 +100,19 @@
 .pdf-zoom-label, .pdf-zoom-value { flex:none; white-space:nowrap; }
 .pdf-zoom-value { display:flex; align-items:center; gap:0; }
 }
+
+/* PDF Chinese draft: per-page view switch; the original page stays mounted but hidden. */
+.pdf-draft-switch { display:flex; gap:0; margin:8px 20px 0; width:max-content; border:1px solid var(--line-strong, #c9c4b8); border-radius:6px; overflow:hidden; font-size:12px; }
+.pdf-draft-switch button { border:0; background:var(--paper, #fff); color:var(--muted, #6b665c); padding:4px 10px; cursor:pointer; }
+.pdf-draft-switch button + button { border-left:1px solid var(--line-strong, #c9c4b8); }
+.pdf-draft-switch button[aria-pressed="true"] { background:var(--blue-soft, #eaf1fb); color:var(--ink, #222); font-weight:600; }
+.pdf-draft-wrap { padding:8px 20px 12px; }
+.pdf-draft { box-sizing:border-box; max-width:100%; padding:20px 24px; background:var(--paper, #fff); border:1px solid var(--line, #e3dfd5); border-radius:4px; color:var(--ink, #222); font-size:15px; line-height:1.75; }
+.pdf-draft-notice { margin:0 0 14px; padding:6px 10px; border-radius:6px; background:var(--blue-soft, #eaf1fb); color:var(--muted, #555); font-size:12px; }
+.pdf-draft-notice--scanned, .pdf-draft-notice--empty { background:#fff6e5; color:#7a5200; }
+.pdf-draft-paragraph { margin:0 0 12px; }
+.pdf-draft-paragraph--original { color:var(--muted, #6b665c); }
+.pdf-draft-badge { display:inline-block; margin-right:6px; padding:0 5px; border-radius:4px; background:var(--line, #e3dfd5); font-size:11px; line-height:18px; vertical-align:1px; }
+.pdf-draft-paragraph--marked { background:var(--blue-soft); border-radius:4px; padding:2px 4px; margin-left:-4px; }
+.pdf-draft-paragraph--marked.active { outline:2px solid var(--blue-line, #9fb0f5); }
+.pdf-draft-mark { margin-left:6px; padding:1px 4px; border:1px solid var(--line-strong); border-radius:4px; background:var(--paper); cursor:pointer; vertical-align:-2px; }

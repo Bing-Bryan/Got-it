@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Bookmark, BookmarkCheck, BookMarked, MessageSquareText, Pin, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, X, Copy, Check, Plus, Languages, MoveHorizontal, MoveDiagonal, RotateCcw, RotateCw, Terminal, ChevronDown, ChevronLeft, Lightbulb, ShieldCheck, BookOpen, Trash2, ArrowUp, MessageCircle, RefreshCw, ExternalLink } from 'lucide-react';
+import { Bookmark, BookmarkCheck, BookMarked, MessageSquareText, Pin, PanelLeftOpen, PanelLeftClose, PanelRightOpen, PanelRightClose, X, Copy, Check, Plus, Languages, MoveHorizontal, MoveDiagonal, RotateCcw, RotateCw, Download, Upload, Terminal, ChevronDown, ChevronLeft, Lightbulb, ShieldCheck, BookOpen, Trash2, ArrowUp, MessageCircle, RefreshCw, ExternalLink } from 'lucide-react';
 const icon = (I, size=16, props={}) => renderToStaticMarkup(createElement(I,{size,strokeWidth:1.8,'aria-hidden':true,...props}));
 const wrap=(cls,s)=>`<div class="${cls} demo-context">${s}</div>`;
 const b=(label,cls='',attrs='')=>`<button type="button" class="${cls}" ${attrs}>${label}</button>`;
@@ -14,9 +14,11 @@ add(nav,'Codex 模型入口',b(`${icon(Terminal)}<span>Codex</span><span class="
 add(nav,'Codex 入口 · 已展开',b(`${icon(Terminal)}<span>Codex</span>${icon(ChevronDown,14)}`,'provider-trigger','aria-expanded="true"'),'菜单展开状态');
 for(const [name,I,cls] of [['正文宽度',MoveHorizontal,'markdown-width-trigger'],['PDF 缩放',MoveDiagonal,'pdf-zoom-trigger']])add(nav,name,wrap('reading-adjustment',b(icon(I,18),`reading-adjustment-trigger ${cls}`)));
 for(const [name,cls] of [['恢复正文宽度','markdown-width-reset'],['恢复自动适配','pdf-zoom-reset']])add(nav,name,b(icon(RotateCcw,14),cls,`aria-label="${name}"`));
+for(const label of ['保存与隐私','来源与许可','公开样例','存储详情']) add(lib,label,`<details class="hosted-disclosure"><summary class="disclosure-summary"><span>${label}</span>${icon(ChevronDown,13,{className:"disclosure-chevron"})}</summary><p>说明内容按需展开；真实阅读器中以浮层呈现。</p></details>`,'复用原生详情入口与共享焦点；无禁用业务状态');
 add(lib,'添加阅读材料',b(icon(Plus,18,{strokeWidth:2}),'library-add','aria-label="添加阅读材料" aria-expanded="false"'));
 for(const [label,range] of [['本地文件','MD / PDF'],['网页链接','静态文章 / X']])add(lib,label,wrap('library-add-options',b('<span>'+label+'</span><small>'+range+'</small>','','role="menuitem"')));
-add(lib,'切换文件',b('<span>研究报告.md</span><span>›</span>','library-current','aria-expanded="false"'));
+for(const label of ['下载完整备份','恢复备份']) add(lib,label,wrap('hosted-backup-actions',b(`${icon(label==='恢复备份'?Upload:Download,14)}${label}`,'secondary-action')));
+add(lib,'切换文件',b(`<span>研究报告.md</span>${icon(ChevronDown,13,{className:'disclosure-chevron'})}`,'library-current','aria-expanded="false"'));
 for(const selected of [false,true])add(lib,`文件条目 · ${selected?'当前':'普通'}`,wrap(`library-item${selected?' current':''}`,b('研究报告.md','library-open',selected?'aria-current="page"':'')));
 add(lib,'复制网页链接',b(icon(Copy,14),'library-copy-url','aria-label="复制来源"'));
 add(lib,'复制本地路径',b(`<span>/文档/报告.md</span>${icon(Copy,14)}`,'library-copy-path'));
@@ -62,7 +64,7 @@ for(const label of ['登录 Codex','取消本次登录','重新检查'])add(sys,
 for(const label of ['关闭','使用之前记录','使用当前记录','继续当前阅读'])add(sys,`恢复记录 · ${label}`,wrap('library-state',wrap('recovery-dialog',b(label,['使用当前记录','继续当前阅读'].includes(label)?'recovery-primary':''))));
 for(const label of ['重试保存','重新连接','重新选择文件','关闭提示','找回阅读记录','重试读取','重新定位','关联原文件','使用更新后的原文'])add(sys,label,wrap('library-state',b(label)));
 add(sys,'换成我的文档',wrap('demo-document-note',b('换成我的文档')));
-for(const label of ['模型设置','历史回答','查看记录差异','查看所选内容'])add(sys,`展开项 · ${label}`,`<details class="demo-details"><summary>${label}</summary></details>`,'展开项没有禁用态');
+for(const label of ['模型设置','历史回答','查看记录差异','查看所选内容'])add(sys,`展开项 · ${label}`,`<details class="demo-details"><summary class="disclosure-summary"><span>${label}</span>${icon(ChevronDown,13,{className:"disclosure-chevron"})}</summary></details>`,'展开项没有禁用态');
 for(const [name,I,disabled] of [['收藏',Bookmark,false],['已收藏',BookmarkCheck,true]])add(know,'共同底板选区 · '+name,wrap('selection-bookmark-container',wrap('bookmark-action',b(icon(I,19),'bookmark-icon',`aria-label="${name}" ${disabled?'disabled':''}`))));
 add(nav,'全部收藏（侧栏底部）',wrap('sidebar-bookmark-footer',b(icon(Bookmark,16)+'全部收藏','bookmarks-nav','aria-pressed="false"')));
 add(know,'选区共同底板',wrap('selection-understanding','<div class="selection-quote">“完整选区预览横跨共同底板”</div>'+wrap('selection-operation-row',wrap('selection-bookmark-container',wrap('bookmark-action',b(icon(Bookmark,19),'bookmark-icon','aria-label="收藏选中文字"')))+wrap('selection-actions',b(icon(Lightbulb,14)+'解释一下','','data-intent="explain"')+b(icon(ShieldCheck,14)+'查找来源','','data-intent="verify"')+b(icon(MessageCircle,14)+'问一问','question-input-trigger')+b(icon(X,14),'selection-close','aria-label="关闭"')))),'32px平面圆角方形、44px点击区、透明背景、留白与短竖线；无模拟保存行为');

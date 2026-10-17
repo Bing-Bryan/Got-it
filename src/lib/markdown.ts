@@ -15,7 +15,7 @@ function cleanText(value: string | null | undefined): string {
 
 const escapeHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
-export function renderMarkdown(markdown: string, web?: WebDocumentData): RenderedMarkdown {
+export function renderMarkdown(markdown: string, web?: WebDocumentData, imageSources?:Record<string,string>): RenderedMarkdown {
   const mediaById = new Map(web?.media.map(media => [media.id, media]));
   const renderer = web ? new Renderer() : undefined;
   if(renderer)renderer.html=({text})=>stripWebCompatAttributes(text);
@@ -100,13 +100,7 @@ export function renderMarkdown(markdown: string, web?: WebDocumentData): Rendere
       if (media?.status === "saved") { img.classList.add("web-static-image"); return; }
       const notice = document.createElement("span"); notice.className = "image-unavailable"; notice.textContent = "图片未获本机资源授权。"; img.replaceWith(notice); return;
     }
-    const src = img.getAttribute("src") ?? "";
-    if (!/^(https?:\/\/|data:image\/(?:png|jpeg|gif|webp);base64,)/i.test(src)) {
-      const notice = document.createElement("span");
-      notice.className = "image-unavailable";
-      notice.textContent = `图片未随文档导入：${img.alt || src || "未命名图片"}。请在原文件中查看。`;
-      img.replaceWith(notice);
-    }
+    applyLocalDocumentImage(img, imageSources);
   });
 
   if (web) container.querySelectorAll<HTMLAnchorElement>('a[href^="#"]').forEach(link => {
@@ -132,3 +126,20 @@ export function readHeadingPath(block: HTMLElement): string[] {
     return [];
   }
 }
+
+// Local Markdown images: sample images map to their stored copies; anything that is not an
+// http(s) or inline image is replaced by a notice. Shared by the original and translated views.
+function applyLocalDocumentImage(img: HTMLImageElement, imageSources?: Record<string, string>) {
+  let src = img.getAttribute("src") ?? "";
+  if (imageSources?.[src]) { src = imageSources[src]; img.setAttribute("src", src); }
+  if (!/^(https?:\/\/|data:image\/(?:png|jpeg|gif|webp);base64,)/i.test(src)) {
+    const notice = document.createElement("span");
+    notice.className = "image-unavailable";
+    notice.textContent = `图片未随文档导入：${img.alt || src || "未命名图片"}。请在原文件中查看。`;
+    img.replaceWith(notice);
+  }
+}
+export function applyLocalDocumentImages(container: ParentNode, imageSources?: Record<string, string>) {
+  container.querySelectorAll<HTMLImageElement>("img").forEach(img => applyLocalDocumentImage(img, imageSources));
+}
+

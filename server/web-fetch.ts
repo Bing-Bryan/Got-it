@@ -21,9 +21,9 @@ export function webUrl(input:unknown):URL {
 export interface WebBudget {requests:number;bytes:number}
 export interface FetchedWeb {url:string;bytes:Buffer;type:string}
 export type WebTransport=(options:RequestOptions,callback:(response:IncomingMessage)=>void)=>ClientRequest;
-async function fetchWebOnce(input:string,options:{signal:AbortSignal;budget?:WebBudget;maxBytes?:number;resolver?:Resolver;transport?:WebTransport;validateUrl?:(url:string)=>unknown}):Promise<FetchedWeb>{
+async function fetchWebOnce(input:string,options:{signal:AbortSignal;budget?:WebBudget;maxBytes?:number;resolver?:Resolver;transport?:WebTransport;validateUrl?:(url:string)=>unknown;disableProxy?:boolean}):Promise<FetchedWeb>{
  let url=webUrl(input);const budget=options.budget??{requests:0,bytes:0};
- const proxy=!options.resolver&&!options.transport?localWebProxy():undefined;
+ const proxy=!options.disableProxy&&!options.resolver&&!options.transport?localWebProxy():undefined;
  const signal=AbortSignal.any([options.signal,AbortSignal.timeout(WEB_LIMITS.requestMs)]);
  for(let hop=0;hop<=WEB_LIMITS.redirects;hop++){
   options.validateUrl?.(url.href);

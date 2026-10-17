@@ -16,13 +16,33 @@ export const visibleText=(n:Node):string=>excluded(n)?'':n.nodeName==='#text'?(n
 const normal=(s:string)=>s.replace(/\s+/g,' ').trim();
 function visibleNodes(n:Node,p:(n:Node)=>boolean):Node[]{return excluded(n)?[]:[...(p(n)?[n]:[]),...children(n).flatMap(c=>visibleNodes(c,p))];}
 function quality(n:Node){const prose=visibleNodes(n,c=>'tagName'in c&&c.tagName==='p').map(visibleText).map(normal).filter(s=>s.length>=40);const chars=normal(visibleText(n)).length;const links=visibleNodes(n,c=>'tagName'in c&&c.tagName==='a').map(visibleText).join('').length;return{prose:prose.length,chars,score:prose.reduce((a,s)=>a+s.length,0)-links};}
+const depth=(n:Node)=>{let d=0;for(let p:Node|undefined=n;p&&'parentNode'in p&&p.parentNode;p=p.parentNode as Node)d++;return d;};
+// Fallback for pages without semantic containers (common on Chinese media sites): the deepest
+// element that still holds nearly all article prose. Thresholds and the rival check mirror the
+// semantic path, so link-heavy lists or comment blocks are not mistaken for the article.
+function proseContainer(root:Node):Node|undefined{
+ const scored=visibleNodes(root,n=>'tagName'in n&&['div','section','td'].includes(n.tagName)).map(n=>({n,...quality(n)})).filter(c=>c.prose>=2&&c.chars>=300&&c.score>200);
+ if(!scored.length)return undefined;
+ const best=Math.max(...scored.map(c=>c.score));
+ const chosen=scored.filter(c=>c.score>=best*.9).sort((a,b)=>depth(b.n)-depth(a.n))[0];
+ const nested=(a:Node,b:Node)=>nodes(a,x=>x===b).length>0;
+ if(scored.some(c=>c.n!==chosen.n&&c.score>best*.8&&!nested(chosen.n,c.n)&&!nested(c.n,chosen.n)))throw new WebError('页面存在多个相近的正文区域，无法确定完整文章。','web_structure');
+ return chosen.n;
+}
+// The title usually sits just before a fallback container: the last visible h1 preceding it.
+function headingBefore(root:Node,container:Node):Node|undefined{
+ const order=visibleNodes(root,()=>true),at=order.indexOf(container);
+ return order.slice(0,at).filter(n=>'tagName'in n&&n.tagName==='h1'&&!!normal(visibleText(n))).at(-1)
+  ??visibleNodes(container,n=>'tagName'in n&&/^h[12]$/.test(n.tagName)&&!!normal(visibleText(n)))[0];
+}
 export function genericArticle(root:Node):{article:Node,body:Node,heading:Node,publicExcerpt:boolean}{
  const candidates=visibleNodes(root,n=>'tagName'in n&&(['article','main'].includes(n.tagName)||nodeAttr(n,'role')==='main'||/(?:^|\s)(?:entry|post|article|h-entry)(?:$|\s)/.test(nodeAttr(n,'class'))));
  const articles=candidates.filter(n=>'tagName'in n&&n.tagName==='article');
  const pool=articles.length?articles:candidates;
  const ranked=pool.map(n=>({n,...quality(n)})).filter(c=>c.prose>=2&&c.chars>=300&&c.score>200).sort((a,b)=>b.score-a.score);
- if(!ranked.length||ranked.length>1&&ranked[1].score>ranked[0].score*.8&&!nodes(ranked[0].n,n=>n===ranked[1].n).length)throw new WebError('无法确定完整的静态文章正文；可能需要网页程序或登录。','web_structure');
- const article=ranked[0].n;
+ const fallback=!ranked.length?proseContainer(root):undefined;
+ if(!ranked.length&&!fallback||ranked.length>1&&ranked[1].score>ranked[0].score*.8&&!nodes(ranked[0].n,n=>n===ranked[1].n).length)throw new WebError('无法确定完整的静态文章正文；可能需要网页程序或登录。','web_structure');
+ const article=fallback??ranked[0].n;
  // A subscriber footer alone is not a paywall: require a visible article-scoped access gate.
  // Access-gate discovery intentionally retains visible controls;正文过滤 still excludes them.
  const gateNodes=(n:Node):Node[]=>gateExcluded(n)?[]:[n,...children(n).flatMap(gateNodes)];
@@ -49,7 +69,7 @@ export function genericArticle(root:Node):{article:Node,body:Node,heading:Node,p
  if(outerBodies.length>1)throw new WebError('文章存在多个独立正文容器，无法确定完整内容。','web_structure');
  const body=outerBodies[0]??article;
  if(quality(body).prose<2||quality(body).chars<300)throw new WebError('付费门槛之前没有足够可靠的公开正文。','web_structure');
- const heading=visibleNodes(article,n=>'tagName'in n&&n.tagName==='h1'&&!!normal(visibleText(n)))[0]??visibleNodes(article,n=>'tagName'in n&&n.tagName==='h2'&&!!normal(visibleText(n)))[0];
+ const heading=fallback?headingBefore(root,fallback):visibleNodes(article,n=>'tagName'in n&&n.tagName==='h1'&&!!normal(visibleText(n)))[0]??visibleNodes(article,n=>'tagName'in n&&n.tagName==='h2'&&!!normal(visibleText(n)))[0];
  if(!heading||/^(?:sign in|log in|404|access denied|error|not found|just a moment|attention required)\b/i.test(normal(visibleText(heading))))throw new WebError('页面不是可读取的公开静态文章。','web_structure');
  return{article,body,heading,publicExcerpt:!!gate};
 }

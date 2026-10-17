@@ -1,3 +1,4 @@
+import {HOSTED} from './lib/runtime-mode';
 import { recoveryDiff, describeRecoveryDifference, type RecoveryDifference } from './lib/recovery-diff';
 import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
 import type { useReadingLibrary } from './useReadingLibrary';
@@ -58,7 +59,7 @@ export function ReadingRecoveryView({library}:{library:Library}) {
   },[record?.id]);
   if (!record) return null;
   const pending=record.state==='pending';
-  const saved=pending ? record.disk : record.current === undefined ? record.disk : record.current;
+  const saved=pending&&!HOSTED ? record.disk : record.current === undefined ? record.disk : record.current;
   const diff=saved ? recoveryDiff(record.draft.workspace,saved.workspace) : null;
   const separate=!record.disk || !sameOriginal(record.disk,record.draft);
   const outside=(event:React.PointerEvent<HTMLDialogElement>)=>{const r=event.currentTarget.getBoundingClientRect();return event.target===event.currentTarget&&(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom);};
@@ -74,7 +75,7 @@ export function ReadingRecoveryView({library}:{library:Library}) {
       {diff?.originalChanged?<details className="recovery-needed-details"><summary>查看不同的原文</summary><div className="recovery-columns">{[{workspace:record.draft.workspace,label:'之前保留的原文'},{workspace:saved!.workspace,label:'当前保存的原文'}].map(({workspace,label})=><section key={label}><h3>{label}</h3>{workspace.document.kind==='pdf'?<Suspense fallback={<p>正在加载原页…</p>}><PdfReader document={workspace.document} entryId={record.entryId} inquiries={workspace.inquiries} readOnly/></Suspense>:<Markdown text={workspace.document.markdown}/>}</section>)}</div></details>:null}
     </div>
     <footer className="recovery-footer"><p>{separate?'选择之前记录会另存一份，原文件保持不变。':'选择后继续阅读，另一份记录会安全保留。'}</p><div>
-      {pending?<><button type="button" disabled={library.busy || (!!record.intent&&record.intent.choice!=='draft')} onClick={()=>void library.resolveRecovery('draft')}>使用之前记录（{record.draft.workspace.inquiries.length} 条）</button>{record.disk?<button className="recovery-primary" type="button" disabled={library.busy || (!!record.intent&&record.intent.choice!=='disk')} onClick={()=>void library.resolveRecovery('disk')}>使用当前记录（{record.disk.workspace.inquiries.length} 条）</button>:null}</>:<button className="recovery-primary" type="button" disabled={library.busy||!saved} onClick={()=>void library.acknowledgeRecovery()}>继续当前阅读</button>}
+      {pending?<><button type="button" disabled={library.busy || (!!record.intent&&record.intent.choice!=='draft')} onClick={()=>void library.resolveRecovery('draft')}>使用之前记录（{record.draft.workspace.inquiries.length} 条）</button>{record.disk?<button className="recovery-primary" type="button" disabled={library.busy || (!!record.intent&&record.intent.choice!=='disk')} onClick={()=>void library.resolveRecovery('disk')}>使用当前记录（{saved?.workspace.inquiries.length??record.disk.workspace.inquiries.length} 条）</button>:null}</>:<button className="recovery-primary" type="button" disabled={library.busy||!saved} onClick={()=>void library.acknowledgeRecovery()}>继续当前阅读</button>}
     </div></footer>
   </dialog>;
 }

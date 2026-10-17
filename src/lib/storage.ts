@@ -1,4 +1,5 @@
-import { buildTranslationSource, copyWebTranslation, copyTranslationSelection } from "./web-translation";
+import { copyWebTranslation, copyTranslationSelection } from "./web-translation";
+import { copyPdfTranslation, documentTranslationSource } from "./document-translation";
 import { copyWebDocument } from "./web-data";
 import { copyPdfDocument, copyPdfLocation, insidePage } from "./pdf-data";
 import { copyActiveTab, copyVisitedIds } from "./inquiry-tabs";
@@ -236,9 +237,15 @@ function copyInquiry(inquiry: Inquiry): Inquiry {
  * from being written even if a caller passes an object with extra properties.
  */
 export function sanitizeWorkspace(workspace: Workspace): Workspace {
+  // Web and Markdown translations share one validated side-car field; the original is untouched.
+  const translationSource = workspace.webTranslation ? documentTranslationSource(workspace.document) : null;
+  // PDF paragraphs come from the file's text layer (async), so PDF translations are checked
+  // structurally here: matching source version, page-paragraph unit ids within the page count.
+  const translation = translationSource ? copyWebTranslation(workspace.webTranslation, workspace.document.id, translationSource.sourceVersion, translationSource.source)
+    : workspace.document.kind === "pdf" && workspace.webTranslation ? copyPdfTranslation(workspace.webTranslation, workspace.document.id, workspace.document.pdf.resourceId, workspace.document.pdf.pages.length) : undefined;
   return {
     schemaVersion: SCHEMA_VERSION,
-    ...(workspace.document.kind === "web" && copyWebTranslation(workspace.webTranslation, workspace.document.id, workspace.document.web.contentVersion, buildTranslationSource(workspace.document.markdown, workspace.document.web)) ? {webTranslation:copyWebTranslation(workspace.webTranslation, workspace.document.id, workspace.document.web.contentVersion, buildTranslationSource(workspace.document.markdown, workspace.document.web))} : {}),
+    ...(translation ? {webTranslation:translation} : {}),
     ...(workspace.readingSide === "translated" ? {readingSide:"translated" as const} : {}),
     ...(typeof workspace.translationNotice === "string" ? {translationNotice:workspace.translationNotice.slice(0,300)} : {}),
     ...(workspace.modelDefaultsVersion === 2 || workspace.modelDefaultsVersion === 3 || workspace.modelDefaultsVersion === 4 ? { modelDefaultsVersion: workspace.modelDefaultsVersion } : {}),
