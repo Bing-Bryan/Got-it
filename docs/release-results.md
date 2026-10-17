@@ -148,3 +148,11 @@
 本次公开同步沿用白名单与独立仓库历史，不带内部OpenSpec、迭代/验收材料或阅读库。相关浏览器与模型验收沿用功能实施时已记录结果；本次不追加模型请求，不把历史结果冒充新运行。macOS Apple Silicon / Node 24.14.1 / npm 11.12.1 的独立白名单快照完成干净 `npm ci`（锁文件不变）、119文件880测试、`npm run build`、`npm run test:release`、`npm audit --audit-level=high`（0漏洞）和30项CI范围fixture。仅既有大构建块提示。全部清单文件字节数/哈希核对通过。公开差异审查另排除两组内部收藏研究脚本，复制严格沿过滤后清单执行；公开准备边界2项和CI范围30项Node测试通过，最终310文件快照与已测快照的src/server/依赖/构建输入哈希不变。检查后仅补发布说明、准备脚本及其边界测试，不重复无关880应用测试。远端CI结果以本次公开提交关联Actions为准，推送前不宣称通过。Windows/Linux原生界面仍未实机验收。
 
 本轮首次公开提交的[CI运行](https://github.com/Bing-Bryan/got-it/actions/runs/38835185034)中，macOS/Ubuntu全通过；Windows为879/880通过，首个PDF收藏集成用例包含PDF.js/worker冷启动，实际5676ms超过默认5000ms。修复仅将真实PDF上传与资源准备移至有独立清理的beforeAll fixture，收藏校验仍保默认测试超时及全部成功/伪造/区域拒绝断言，未改变应用逻辑或放宽全局门槛。本机12项相关测试、build/release复测通过；新提交的远端三平台结果仍需等待对应运行，不能以首次部分成功代替。
+
+## 2026-10-18：PDF 原位译中与界面修正公开快照
+
+PDF 译中改为与网页、Markdown 使用同一个翻译图标整篇切换：中文在原 PDF 段落位置显示，图表、图片、公式与未译段落保持原样，版式不变；移除每页“原页 / 中文稿”开关与重排中文稿。同时修复 Markdown 重复保存状态、体验服务故障措辞，并让体验版顶栏直接显示 DeepSeek。详见[更新说明](updates/2026-10-18-pdf-in-place-translation.md)。
+
+体验版已于 2026-10-17 只更新前端 `452e6b6`，服务端 `4fe7c18` 未重启；公网免费检查通过，线上未打开 PDF 译中、未提问，本轮不新增模型或搜索调用。内部归档提交 `7bab7de`，不进入公开历史。
+
+独立公开快照（368 文件）在 macOS / Node 24.14.1 / npm 11.12.1 下完成：干净 `npm ci`（锁文件不变）、147 文件 1051 项测试、`npm run build`、`npm run test:release`、`npm run release:prepare` 全部通过；`npm audit --audit-level=high` 为 0 漏洞；快照再生成的 manifest 与提交内容一致。仅保留既有大构建块提示。远端三平台结果以本次公开提交关联的 Actions 为准，推送前不宣称通过。未覆盖：真实翻译运行态、Safari / Firefox、生产站点的 PDF 译中或问答实页。

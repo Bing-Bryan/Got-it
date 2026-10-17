@@ -125,3 +125,10 @@ it.each(["failure", "stop"])("keeps source lookup visibly unfinished after %s, i
   expect(host.querySelector('.thread-messages > .assistant-message .verification-conclusion')?.textContent).toBe(mode === 'stop' ? '你已停止查找。' : '本次查找失败。');
   expect(host.querySelector('.inquiry-actions .primary-action')).toBeNull();
 });
+it("keeps exactly one visible save status for Markdown in the reader toolbar", async () => {
+  await openFile("english.md", "# English\n\nThis paragraph is ordinary English prose that a reader could translate.");
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  const statuses = [...host.querySelectorAll(".reader-tools [role=status]")];
+  expect(statuses).toHaveLength(1); expect(statuses[0].classList.contains("library-save-status")).toBe(true);
+  expect(statuses[0].textContent).toMatch(/\S/); expect(host.querySelector(".translation-status")).toBeNull();
+});

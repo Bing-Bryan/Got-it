@@ -65,3 +65,4 @@ it('counts verified source units in idle failed/partial/interrupted states, avoi
   t.workspace.webTranslation!.status='complete';await t.render();expect(t.host.querySelector('.translation-resume')).toBeNull();expect(t.host.querySelector('.translation-count')).toBeNull();
  }finally{await t.dispose();}
 });
+it('leaves Markdown save state to the reader toolbar so it is announced once',async()=>{const t=await setup();try{t.workspace.document={...t.workspace.document,kind:'markdown',web:undefined} as unknown as typeof t.workspace.document;for(const status of['已保存到本机','保存中…','保存失败','示例文档']){t.library.status=status;await t.render();expect(t.host.querySelector('.translation-side-toggle')).not.toBeNull();expect(t.host.querySelector('.translation-status')).toBeNull();expect(t.host.querySelector('[role=status]')).toBeNull();}}finally{await t.dispose();}});

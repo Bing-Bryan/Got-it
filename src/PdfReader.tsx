@@ -13,7 +13,7 @@ import { revealReadingTarget } from "./lib/reading-navigation";
 import type { PdfOutlineItem } from "./lib/pdf-outline";
 import {normalized,screenRect,originalRect} from "./lib/pdf-geometry";
 import {abortable} from "./lib/abortable";
-import { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { getDocument, GlobalWorkerOptions, TextLayer, type PDFDocumentProxy, type PDFPageProxy } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { createWorker, PSM } from 'tesseract.js';
@@ -21,14 +21,15 @@ import { libraryBinary, libraryRequest } from './lib/library-client';
 import { HOSTED_IMAGE_MAX_BYTES, HOSTED_OCR_CONTEXT_BYTES, MAX_CROP_BYTES, REGION_NO_TEXT_CONTEXT, copyOcr, copyPdfLocation, insidePage, trimToBytes, type PdfLocation, type PdfOcrData, type PdfRect } from './lib/pdf-data';
 import type { ActiveInquiryIntent, Anchor, DocumentSnapshot, Inquiry, SelectionDraft } from './types';
 import type { ReadingPosition } from './lib/library-types';
-import { pdfDraftParagraphs, pdfPageStatus, usePdfTranslationSource, type PdfPageTranslationStatus } from './usePdfTranslationSource';
+import { pdfDraftParagraphs, pdfHasShownTranslation, pdfPageStatus, usePdfTranslationSource, type PdfPageTranslationStatus } from './usePdfTranslationSource';
+import { PdfTranslationLayer } from './PdfTranslationLayer';
 import type { PdfTranslationSource } from './lib/pdf-translation';
 import { TRANSLATION_CONTRACT_VERSION, type WebTranslationState } from './lib/web-translation';
 import './pdf-reader.css';
 GlobalWorkerOptions.workerSrc = workerUrl;
 type PdfDocument = Extract<DocumentSnapshot, {kind:'pdf'}>;
 type Viewport = ReturnType<PDFPageProxy['getViewport']>;
-interface Props { translation?:WebTranslationState; bookmarkCompleted?:BookmarkCreate|null; bookmarks?:ReadingBookmark[]; onBookmarkStarted?:(request:BookmarkCreate)=>void; bookmarkVersion?:number;onBookmarkFailed?:(request:BookmarkCreate,error:string)=>void; revisionId?:string; onBookmarkSaved?:(result:BookmarkResult,request:BookmarkCreate)=>void; bookmarkTarget?:ReadingBookmark|null;onBookmarkLocated?:(success:boolean)=>void; toolbarHost?:HTMLElement|null; adjustmentHost?:HTMLElement|null; onReadingTime?:(hash:string,minutes:number|null)=>void; outlineTarget?:{item:PdfOutlineItem;nonce:number}|null; onCurrentPage?:(page:number)=>void; document:PdfDocument; entryId:string; inquiries:Inquiry[]; activeId?:string|null; target?:{id:string;nonce:number;returnToSource?:boolean}|null; onLocated?:(id:string,success:boolean,returnToSource?:boolean,target?:HTMLElement)=>void; initialPosition?:ReadingPosition; readOnly?:boolean; saveStatus?:string; saveBusy?:boolean; saveError?:boolean; onCreate?:(intent:ActiveInquiryIntent,draft:SelectionDraft,question?:string)=>void; onActivate?:(id:string)=>void; onReady?:()=>void; onView?:()=>void }
+interface Props { translation?:WebTranslationState; showTranslation?:boolean; bookmarkCompleted?:BookmarkCreate|null; bookmarks?:ReadingBookmark[]; onBookmarkStarted?:(request:BookmarkCreate)=>void; bookmarkVersion?:number;onBookmarkFailed?:(request:BookmarkCreate,error:string)=>void; revisionId?:string; onBookmarkSaved?:(result:BookmarkResult,request:BookmarkCreate)=>void; bookmarkTarget?:ReadingBookmark|null;onBookmarkLocated?:(success:boolean)=>void; toolbarHost?:HTMLElement|null; adjustmentHost?:HTMLElement|null; onReadingTime?:(hash:string,minutes:number|null)=>void; outlineTarget?:{item:PdfOutlineItem;nonce:number}|null; onCurrentPage?:(page:number)=>void; document:PdfDocument; entryId:string; inquiries:Inquiry[]; activeId?:string|null; target?:{id:string;nonce:number;returnToSource?:boolean}|null; onLocated?:(id:string,success:boolean,returnToSource?:boolean,target?:HTMLElement)=>void; initialPosition?:ReadingPosition; readOnly?:boolean; saveStatus?:string; saveBusy?:boolean; saveError?:boolean; onCreate?:(intent:ActiveInquiryIntent,draft:SelectionDraft,question?:string)=>void; onActivate?:(id:string)=>void; onReady?:()=>void; onView?:()=>void }
 interface SheetToolbar {page:number;ready:boolean;mode:'text'|'region';busy:boolean;start:()=>void;cancel:()=>void}
 const rectStyle=(r:PdfRect)=>({left:r[0],top:r[1],width:r[2]-r[0],height:r[3]-r[1]});
 const errorText=(e:unknown)=>e instanceof Error?e.message:'PDF 操作未完成，请重试。';
@@ -41,16 +42,11 @@ export default function PdfReader(props:Props) {
   const [capabilityAttempt,setCapabilityAttempt]=useState(0);
   useEffect(()=>{if(!HOSTED)return;let live=true;setHostedImages(null);hostedCapabilities().then(c=>{if(live)setHostedImages(c.supportsImages===true);}).catch(()=>{if(live)setHostedImages('error');});return()=>{live=false;};},[capabilityAttempt]);
   const [draftPage,setDraftPage]=useState<number|null>(null);
-  // Chinese draft pages are a per-page view choice; the original page is never modified. Default: original.
+  // The whole document switches between original and Chinese drawn in place; the original page is never modified.
   const translationSource=usePdfTranslationSource(props.entryId,props.document.pdf.resourceId,!!props.translation).source;
-  const [draftView,setDraftView]=useState<ReadonlySet<number>>(()=>new Set());
-  useEffect(()=>{setDraftView(new Set());},[props.document.pdf.resourceId]);
-  // Locating a sticky, bookmark or outline item needs the original page visible.
-  // A sticky made in the current Chinese draft is located there; anything else needs the original page.
-  const targetInquiry=props.target?props.inquiries.find(i=>i.id===props.target!.id):undefined;
-  const draftTarget=!!translationSource&&!!targetInquiry?.anchor.translation&&targetInquiry.anchor.translation.translationId===props.translation?.id&&draftView.has(targetInquiry.anchor.pdf?.page??0);
-  const targetPage=(draftTarget?undefined:targetInquiry?.anchor.pdf?.page)??props.bookmarkTarget?.anchor.pdf?.page??props.outlineTarget?.item.page;
-  useEffect(()=>{if(targetPage)setDraftView(current=>{if(!current.has(targetPage))return current;const next=new Set(current);next.delete(targetPage);return next;});},[targetPage,props.target,props.bookmarkTarget,props.outlineTarget]);
+  // Without any shown paragraph there is no Chinese side to be on (the toolbar offers no switch either).
+  const hasShown=useMemo(()=>!!translationSource&&pdfHasShownTranslation(translationSource,props.translation),[translationSource,props.translation]);
+  const showTranslation=!!props.showTranslation&&hasShown;
   const [currentPage,setCurrentPage]=useState(props.initialPosition?.pdfPage??1),[toolbar,setToolbar]=useState<SheetToolbar|null>(null);
   const root=useRef<HTMLDivElement>(null),restored=useRef(false);
   const zoom=usePdfZoom(root,props.document.pdf.resourceId,props.document.pdf.pages[currentPage-1]??props.document.pdf.pages[0]);
@@ -103,10 +99,10 @@ export default function PdfReader(props:Props) {
     {pdf ? (props.adjustmentHost ? createPortal(adjustmentNode, props.adjustmentHost) : adjustmentNode) : null}
     {error?<div className="pdf-error" role="alert"><p>PDF 暂时无法加载：{error}</p><button type="button" className="secondary-action" onClick={()=>setLoadAttempt(n=>n+1)}>重新加载 PDF</button></div>:null}
     {!pdf&&!error?<p className="pdf-status">正在加载 PDF…</p>:null}
-    {pdf?props.document.pdf.pages.map((info,index)=><PdfSheet key={index} {...props} translationSource={translationSource} showDraft={draftView.has(index+1)} onDraftView={show=>setDraftView(current=>{const next=new Set(current);if(show)next.add(index+1);else next.delete(index+1);return next;})} hostedImages={hostedImages} retryHostedImages={()=>setCapabilityAttempt(n=>n+1)} pdf={pdf} page={index+1} width={zoom.widthFor(info)} info={info} draftPage={draftPage} currentPage={currentPage} onToolbar={setToolbar} claim={()=>setDraftPage(index+1)}/>):null}
+    {pdf?props.document.pdf.pages.map((info,index)=><PdfSheet key={index} {...props} translationSource={translationSource} showTranslation={showTranslation} hostedImages={hostedImages} retryHostedImages={()=>setCapabilityAttempt(n=>n+1)} pdf={pdf} page={index+1} width={zoom.widthFor(info)} info={info} draftPage={draftPage} currentPage={currentPage} onToolbar={setToolbar} claim={()=>setDraftPage(index+1)}/>):null}
   </div>;
 }
-interface SheetProps extends Props {translationSource:PdfTranslationSource|null;showDraft:boolean;onDraftView:(show:boolean)=>void;hostedImages:boolean|null|'error';retryHostedImages:()=>void;pdf:PDFDocumentProxy;page:number;width:number;info:PdfDocument['pdf']['pages'][number];draftPage:number|null;currentPage:number;onToolbar:(state:SheetToolbar)=>void;claim:()=>void}
+interface SheetProps extends Props {translationSource:PdfTranslationSource|null;hostedImages:boolean|null|'error';retryHostedImages:()=>void;pdf:PDFDocumentProxy;page:number;width:number;info:PdfDocument['pdf']['pages'][number];draftPage:number|null;currentPage:number;onToolbar:(state:SheetToolbar)=>void;claim:()=>void}
 // OCR deadline for a region; beyond it the question proceeds with the image alone.
 export const OCR_DEADLINE_MS=20_000;
 function hostedImageNotice(state:boolean|null|'error'){
@@ -121,27 +117,37 @@ function PdfSheet(props:SheetProps) {
   useEffect(()=>{const timer=setTimeout(()=>setRenderWidth(width),140);return()=>clearTimeout(timer);},[width]);
   const appliedTarget=useRef('');
   const [near,setNear]=useState(page===(props.initialPosition?.pdfPage??1));
+  // The canvas holds a drawn page (kept while zoom re-renders it), so the Chinese layer need not blink away.
+  const [painted,setPainted]=useState(false);
   const [viewport,setViewport]=useState<Viewport|null>(null),[ready,setReady]=useState(false),[error,setError]=useState('');
   const [mode,setMode]=useState<'text'|'region'>('text'),[box,setBox]=useState<PdfRect|null>(null);
   const [preview,setPreview]=useState(''),[busy,setBusy]=useState(false),[status,setStatus]=useState('');
   const bookmarkSelectionRef=useRef<Anchor|null>(null),bookmarkOperationRef=useRef<{anchor:Anchor;operationId:string}|null>(null);
+  // Origins of rotated text (e.g. a vertical margin stamp): their saved line boxes are horizontal guesses, so they keep the original.
+  const [rotatedText,setRotatedText]=useState<Array<[number,number]>>([]);
   const [ocr,setOcr]=useState<Array<{id:string;data:PdfOcrData}>>([]),[selection,setSelection]=useState<{anchor:Anchor;preview:string}|null>(null),[quote,setQuote]=useState('');
   bookmarkSelectionRef.current=selection?.anchor??null;
   const card=useRef<HTMLDivElement>(null);
-  const draftRef=useRef<HTMLElement>(null),[draftRect,setDraftRect]=useState<{left:number;top:number;right:number;bottom:number}|null>(null);
   const root=useRef<HTMLDivElement>(null),surface=useRef<HTMLDivElement>(null),canvas=useRef<HTMLCanvasElement>(null),native=useRef<HTMLDivElement>(null),ocrLayer=useRef<HTMLDivElement>(null);
   const ocrCache=useRef(new Map<string,{id:string;data:PdfOcrData}>());
   const drag=useRef<[number,number]|null>(null),operation=useRef<AbortController|null>(null),pageProxy=useRef<PDFPageProxy|null>(null);
-  const cancel=()=>{setDraftRect(null);drag.current=null;operation.current?.abort();operation.current=null;setBusy(false);setStatus('');setBox(null);setPreview('');setSelection(null);setMode('text');const selected=window.getSelection();if(selected?.anchorNode&&surface.current?.contains(selected.anchorNode))selected.removeAllRanges();};
-  const draftStatus:PdfPageTranslationStatus|null=props.translationSource&&props.translation?pdfPageStatus(props.translationSource,props.translation,page):null;
-  const showDraft=!!draftStatus&&props.showDraft;
-  useEffect(()=>{if(showDraft)cancel();},[showDraft]);
-  useEffect(()=>{if(props.currentPage===page)props.onToolbar({page,ready:ready&&!showDraft,mode,busy,start:()=>{props.claim();cancel();setMode('region');},cancel});else cancel();},[props.currentPage,page,ready,mode,busy,showDraft]);
+  const cancel=()=>{drag.current=null;operation.current?.abort();operation.current=null;setBusy(false);setStatus('');setBox(null);setPreview('');setSelection(null);setMode('text');const selected=window.getSelection();if(selected?.anchorNode&&surface.current?.contains(selected.anchorNode))selected.removeAllRanges();};
+  const pageStatus:PdfPageTranslationStatus|null=props.translationSource&&props.translation?pdfPageStatus(props.translationSource,props.translation,page):null;
+  const translated=!!pageStatus&&!!props.showTranslation;
+  // Only checked translations replace text in place; untranslated paragraphs keep the original page.
+  const translatedParagraphs=useMemo(()=>{
+    const source=props.translationSource;if(!translated||!source)return [];
+    const paragraphs=source.pages[page-1]?.paragraphs??[];
+    const upright=(rects:PdfRect[])=>!rects.some(r=>rotatedText.some(([x,y])=>Math.abs(x-r[0])<=1.5&&y>=r[1]-(r[3]-r[1])-1.5&&y<=r[3]+(r[3]-r[1])+1.5));
+    return pdfDraftParagraphs(source,props.translation,page).filter(p=>p.translated).map(p=>({id:p.id,text:p.text,rects:paragraphs.find(q=>q.id===p.id)?.rects??[]})).filter(p=>upright(p.rects));
+  },[translated,props.translationSource,props.translation,page,rotatedText]);
+  const switched=useRef(translated);
+  useEffect(()=>{if(switched.current!==translated){switched.current=translated;cancel();}},[translated]);
+  useEffect(()=>{if(props.currentPage===page)props.onToolbar({page,ready,mode,busy,start:()=>{props.claim();cancel();setMode('region');},cancel});else cancel();},[props.currentPage,page,ready,mode,busy]);
   const displayViewport=viewport?.clone({scale:viewport.scale*width/viewport.width})??null;
   useLayoutEffect(()=>{
-    const draftElement=showDraft&&draftRect?draftRef.current:null;
-    const popup=card.current, pageElement=draftElement??surface.current;
-    if(!popup||!pageElement||(!draftElement&&!viewport))return;
+    const popup=card.current, pageElement=surface.current;
+    if(!popup||!pageElement||!viewport)return;
     const rects=box?[box]:selection?.anchor.pdf?.rects;
     if(!rects?.length)return;
     const scroll=pageElement.closest<HTMLElement>('.reader-scroll,.recovery-original');
@@ -150,8 +156,7 @@ function PdfSheet(props:SheetProps) {
       const left=Math.max(12,(reader?.left??0)+12), right=Math.min(innerWidth-12,(reader?.right??innerWidth)-12);
       const top=Math.max(12,(reader?.top??0)+(root.current?.closest('.pdf-reader')?.querySelector('.pdf-toolbar')?.getBoundingClientRect().height??0)+8);
       const bottom=Math.min(innerHeight-12,(reader?.bottom??innerHeight)-12);
-      // A Chinese-draft selection is placed by its on-screen text, not by the hidden original page.
-      const r=draftElement?[draftRect!.left,draftRect!.top,draftRect!.right,draftRect!.bottom]:screenRect(displayViewport!,rects[rects.length-1]);
+      const r=screenRect(displayViewport!,rects[rects.length-1]);
       const anchor={left:pageBounds.left+r[0],right:pageBounds.left+r[2],top:pageBounds.top+r[1],bottom:pageBounds.top+r[3]};
       popup.style.visibility=anchor.bottom<top||anchor.top>bottom?'hidden':'visible';
       popup.style.width=`${Math.max(0,Math.min(440,right-left))}px`;
@@ -166,7 +171,7 @@ function PdfSheet(props:SheetProps) {
     const observer=new ResizeObserver(place);observer.observe(popup);observer.observe(pageElement);
     window.addEventListener('scroll',place,true);window.addEventListener('resize',place);
     return()=>{observer.disconnect();window.removeEventListener('scroll',place,true);window.removeEventListener('resize',place);};
-  },[box,selection,preview,viewport,width,showDraft,draftRect]);
+  },[box,selection,preview,viewport,width]);
   useEffect(()=>{const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')cancel();};window.addEventListener('keydown',escape);return()=>{window.removeEventListener('keydown',escape);operation.current?.abort();};},[]);
   useEffect(()=>{const el=root.current;if(!el)return;const observer=new IntersectionObserver(entries=>setNear(entries[0].isIntersecting),{root:el.closest('.reader-scroll,.recovery-original'),rootMargin:'600px 0px'});observer.observe(el);return()=>observer.disconnect();},[]);
   useEffect(()=>{if(props.draftPage!==page)cancel();},[props.draftPage,page]);
@@ -175,12 +180,11 @@ function PdfSheet(props:SheetProps) {
     if(props.toolbarHost?.contains(event.target as Node)||root.current?.closest('.pdf-reader')?.querySelector('.pdf-toolbar')?.contains(event.target as Node))return;
     const bounds=surface.current?.getBoundingClientRect();
     const rects=box?[box]:selection?.anchor.pdf?.rects??[];
-    // In the Chinese draft the original page is hidden; only the card itself keeps a selection open.
-    if(!showDraft&&bounds&&viewport&&rects.some(r=>{const sr=screenRect(displayViewport!,r);return event.clientX>=bounds.left+sr[0]&&event.clientX<=bounds.left+sr[2]&&event.clientY>=bounds.top+sr[1]&&event.clientY<=bounds.top+sr[3];}))return;
+    if(bounds&&viewport&&rects.some(r=>{const sr=screenRect(displayViewport!,r);return event.clientX>=bounds.left+sr[0]&&event.clientX<=bounds.left+sr[2]&&event.clientY>=bounds.top+sr[1]&&event.clientY<=bounds.top+sr[3];}))return;
     cancel();
-  };document.addEventListener('pointerdown',outside);return()=>document.removeEventListener('pointerdown',outside);},[box,selection,viewport,width,showDraft]);
+  };document.addEventListener('pointerdown',outside);return()=>document.removeEventListener('pointerdown',outside);},[box,selection,viewport,width]);
 
-  useEffect(()=>{if(!near){cancel();setReady(false);}},[near]);
+  useEffect(()=>{if(!near){cancel();setReady(false);setPainted(false);}},[near]);
   useEffect(()=>{cancel();setOcr([]);},[page]);
   useEffect(()=>{
     setError('');setReady(false);let disposed=false;let render:ReturnType<PDFPageProxy['render']>|undefined;let text:TextLayer|undefined;
@@ -192,9 +196,10 @@ function PdfSheet(props:SheetProps) {
       const c=document.createElement('canvas'),layer=document.createElement('div');c.width=Math.ceil(v.width*dpr);c.height=Math.ceil(v.height*dpr);
       render=p.render({canvas:c,viewport:v,transform:[dpr,0,0,dpr,0,0]});await render.promise;if(disposed)return;
       const content=await p.getTextContent();if(disposed)return;
+      setRotatedText(content.items.flatMap(item=>{const t=(item as {transform?:number[]}).transform;return t&&t.length>=6&&Math.abs(t[1])>Math.abs(t[0])*0.1?[[t[4],t[5]] as [number,number]]:[];}));
       layer.style.setProperty('--scale-factor',String(scale));layer.style.setProperty('--total-scale-factor',String(scale));text=new TextLayer({textContentSource:content,container:layer,viewport:v});await text.render();if(disposed)return;
       const visible=canvas.current!,nativeLayer=native.current!;
-      visible.width=c.width;visible.height=c.height;visible.style.width=v.width+'px';visible.style.height=v.height+'px';visible.getContext('2d')!.drawImage(c,0,0);
+      visible.width=c.width;visible.height=c.height;visible.style.width=v.width+'px';visible.style.height=v.height+'px';visible.getContext('2d')!.drawImage(c,0,0);setPainted(true);
       nativeLayer.style.setProperty('--scale-factor',String(scale));nativeLayer.style.setProperty('--total-scale-factor',String(scale));nativeLayer.replaceChildren(...Array.from(layer.childNodes));
       setViewport(v);
       const ids=[...new Set(latest.current.inquiries.filter(i=>i.anchor.pdf?.page===page).map(i=>i.anchor.pdf?.ocrId).filter((id):id is string=>!!id))];
@@ -206,11 +211,11 @@ function PdfSheet(props:SheetProps) {
     return()=>{disposed=true;render?.cancel();text?.cancel();};
   },[pdf,page,near,renderWidth]);
   useEffect(()=>{
-    const b=props.bookmarkTarget,a=b?.anchor.pdf;if(!b||!a||a.page!==page||props.showDraft)return;
+    const b=props.bookmarkTarget,a=b?.anchor.pdf;if(!b||!a||a.page!==page)return;
     if(error){props.onBookmarkLocated?.(false);return;}
     if(!ready||!viewport||Math.abs(viewport.width-width)>1){if(root.current)revealReadingTarget(root.current);setNear(true);return;}
     const frame=requestAnimationFrame(()=>{const sheet=surface.current,scroll=root.current?.closest<HTMLElement>('.reader-scroll');if(!sheet||!scroll||!viewport||a.fileHash!==props.document.pdf.resourceId){props.onBookmarkLocated?.(false);return;}props.onReady?.();const bounds=sheet.getBoundingClientRect(),rects=a.rects.map(rect=>{const [left,top,right,bottom]=screenRect(displayViewport!,rect);return{left:bounds.left+left,top:bounds.top+top,right:bounds.left+right,bottom:bounds.top+bottom};});props.onBookmarkLocated?.(revealBookmarkRects(scroll,rects));});return()=>cancelAnimationFrame(frame);
-  },[props.bookmarkTarget,page,ready,error,width,viewport,props.showDraft]);
+  },[props.bookmarkTarget,page,ready,error,width,viewport]);
   useEffect(()=>{
     const t=props.target;if(!t)return;
     const key=`${t.id}:${t.nonce}`;
@@ -220,11 +225,7 @@ function PdfSheet(props:SheetProps) {
     if(a.fileHash!==props.document.pdf.resourceId||inquiry?.anchor.matchStatus!=='matched') {
       appliedTarget.current=key;props.onLocated?.(t.id,false,t.returnToSource);return;
     }
-    if(props.showDraft&&inquiry?.anchor.translation){
-      const frame=requestAnimationFrame(()=>{const target=root.current?.querySelector<HTMLElement>(`[data-pdf-paragraph="${CSS.escape(inquiry.anchor.blockId)}"]`);appliedTarget.current=key;props.onLocated?.(t.id,!!target&&revealReadingTarget(target),t.returnToSource,target??undefined);});
-      return()=>cancelAnimationFrame(frame);
-    }
-    if(props.showDraft)return; // The reader switches this page back to the original first; locate after that.
+    // Stickies keep their original-page boxes, which the in-place Chinese shares, so both sides locate the same way.
     if(error&&!ready){appliedTarget.current=key;props.onLocated?.(t.id,false,t.returnToSource);return;}
     if(!ready){if(root.current)revealReadingTarget(root.current);setNear(true);return;}
     const frame=requestAnimationFrame(()=>{
@@ -235,7 +236,7 @@ function PdfSheet(props:SheetProps) {
       props.onLocated?.(t.id,located,t.returnToSource,target??undefined);
     });
     return()=>cancelAnimationFrame(frame);
-  },[props.target,page,ready,error,props.document.pdf.resourceId,props.showDraft]);
+  },[props.target,page,ready,error,props.document.pdf.resourceId]);
   useEffect(()=>{if(!viewport)return;for(const el of ocrLayer.current?.querySelectorAll<HTMLElement>('[data-line]')??[]){el.style.transform='none';const desired=Number(el.dataset.width),actual=el.getBoundingClientRect().width/(width/viewport.width);if(actual)el.style.transform=`scaleX(${desired/actual})`; }},[ocr,viewport]);
   useEffect(()=>{const done=props.bookmarkCompleted,operation=bookmarkOperationRef.current;if(done&&operation&&done.operationId===operation.operationId&&bookmarkSelectionRef.current===operation.anchor)cancel();},[props.bookmarkCompleted]);
   const point=(event:{clientX:number;clientY:number}):[number,number]=>{const r=surface.current!.getBoundingClientRect();return [Math.max(0,Math.min(r.width,event.clientX-r.left)),Math.max(0,Math.min(r.height,event.clientY-r.top))];};
@@ -256,7 +257,18 @@ function PdfSheet(props:SheetProps) {
   function selectedText(){
     if(props.readOnly||busy||mode!=='text'||!viewport)return;
     const selected=window.getSelection();if(!selected||selected.isCollapsed||!selected.rangeCount)return;
-    const range=selected.getRangeAt(0);if(!surface.current?.contains(range.commonAncestorContainer)){if(surface.current?.contains(range.startContainer)||surface.current?.contains(range.endContainer))setError('请缩小到同页同一段文字范围。');return;}
+    const range=selected.getRangeAt(0);
+    const paragraphOf=(node:Node)=>(node instanceof Element?node:node.parentElement)?.closest<HTMLElement>('[data-pdf-paragraph]');
+    const translatedStart=paragraphOf(range.startContainer),translatedEnd=paragraphOf(range.endContainer);
+    if((translatedStart||translatedEnd)&&root.current&&(root.current.contains(range.startContainer)||root.current.contains(range.endContainer))){
+      if(translatedStart!==translatedEnd||!translatedStart){setError('请在同一段中文内选择文字。');return;}
+      const textNode=translatedStart.querySelector('.pdf-translation-text');if(!textNode||!textNode.contains(range.startContainer)||!textNode.contains(range.endContainer))return;
+      const full=textNode.textContent??'',before=document.createRange();before.selectNodeContents(textNode);before.setEnd(range.startContainer,range.startOffset);
+      const start=before.toString().length,quote=range.toString(),end=start+quote.length;
+      if(!quote.trim()||quote.length>12000)return;
+      selectDraft({paragraphId:translatedStart.dataset.pdfParagraph!,translated:true,quote,start,end,prefix:full.slice(Math.max(0,start-240),start),suffix:full.slice(end,end+240)});return;
+    }
+    if(!surface.current?.contains(range.commonAncestorContainer)){if(surface.current?.contains(range.startContainer)||surface.current?.contains(range.endContainer))setError('请缩小到同页同一段文字范围。');return;}
     const start=(range.startContainer.parentElement?.closest('[data-ocr-id]'))as HTMLElement|null,end=range.endContainer.parentElement?.closest('[data-ocr-id]')as HTMLElement|null;
     if(start?.dataset.ocrId!==end?.dataset.ocrId){setError('请缩小到同页同一段文字范围。');return;}
     const selectedOcr=start?ocr.find(o=>o.id===start.dataset.ocrId):undefined;
@@ -269,7 +281,7 @@ function PdfSheet(props:SheetProps) {
     const all=normalized([Math.min(...rects.map(r=>r[0])),Math.min(...rects.map(r=>r[1])),Math.max(...rects.map(r=>r[2])),Math.max(...rects.map(r=>r[3]))]);
     props.claim();setBox(null);setPreview('');setQuote(text);setSelection({anchor:a,preview:previewFor(all)});setError('');
   }
-  // Option A: a selection in the Chinese draft anchors to its original paragraph (page + line boxes),
+  // Option A: a selection in the in-place Chinese anchors to its original paragraph (page + line boxes),
   // keeping the selected Chinese as the translation quote; the model gets the selection plus that paragraph only.
   function selectDraft(selected:DraftSelection){
     const paragraph=props.translationSource?.pages[page-1]?.paragraphs.find(p=>p.id===selected.paragraphId),state=props.translation;
@@ -282,7 +294,7 @@ function PdfSheet(props:SheetProps) {
       translation:{version:TRANSLATION_CONTRACT_VERSION,translationId:state.id,sourceVersion:props.translationSource.sourceVersion,blockId:paragraph.id,quote:selected.quote,prefix:selected.prefix,suffix:selected.suffix,start:selected.start,end:selected.end},
       pdf:{...location,context:`译文选区：${selected.quote.slice(0,1600)}\n对应原文段落（非逐词对齐）：${paragraph.text.slice(0,2000)}`}}
       :{...base,quote:selected.quote,start:0,end:selected.quote.length,pdf:{...location,context:`${selected.quote.slice(0,1600)}\n所在原文段落：${paragraph.text.slice(0,2000)}`}};
-    props.claim();setBox(null);setPreview('');setError('');setQuote(selected.quote);setDraftRect(selected.rect);setSelection({anchor:a,preview:''});
+    props.claim();setBox(null);setPreview('');setError('');setQuote(selected.quote);setSelection({anchor:a,preview:''});
   }
   function create(intent:ActiveInquiryIntent,a:Anchor,question?:string){latest.current.onCreate?.(intent,{anchor:a,context:a.pdf?.context??a.quote,rect:{top:0,left:0,width:0,height:0}},question);setSelection(null);setBox(null);setPreview('');setStatus('');}
   async function selectRegion(intent:ActiveInquiryIntent,question?:string){
@@ -334,17 +346,12 @@ function PdfSheet(props:SheetProps) {
   }
   const marks=props.inquiries.filter(i=>i.anchor.pdf?.page===page&&i.anchor.pdf.fileHash===props.document.pdf.resourceId);
   // Draft highlights need the same paragraph version; ids from an older version may name other paragraphs.
-  const draftMarks=marks.filter(i=>!!props.translationSource&&i.anchor.translation?.sourceVersion===props.translationSource.sourceVersion);
   const rotated=info.rotation===90||info.rotation===270;
   const ratio=rotated?(info.view[2]-info.view[0])/(info.view[3]-info.view[1]):(info.view[3]-info.view[1])/(info.view[2]-info.view[0]);
   return <section ref={root} className="pdf-sheet" data-pdf-page={page} aria-label={`第 ${page} 页`}>
     {error?<p className="pdf-error" role="alert">第 {page} 页：{error}</p>:null}
-    {draftStatus?<div className="pdf-draft-switch" role="group" aria-label={`第 ${page} 页显示方式`}>
-      <button type="button" aria-pressed={!showDraft} onClick={()=>props.onDraftView(false)}>原页</button>
-      <button type="button" aria-pressed={showDraft} onClick={()=>props.onDraftView(true)}>中文稿{draftStatus==='partial'?'（部分）':draftStatus==='pending'?'（未译）':''}</button>
-    </div>:null}
-    {showDraft?<PdfDraft ref={draftRef} page={page} width={width} status={draftStatus!} paragraphs={pdfDraftParagraphs(props.translationSource!,props.translation,page)} marked={new Set(draftMarks.map(i=>i.anchor.blockId))} activeBlock={draftMarks.find(i=>i.id===props.activeId)?.anchor.blockId} onActivate={blockId=>{const hit=draftMarks.find(i=>i.anchor.blockId===blockId);if(hit)props.onActivate?.(hit.id);}} onSelect={selectDraft} onError={setError}/>:null}
-    <div className="pdf-page-wrap" hidden={showDraft}><div data-block-id={`pdf-page-${page}`} ref={surface} className={`pdf-page ${mode!=='text'?'drawing':''}`} style={{width,height:width*ratio}}
+    {translated&&pageStatus==='scanned'?<p className="pdf-translation-note" role="note">此页为图片，暂不能全文翻译，可框选后提问</p>:null}
+    <div className="pdf-page-wrap"><div data-block-id={`pdf-page-${page}`} ref={surface} className={`pdf-page ${mode!=='text'?'drawing':''}`} style={{width,height:width*ratio}}
       onPointerDown={e=>{if(mode==='text'||props.readOnly||!ready||busy)return;e.preventDefault();drag.current=point(e);setBox(null);setPreview('');e.currentTarget.setPointerCapture(e.pointerId);}}
       onPointerCancel={()=>{drag.current=null;setBox(null);setPreview('');}}
       onPointerMove={e=>{if(!drag.current||!viewport)return;setBox(originalRect(displayViewport!,normalized([...drag.current,...point(e)])));}}
@@ -353,6 +360,7 @@ function PdfSheet(props:SheetProps) {
       <div className="pdf-page-content" style={{width:viewport?.width??width,height:viewport?.height??width*ratio,transform:`scale(${viewport?width/viewport.width:1})`}}>
       {near?<><canvas ref={canvas} aria-label={`PDF 第 ${page} 页`} /><div ref={native} className="pdf-native textLayer"/></>:<div className="pdf-page-placeholder">第 {page} 页</div>}
       <div ref={ocrLayer} className="pdf-ocr">{near&&viewport?ocr.map(o=><div key={o.id} data-ocr-id={o.id}>{o.data.lines.map((l,n)=>{const r=screenRect(viewport,l.rect);return <span key={n} data-line={n} data-width={r[2]-r[0]} style={{left:r[0],top:r[1],fontSize:r[3]-r[1]}}>{l.text}{'\n'}</span>;})}</div>):null}</div>
+      {near&&viewport&&painted&&translatedParagraphs.length?<PdfTranslationLayer page={page} viewport={viewport} paragraphs={translatedParagraphs} canvas={canvas.current} displayScale={width/viewport.width}/>:null}
       {near&&viewport?marks.flatMap(i=>i.anchor.pdf!.rects.map((r,n)=><div key={i.id+'-'+n} data-pdf-inquiry={i.id} className={`pdf-mark ${i.anchor.pdf!.kind} ${props.activeId===i.id?'active':''}`} style={rectStyle(screenRect(viewport,r))}>{n===0?<button type="button" title="查看知识贴" aria-label={`查看知识贴：${i.anchor.quote}`} onPointerDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();props.onActivate?.(i.id);}}><MessageSquareText size={14} aria-hidden="true" /></button>:null}</div>)):null}
       {near&&viewport?props.bookmarks?.filter(bookmark=>bookmark.anchor.pdf?.page===page&&bookmark.anchor.pdf.fileHash===props.document.pdf.resourceId).flatMap(bookmark=>bookmark.anchor.pdf!.rects.map((rect,index)=><div key={bookmark.id+'-'+index} className="pdf-bookmark-mark" data-pdf-bookmark={bookmark.id} style={rectStyle(screenRect(viewport,rect))}/>)):null}
       {box&&viewport?<div className="pdf-draft-box" style={rectStyle(screenRect(viewport,box))}/>:null}
@@ -362,41 +370,10 @@ function PdfSheet(props:SheetProps) {
       {selection?<div className="selection-quote pdf-selected-quote">“{quote}”</div>:<div className="pdf-selection-preview"><img src={preview} alt="本次选择的原页区域" /></div>}
       {HOSTED&&!selection&&props.hostedImages!==true?<p className="pdf-region-capability" role="status">{hostedImageNotice(props.hostedImages)}</p>:null}
       {!selection&&box&&props.hostedImages===true&&regionNeedsSmallerSelection(box)?<p className="pdf-region-capability" role="status">选区较大，图中细小文字可能读不准；可缩小框选范围。</p>:null}
-      <SelectionActions bookmark={selection&&!showDraft&&props.revisionId&&props.onBookmarkSaved&&!props.readOnly?<BookmarkAction entryId={props.entryId} revisionId={props.revisionId} anchor={selection.anchor} disabled={busy} iconOnly onSaved={props.onBookmarkSaved} onStarted={request=>{const anchor=bookmarkSelectionRef.current;if(anchor)bookmarkOperationRef.current={anchor,operationId:request.operationId};props.onBookmarkStarted?.(request);}} version={props.bookmarkVersion} onFailed={props.onBookmarkFailed}/>:null} className="pdf-card-actions" disabled={busy||props.readOnly||(HOSTED&&!selection&&props.hostedImages!==true)} onClose={cancel} onSelect={(intent,question)=>{if(selection)create(intent,selection.anchor,question);else void selectRegion(intent,question);}}/>
+      <SelectionActions bookmark={selection&&!selection.anchor.translation&&props.revisionId&&props.onBookmarkSaved&&!props.readOnly?<BookmarkAction entryId={props.entryId} revisionId={props.revisionId} anchor={selection.anchor} disabled={busy} iconOnly onSaved={props.onBookmarkSaved} onStarted={request=>{const anchor=bookmarkSelectionRef.current;if(anchor)bookmarkOperationRef.current={anchor,operationId:request.operationId};props.onBookmarkStarted?.(request);}} version={props.bookmarkVersion} onFailed={props.onBookmarkFailed}/>:null} className="pdf-card-actions" disabled={busy||props.readOnly||(HOSTED&&!selection&&props.hostedImages!==true)} onClose={cancel} onSelect={(intent,question)=>{if(selection)create(intent,selection.anchor,question);else void selectRegion(intent,question);}}/>
       {busy?<p role="status">{status}</p>:null}
     </div>:null}
   </section>;
 }
 
-const draftNotice:Record<PdfPageTranslationStatus,string>={
-  done:'中文稿按阅读顺序排列；图表、公式与版式请切回原页查看。',
-  partial:'此页部分段落尚未翻译，未译段落显示原文；可在上方继续翻译。',
-  pending:'此页尚未翻译，可在上方继续翻译；下方显示原文段落。',
-  scanned:'此页为图片，暂不能全文翻译，可框选后提问',
-  empty:'此页没有可翻译的正文段落，请切回原页查看。',
-};
-interface DraftSelection {paragraphId:string;translated:boolean;quote:string;prefix:string;suffix:string;start:number;end:number;rect:{left:number;top:number;right:number;bottom:number}}
-interface DraftProps {page:number;width:number;status:PdfPageTranslationStatus;paragraphs:ReturnType<typeof pdfDraftParagraphs>;marked:Set<string>;activeBlock?:string;onActivate:(blockId:string)=>void;onSelect:(selection:DraftSelection)=>void;onError:(message:string)=>void}
-const PdfDraft=forwardRef<HTMLElement,DraftProps>(function PdfDraft({page,width,status,paragraphs,marked,activeBlock,onActivate,onSelect,onError},ref){
-  const article=useRef<HTMLElement|null>(null);
-  const read=()=>{
-    const selected=window.getSelection();if(!selected||selected.isCollapsed||!selected.rangeCount||!article.current)return;
-    const range=selected.getRangeAt(0),element=(node:Node)=>(node instanceof Element?node:node.parentElement)?.closest<HTMLElement>('[data-pdf-paragraph]');
-    const startEl=element(range.startContainer),endEl=element(range.endContainer);
-    if(!startEl||!article.current.contains(startEl))return;
-    if(startEl!==endEl){onError('请在中文稿的同一段内选择文字。');return;}
-    const textNode=startEl.querySelector('.pdf-draft-text');if(!textNode||!textNode.contains(range.startContainer)||!textNode.contains(range.endContainer))return;
-    const full=textNode.textContent??'',before=document.createRange();before.selectNodeContents(textNode);before.setEnd(range.startContainer,range.startOffset);
-    const start=before.toString().length,quote=range.toString(),end=start+quote.length;
-    if(!quote.trim()||quote.length>12000)return;
-    const bounds=article.current.getBoundingClientRect(),rects=Array.from(range.getClientRects()).filter(r=>r.width>1&&r.height>1),last=rects.at(-1)??range.getBoundingClientRect();
-    onError('');onSelect({paragraphId:startEl.dataset.pdfParagraph!,translated:startEl.dataset.translated==='true',quote,start,end,prefix:full.slice(Math.max(0,start-240),start),suffix:full.slice(end,end+240),rect:{left:last.left-bounds.left,top:last.top-bounds.top,right:last.right-bounds.left,bottom:last.bottom-bounds.top}});
-  };
-  return <div className="pdf-draft-wrap"><article ref={node=>{article.current=node;if(typeof ref==='function')ref(node);else if(ref)ref.current=node;}} className="pdf-draft" style={{width}} aria-label={`第 ${page} 页中文稿`} lang="zh-CN" onPointerUp={()=>requestAnimationFrame(read)} onKeyUp={event=>{if(event.shiftKey)read();}}>
-    <p className={`pdf-draft-notice pdf-draft-notice--${status}`} role="note">{draftNotice[status]}</p>
-    {paragraphs.map(p=><p key={p.id} data-pdf-paragraph={p.id} data-translated={p.translated} className={`pdf-draft-paragraph${p.translated?'':' pdf-draft-paragraph--original'}${marked.has(p.id)?' pdf-draft-paragraph--marked':''}${activeBlock===p.id?' active':''}`} lang={p.translated?'zh-CN':'en'}>
-      {p.translated?null:<span className="pdf-draft-badge">未译</span>}<span className="pdf-draft-text">{p.text}</span>
-      {marked.has(p.id)?<button type="button" className="pdf-draft-mark" title="查看知识贴" aria-label="查看此段的知识贴" onPointerDown={e=>e.stopPropagation()} onClick={()=>onActivate(p.id)}><MessageSquareText size={14} aria-hidden="true"/></button>:null}
-    </p>)}
-  </article></div>;
-});
+interface DraftSelection {paragraphId:string;translated:boolean;quote:string;prefix:string;suffix:string;start:number;end:number}

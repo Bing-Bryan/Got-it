@@ -100,8 +100,7 @@ export function useReadingLibrary(options: Options) {
   function setAutoTranslation(value:boolean) { setAutoTranslate(value); try { localStorage.setItem("got-it.web-translation-auto.v1",String(value)); } catch { setNotice("自动翻译偏好未能保存，请检查浏览器存储。"); } }
   function updateTranslation(state:WebTranslationState) {
     const base = latest.current.getWorkspace?.() ?? latest.current.workspace;
-    // PDF has no whole-document translated side; each page chooses original or Chinese draft.
-    const next = {...base,webTranslation:state,readingSide:base.document.kind === "pdf" ? "original" as const : "translated" as const,translationNotice:undefined,updatedAt:new Date().toISOString(),hasUnexportedChanges:true};
+    const next = {...base,webTranslation:state,readingSide:"translated" as const,translationNotice:undefined,updatedAt:new Date().toISOString(),hasUnexportedChanges:true};
     latest.current.workspace=next; (latest.current.update ?? latest.current.install)(next);
     writeDraft(next, capturePosition());
     return next;

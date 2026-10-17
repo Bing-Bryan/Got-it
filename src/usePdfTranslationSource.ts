@@ -44,6 +44,11 @@ export function pdfDraftParagraphs(source: PdfTranslationSource, state: WebTrans
   });
 }
 
+// The in-place Chinese shows a paragraph only when all its units passed checks; the switch follows the same rule.
+export function pdfHasShownTranslation(source: PdfTranslationSource, state: WebTranslationState | undefined): boolean {
+  return source.pages.some(p => pdfDraftParagraphs(source, state, p.page).some(paragraph => paragraph.translated));
+}
+
 export function pdfTranslationSummary(source: PdfTranslationSource, state: WebTranslationState | undefined): PdfTranslationSummary {
   const statuses = source.pages.map(p => pdfPageStatus(source, state, p.page));
   const usable = state?.sourceVersion === source.sourceVersion ? state : undefined;

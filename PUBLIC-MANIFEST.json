@@ -3,8 +3,8 @@
   "files": [
     {
       "path": "src/App.tsx",
-      "bytes": 99762,
-      "sha256": "3a1ac26c6438d71b5cec1648b431c2c100d8f74364cca578e995e11a8ffbe729"
+      "bytes": 99775,
+      "sha256": "675abb8ad56cf417bd61ff541081d229d96136e83b436d905675b5c23711829f"
     },
     {
       "path": "src/BookmarkAction.tsx",
@@ -43,13 +43,13 @@
     },
     {
       "path": "src/HostedControls.test.tsx",
-      "bytes": 3641,
-      "sha256": "7db29d0fb18a7d9c8cb6e791e2d080cdb4f2763aea436ca7b15179bf90c736fa"
+      "bytes": 5524,
+      "sha256": "46b29cc98c0a7d1c00d92d302797e3f00ab4292d1639c8d8ed6f4e7f4b6da208"
     },
     {
       "path": "src/HostedControls.tsx",
-      "bytes": 9708,
-      "sha256": "24cf4b62b0b77dcfcf1e7875b6bf193f1afd6e5b0f98073f0971e6419024810b"
+      "bytes": 9777,
+      "sha256": "e8f6bd2efd4ea2a211af7be9d4375d05e72c6a5e665dfae27b9fd7692255c4cf"
     },
     {
       "path": "src/MarkdownWidthControls.tsx",
@@ -73,13 +73,18 @@
     },
     {
       "path": "src/PdfReader.tsx",
-      "bytes": 45814,
-      "sha256": "dcbfa18a6b1fbb059b3af950759c6722428289d5799b5aed7610f4ad9d74099a"
+      "bytes": 42192,
+      "sha256": "2077a2f0f7f6d58ee61d81e12f614cb8488c69e42a05c46dac91e1f63975d30c"
     },
     {
       "path": "src/PdfSourcePreview.tsx",
       "bytes": 2062,
       "sha256": "09392b65ef2f69f03396587f7a311f270622054ca29a0531a4b6a6f4a5bc603b"
+    },
+    {
+      "path": "src/PdfTranslationLayer.tsx",
+      "bytes": 7840,
+      "sha256": "85d26daf6dcf459b75ccb2ce086fd092f62ba5eb54c876f227a06b2080792c38"
     },
     {
       "path": "src/PdfZoomControls.tsx",
@@ -162,14 +167,19 @@
       "sha256": "4f870327eb6d5ef4337fe0108190ee1f3bd624df5772a2c7e44e30da28505406"
     },
     {
+      "path": "src/WebTranslationControls.pdf.test.tsx",
+      "bytes": 4789,
+      "sha256": "2a7256d701c648bed4127bc2691efb66acf4eaf28ce292215e71d008b0295c99"
+    },
+    {
       "path": "src/WebTranslationControls.test.tsx",
-      "bytes": 16830,
-      "sha256": "191072a69e27f1615f2e7edf68c958ab5362192210c4cd317eaff9c200db26aa"
+      "bytes": 17417,
+      "sha256": "5c8a6c6188d381fe9f4d6d161002df7827a24de4e3b5b4326101686b5da8367f"
     },
     {
       "path": "src/WebTranslationControls.tsx",
-      "bytes": 13574,
-      "sha256": "bf342decc7c3ff2279595ef282960c0900cb2eb3ddd5c03070de5e8737291eec"
+      "bytes": 13847,
+      "sha256": "e572ab38f5d951e4ee1e55874819e268ccb87890408f852436f6f6858a781fe3"
     },
     {
       "path": "src/assets/got-it-icon.svg",
@@ -793,8 +803,8 @@
     },
     {
       "path": "src/pdf-draft.test.tsx",
-      "bytes": 11351,
-      "sha256": "1f070e3d1dd856c8911d4519f7e1ed5664a3afa32e877c461747c8433dadfc49"
+      "bytes": 14598,
+      "sha256": "f31eaf3272e8a65505812967b6637b9913f8270c759d69f7477c082de398fe2c"
     },
     {
       "path": "src/pdf-outline-ui.test.tsx",
@@ -808,8 +818,8 @@
     },
     {
       "path": "src/pdf-reader.css",
-      "bytes": 11056,
-      "sha256": "0695c8cfedfc804ec46076e0fed9002ba7c4e41afbc2509d52a0ed3cd55b1401"
+      "bytes": 11002,
+      "sha256": "3cc93ffd6a1e1198c5e770cb7fd7f20c5082ba0bfaaffefb66009efe4a32d00e"
     },
     {
       "path": "src/pdf-reader.test.tsx",
@@ -828,8 +838,8 @@
     },
     {
       "path": "src/reading-document-ui.test.tsx",
-      "bytes": 10113,
-      "sha256": "342e63dd6dedde50c5f9b26fa1d8c6414474ad45c6a2facdf1f9092390f231ce"
+      "bytes": 10713,
+      "sha256": "49a5c3f6e25d115c7b3b52995afe6cb48c5f5eafc680b42306ed2f5ffe8d5bc6"
     },
     {
       "path": "src/reading-file-switcher.test.tsx",
@@ -903,8 +913,8 @@
     },
     {
       "path": "src/usePdfTranslationSource.ts",
-      "bytes": 3473,
-      "sha256": "3678f23ece92b460891ba65c72ca216a079a93668b37934abfacea84592d5236"
+      "bytes": 3827,
+      "sha256": "90dab5eacf6844c852c947a396ea8f6bef62e0e2f44f9f23f0985b442ee38a02"
     },
     {
       "path": "src/usePdfZoom.test.tsx",
@@ -923,8 +933,8 @@
     },
     {
       "path": "src/useReadingLibrary.ts",
-      "bytes": 50969,
-      "sha256": "6607173d4e6db31ee8ab65213bb8238653dfddeaefbeefaa2fcf81f33b59c61b"
+      "bytes": 50821,
+      "sha256": "c132e53ca89d4002482fa64fb8e086a7ff8b62b10f9b2476604edd8b62623f40"
     },
     {
       "path": "src/useResponsiveDrawer.test.tsx",
@@ -1692,6 +1702,11 @@
       "sha256": "5141bbcec489bcb506bf0f19596e9d03a885f2c3de2d3990c23ba78f5b3b374e"
     },
     {
+      "path": "docs/updates/2026-10-18-pdf-in-place-translation.md",
+      "bytes": 4472,
+      "sha256": "2d60df7e042eb416fa1726f34cf698a8340645135b3349bf9659763ed860d832"
+    },
+    {
       "path": "docs/images/reading.png",
       "bytes": 649297,
       "sha256": "6052a6e2dedbf821ccf9477f8dfba51314b4ec8beb834a2d2ff02bc8bd010771"
@@ -1753,8 +1768,8 @@
     },
     {
       "path": "docs/release-results.md",
-      "bytes": 20700,
-      "sha256": "9a4ad4b7f909ba185348665899ecf51070f8c399760a506a57af4e08c59d4d96"
+      "bytes": 22016,
+      "sha256": "a3bbcbf8b578ab88871288c0968b7277a37e85c4ee4ecc00b485c6a11c302150"
     },
     {
       "path": "docs/ui-guidelines.md",
@@ -1778,13 +1793,13 @@
     },
     {
       "path": "README.md",
-      "bytes": 23909,
-      "sha256": "5f7c4c7aef63b316f452f17e1ca7326dca04e88a89d4f53226f72778ab476f0c"
+      "bytes": 24233,
+      "sha256": "fb005cdda8da106cbcbfd6842c07847ad658ffec44cc1e885207eae9265ab59c"
     },
     {
       "path": "README.en.md",
-      "bytes": 21556,
-      "sha256": "66dda8921047366ab8f16a1804706eb535ca13a95193344055a0c446cfb5d52e"
+      "bytes": 21924,
+      "sha256": "cc44e36bdddf4d54740843c9af0171ab1846ffffa867214db5173b7781645701"
     },
     {
       "path": "package.json",

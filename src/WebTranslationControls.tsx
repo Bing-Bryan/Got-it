@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown, Languages } from "lucide-react";
 import { friendlyTranslationError, validUnitTranslation, TRANSLATION_PLACEHOLDER, type TranslationUnit } from "./lib/web-translation";
 import { documentTranslationSource } from "./lib/document-translation";
-import { pdfTranslationSummary, usePdfTranslationSource } from "./usePdfTranslationSource";
+import { pdfHasShownTranslation, pdfTranslationSummary, usePdfTranslationSource } from "./usePdfTranslationSource";
 import type { Workspace } from "./types";
 import type { TranslationActivity, useReadingLibrary } from "./useReadingLibrary";
 
@@ -79,8 +79,10 @@ export function WebTranslationControls({workspace,library,onSide,saveStatus}:{wo
   const excerpt=web?.coverage==="public-excerpt";
   const sourceFacts = !web ? "" : `${web.retrieval?.provider === "fxtwitter" ? X_PUBLIC_SCOPE : web.extractorVersion === X_CAPTURE_EXTRACTOR ? X_CAPTURE_SCOPE : "正在阅读本机保存副本"} · 导入于 ${new Date(workspace.document.importedAt).toLocaleString()}${excerpt ? " · 仅保存公开部分，付费内容未导入" : ""}`;
   const state=workspace.webTranslation, disabled=library.readOnly || !library.ready;
-  const hasTranslation = !pdf && !!state && Object.values(state.units).some(text => text.trim().length > 0);
   const pdfSummary = pdf && pdfSource.source ? pdfTranslationSummary(pdfSource.source,state) : null;
+  const pdfShown = useMemo(() => !!pdfSource.source && pdfHasShownTranslation(pdfSource.source,state),[pdfSource.source,state]);
+  // A PDF switches as a whole, like web and Markdown, once any paragraph has a checked translation.
+  const hasTranslation = !!state && (pdf ? pdfShown : Object.values(state.units).some(text => text.trim().length > 0));
   const translated = workspace.readingSide === "translated";
   const partial = !!state && (state.status !== "complete" || (!!pdf && !!source && completedUnits(source,state) < source.units.length));
   const sideLabel = translated ? `切换到原文${partial ? "（当前为部分中文译文）" : ""}` : `切换到中文译文${partial ? "（部分）" : ""}`;
@@ -93,15 +95,16 @@ export function WebTranslationControls({workspace,library,onSide,saveStatus}:{wo
   const resumeDescription = allDone ? "只保存已有译文，不重新生成。" : "仅翻译未完成的文本块，保留已有译文、原文和知识贴。";
   const currentSaveStatus = saveStatus ?? library.status;
   const publicMissing=web?.extractorVersion==='x-fxtwitter-public-v1'?web.media.filter(m=>m.status!=='saved').length:0;
-  const status = pdf ? "" : publicMissing && /^(?:已保存|正文已保存)/.test(currentSaveStatus) ? `正文已保存到本机，${publicMissing}张图片未保存` : currentSaveStatus.startsWith("已保存") ? "已保存" : currentSaveStatus.startsWith("保存中") ? "保存中" : currentSaveStatus;
+  // Markdown keeps its single save line in App; only web pages show save state here.
+  const status = !web ? "" : publicMissing && /^(?:已保存|正文已保存)/.test(currentSaveStatus) ? `正文已保存到本机，${publicMissing}张图片未保存` : currentSaveStatus.startsWith("已保存") ? "已保存" : currentSaveStatus.startsWith("保存中") ? "保存中" : currentSaveStatus;
   const progress = library.translationProgress;
   const rawTranslationStatus = progress === "全文译中已保存" || progress === "已保存公开正文译中已保存" ? "" : progress || (state?.status !== "complete" ? state?.error : "");
   const translationStatus = friendlyTranslationError((idleIncomplete ? rawTranslationStatus?.replace(/^已翻译 \d+ \/ \d+ 个文本块；/, "") : rawTranslationStatus)??"");
   const closePanel = () => { setPermission(false); trigger.current?.focus(); };
   const switchSide = () => { onSide(translated ? "original" : "translated"); closePanel(); };
-  const permissionText = pdf ? "将有文字层页面的正文段落分批发送给当前 AI，生成按页中文稿；图片、扫描页和原页内容不发送也不改动。" : null;
+  const permissionText = pdf ? "将有文字层页面的正文段落分批发送给当前 AI，在原页对应位置显示中文；图片、扫描页和原页内容不发送也不改动。" : null;
   const hostedPermissionDetail = "正文会分批发送给托管服务及模型服务商，每批使用体验额度；停止后已完成部分保留，服务端不持久保存正文或译文。";
-  return <section className="web-translation-controls" aria-label={web?"网页正文翻译":pdf?"PDF 中文稿":"正文翻译"} onKeyDown={event => { if (event.key === "Escape" && permission) { event.stopPropagation(); closePanel(); } }}>
+  return <section className="web-translation-controls" aria-label={web?"网页正文翻译":pdf?"PDF 中文":"正文翻译"} onKeyDown={event => { if (event.key === "Escape" && permission) { event.stopPropagation(); closePanel(); } }}>
     <div className="translation-toolbar">
       {web ? <><a className="translation-source" href={web.originalUrl} target="_blank" rel="noopener noreferrer" title={sourceFacts} aria-describedby={sourceDescriptionId}>打开原网页</a><span id={sourceDescriptionId} className="translation-source-description">{sourceFacts}</span></> : null}
       <div className="translation-actions">
@@ -114,7 +117,7 @@ export function WebTranslationControls({workspace,library,onSide,saveStatus}:{wo
         {excerpt ? <span className="translation-scope-warning" role="status">仅保存公开部分，付费内容未导入。</span> : null}
       </div>
       {idleIncomplete && !pdf ? <TranslationCountHelp completed={completed} total={total}/> : null}
-      {pdfSummary ? <span className="translation-count pdf-translation-pages" role="status">中文稿 {pdfSummary.done} / {pdfSummary.textPages} 页{pdfSummary.scanned ? ` · ${pdfSummary.scanned} 页为图片暂不能翻译` : ""}{!library.translationRunning ? " · 在每页上方切换原页 / 中文稿" : ""}</span> : pdf && state && pdfSource.error ? <span className="translation-progress" role="status">PDF 文字层读取失败，中文稿暂不能显示。</span> : null}
+      {pdfSummary ? <span className="translation-count pdf-translation-pages" role="status">中文 {pdfSummary.done} / {pdfSummary.textPages} 页{pdfSummary.scanned ? ` · ${pdfSummary.scanned} 页为图片暂不能翻译` : ""}</span> : pdf && state && pdfSource.error ? <span className="translation-progress" role="status">PDF 文字层读取失败，中文暂不能显示。</span> : null}
       {library.translationRepairCount>0 && <span className="translation-progress" role="status">已修复 {library.translationRepairCount} 块排版</span>}
       {library.translationRunning && library.translationActivity ? <RunningTranslationProgress activity={library.translationActivity}/> : translationStatus ? <span className="translation-progress" role="status">{translationStatus}</span> : null}
       {status ? <span className="translation-status" role="status">{status}</span> : null}
