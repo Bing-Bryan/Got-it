@@ -1,4 +1,5 @@
 import {dirname} from 'node:path';
+import { syncDirectory } from './private-storage';
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 
 export const MAX_INPUT_TOKENS = 8000;
@@ -13,8 +14,7 @@ export function atomicJson(path:string, data:unknown) {
   const fd=openSync(temp,'w',0o600);
   try {writeFileSync(fd,JSON.stringify(data));fsyncSync(fd);} finally {closeSync(fd);}
   renameSync(temp,path);
-  const dir=openSync(dirname(path),'r');
-  try {fsyncSync(dir);} finally {closeSync(dir);}
+  syncDirectory(dirname(path));
 }
 export function initializeBudget(path:string) {
   const fd=openSync(path,'wx',0o600);

@@ -2,17 +2,18 @@ import {createHmac,randomBytes,timingSafeEqual} from 'node:crypto';
 import {constants,closeSync,fchmodSync,fsyncSync,lstatSync,mkdirSync,openSync,readFileSync,writeFileSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {HostedError} from './hosted-budget';
+import {absolutePath,privateMode,syncDirectory} from './private-storage';
 import {safeWebUrl,WEB_HASH,WEB_MEDIA_ID} from '../src/lib/web-data';
 export interface ResourceTicket {v:1;documentId:string;contentVersion:string;mediaId:string;sourceUrl:string;extractorVersion:string;}
 export class HostedResourceTickets{
  private key:Buffer;
  constructor(private dir:string){
-  if(!dir.startsWith('/'))throw new Error('Hosted state directory must be absolute');
-  mkdirSync(dir,{recursive:true,mode:0o700});const info=lstatSync(dir);if(process.getuid&&info.uid!==process.getuid())throw new Error('Hosted state directory owner invalid');if(!info.isDirectory()||info.isSymbolicLink()||(info.mode&0o077)!==0)throw new Error('Hosted state directory permissions invalid');
+  if(!absolutePath(dir))throw new Error('Hosted state directory must be absolute');
+  mkdirSync(dir,{recursive:true,mode:0o700});const info=lstatSync(dir);if(process.getuid&&info.uid!==process.getuid())throw new Error('Hosted state directory owner invalid');if(!info.isDirectory()||info.isSymbolicLink()||!privateMode(info.mode))throw new Error('Hosted state directory permissions invalid');
   const path=join(resolve(dir),'resource-signing.key');
-  try{const fd=openSync(path,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);try{writeFileSync(fd,randomBytes(32));fchmodSync(fd,0o600);fsyncSync(fd);}finally{closeSync(fd);}const directory=openSync(dir,constants.O_RDONLY);try{fsyncSync(directory);}finally{closeSync(directory);}}
+  try{const fd=openSync(path,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);try{writeFileSync(fd,randomBytes(32));fchmodSync(fd,0o600);fsyncSync(fd);}finally{closeSync(fd);}syncDirectory(dir);}
   catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw new Error('Hosted signing key unavailable');}
-  const stat=lstatSync(path);if(process.getuid&&stat.uid!==process.getuid())throw new Error('Hosted signing key owner invalid');if(!stat.isFile()||stat.isSymbolicLink()||(stat.mode&0o077)!==0||stat.size!==32)throw new Error('Hosted signing key invalid; recovery required');
+  const stat=lstatSync(path);if(process.getuid&&stat.uid!==process.getuid())throw new Error('Hosted signing key owner invalid');if(!stat.isFile()||stat.isSymbolicLink()||!privateMode(stat.mode)||stat.size!==32)throw new Error('Hosted signing key invalid; recovery required');
   const fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);try{this.key=readFileSync(fd);if(this.key.length!==32)throw new Error('Invalid key');}finally{closeSync(fd);}
  }
  sign(value:ResourceTicket){this.validate(value);const payload=Buffer.from(JSON.stringify(value)).toString('base64url');return payload+'.'+createHmac('sha256',this.key).update(payload).digest('base64url');}

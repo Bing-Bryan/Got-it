@@ -1,4 +1,5 @@
 import {resolve,dirname,join} from 'node:path';
+import { absolutePath } from './private-storage';
 import {createHostedApp} from './hosted-api';
 import {HostedBudget, initializeBudget} from './hosted-budget';
 import {createHostedRunner} from './hosted-model';
@@ -11,7 +12,7 @@ import {HostedStatistics} from './hosted-statistics';
 
 // Files MUST live on a durable, private volume. No silent in-memory fallback.
 const path=process.env.HOSTED_BUDGET_PATH;
-if(!path||!path.startsWith('/'))throw new Error('HOSTED_BUDGET_PATH must be an absolute durable file path');
+if(!path||!absolutePath(path))throw new Error('HOSTED_BUDGET_PATH must be an absolute durable file path');
 if(process.argv.includes('--init-budget')){
   initializeBudget(resolve(path));
   console.info('Hosted budget initialized; no model request was sent.');
@@ -19,7 +20,7 @@ if(process.argv.includes('--init-budget')){
   const origin=process.env.HOSTED_ORIGIN;
   if(!origin||new URL(origin).origin!==origin)throw new Error('HOSTED_ORIGIN must be an exact frontend origin');
   const statisticsPath=process.env.HOSTED_STATISTICS_PATH;
-  if(!statisticsPath||!statisticsPath.startsWith('/')||statisticsPath===path)throw new Error('HOSTED_STATISTICS_PATH must be a separate absolute durable path');
+  if(!statisticsPath||!absolutePath(statisticsPath)||statisticsPath===path)throw new Error('HOSTED_STATISTICS_PATH must be a separate absolute durable path');
   const dailyLimit=Number(process.env.HOSTED_DAILY_BUDGET_USD||3);
   const budget=new HostedBudget(path,dailyLimit);
   const statistics=new HostedStatistics(statisticsPath);

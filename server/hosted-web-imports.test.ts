@@ -14,7 +14,8 @@ describe('hosted ephemeral import and signed resource boundary',()=>{
   const {dir,tickets}=state(),value={v:1 as const,documentId:'doc',contentVersion:'a'.repeat(64),mediaId:'media',sourceUrl:'https://example.org/image.png',extractorVersion:'static'};
   const ticket=tickets.sign(value);expect(new HostedResourceTickets(join(dir,'state')).verify(ticket)).toEqual(value);expect(()=>tickets.verify(ticket.slice(0,-5)+'xxxxx')).toThrow();
   const [payload,sig]=ticket.split('.'),forged=Buffer.from(JSON.stringify({...JSON.parse(Buffer.from(payload,'base64url').toString()),sourceUrl:'http://127.0.0.1/secret'})).toString('base64url')+'.'+sig;expect(()=>tickets.verify(forged)).toThrow();
-  chmodSync(join(dir,'state/resource-signing.key'),0o644);expect(()=>new HostedResourceTickets(join(dir,'state'))).toThrow('invalid');
+  // Mode bits express privacy only on POSIX; Windows relies on directory ACLs (see private-storage.ts).
+  if(process.platform!=='win32'){chmodSync(join(dir,'state/resource-signing.key'),0o644);expect(()=>new HostedResourceTickets(join(dir,'state'))).toThrow('invalid');}
  });
  it('keeps one immutable owner/token preview with hash-bound bytes, signed retry metadata and no content files',async()=>{
   const {dir,tickets}=state(),jobs=new HostedWebImports(tickets,{extractor:async()=>webFixture()});

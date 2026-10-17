@@ -1088,8 +1088,8 @@
     },
     {
       "path": "server/hosted-budget.ts",
-      "bytes": 6102,
-      "sha256": "14e5d59ed4db47bf54e2cff5ac02c8fad166713d2932e4592f127af138920c85"
+      "bytes": 6094,
+      "sha256": "ec5d0adb8b8928a2a28fe761262be2932d430883d24705c8df4b469c268e5774"
     },
     {
       "path": "server/hosted-content-api.test.ts",
@@ -1098,8 +1098,8 @@
     },
     {
       "path": "server/hosted-index.ts",
-      "bytes": 3264,
-      "sha256": "fe8ac92a07d0c6e797356005bd8d77773189b02c28d2850fe25e319ed0bcdec6"
+      "bytes": 3310,
+      "sha256": "ea148504c33a9be0b26de5c99c2bc4c97ef5f2b062b178e14003dd10db3f0ed3"
     },
     {
       "path": "server/hosted-model-check.ts",
@@ -1118,8 +1118,8 @@
     },
     {
       "path": "server/hosted-resource-tickets.ts",
-      "bytes": 3265,
-      "sha256": "0dcef91a1361b5bbba104e8508e2be37259df2731e2e5df18146cb085d489818"
+      "bytes": 3255,
+      "sha256": "c176b67aeabdd30be4b60660de3f76d1981a2764ff3ed1b78316986e4ff627cb"
     },
     {
       "path": "server/hosted-search.test.ts",
@@ -1158,8 +1158,8 @@
     },
     {
       "path": "server/hosted-web-imports.test.ts",
-      "bytes": 6987,
-      "sha256": "f6f7e91678c140d8208336b32c70145aef72f9d32555355746de87dac491490e"
+      "bytes": 7124,
+      "sha256": "b8bd248eda867f1e081ce8738fdfa352feff0fa6ad32267a780e77e6aa5fc8bb"
     },
     {
       "path": "server/hosted-web-imports.ts",
@@ -1245,6 +1245,16 @@
       "path": "server/pdf-translation.test.ts",
       "bytes": 3607,
       "sha256": "a0edf9f6c6b8e39954ceeb2cca2e814541810d27e9ea5c8efc86bd99dcce49e4"
+    },
+    {
+      "path": "server/private-storage.test.ts",
+      "bytes": 2146,
+      "sha256": "c6db5d26b7a3824037d2f402810eb7e6cf3f5f6502bd195b6f3a98e701f71749"
+    },
+    {
+      "path": "server/private-storage.ts",
+      "bytes": 1188,
+      "sha256": "855447e2fbd2eb00fc7d5c1cd94545fbbd22565674d9e9d3d42b9ce47642f73d"
     },
     {
       "path": "server/prompt-materials.test.ts",
@@ -1768,8 +1778,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 23705,
-      "sha256": "1bfb1c08a8dc28d450cad8194572abd93a3210dcf7c449027629d307663f4ac0"
+      "bytes": 23909,
+      "sha256": "5f7c4c7aef63b316f452f17e1ca7326dca04e88a89d4f53226f72778ab476f0c"
     },
     {
       "path": "README.en.md",
